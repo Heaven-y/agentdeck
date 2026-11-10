@@ -1,4 +1,6 @@
+import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 export type CodexRuntimeOptions = {
+  mcpRegistry?: McpRuntimeRegistry;
   command?: string | { command: string; args?: string[] };
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;

@@ -1,6 +1,7 @@
 // Claude 适配器：同一会话复用长驻运行时，空闲超时后回收。
 import type { TurnHandle, TurnRunner } from '../contracts';
 import { ClaudeRuntime, PERMISSION_TIMEOUT_MS, type ClaudeTurnInput } from './runtime';
+import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 
 export type { PermissionAnswer, TurnHandle } from '../contracts';
 export type { QueryFn } from './query';
@@ -26,7 +27,9 @@ type Entry = { runtime: ClaudeRuntime; key: string; timer?: NodeJS.Timeout };
  * 按工作区、原生会话与模型配置复用运行时。
  * 模型或推理强度改变时创建新运行时，避免沿用旧进程的启动参数。
  */
-export function createClaudeRunner(options: { idleMs?: number; env?: NodeJS.ProcessEnv } = {}): TurnRunner {
+export function createClaudeRunner(
+  options: { idleMs?: number; env?: NodeJS.ProcessEnv; mcpRegistry?: McpRuntimeRegistry } = {},
+): TurnRunner {
   const idleMs = options.idleMs ?? CLAUDE_IDLE_TIMEOUT_MS;
   const runtimes = new Map<string, Entry>();
   const keyOf = (input: ClaudeTurnInput) =>
@@ -57,7 +60,10 @@ export function createClaudeRunner(options: { idleMs?: number; env?: NodeJS.Proc
       entry = undefined;
     }
     if (!entry) {
-      entry = { runtime: new ClaudeRuntime({ ...input, env: options.env }), key: keyOf(input) };
+      entry = {
+        runtime: new ClaudeRuntime({ ...input, env: options.env, mcpRegistry: options.mcpRegistry }),
+        key: keyOf(input),
+      };
       runtimes.set(entry.key, entry);
     }
     clearTimeout(entry.timer);

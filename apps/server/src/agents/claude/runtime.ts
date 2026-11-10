@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { askClaudeQuestion } from './interactions';
 import { ClaudeElicitationOwner } from './elicitation-owner';
+import { claudeMcpControl } from './mcp-control';
+import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput, TurnHandle } from '../contracts';
 import { claudeInvocationText } from './capabilities';
@@ -25,7 +27,11 @@ const ABORT_FALLBACK_MS = 5_000;
 const COMPACTION_EVENTS = new Set<AgentEvent['type']>(['session', 'context', 'compaction', 'turn_end', 'error']);
 type TurnEnd = Extract<AgentEvent, { type: 'turn_end' }>;
 
-export type ClaudeTurnInput = AgentTurnInput & { queryFn?: QueryFn; env?: NodeJS.ProcessEnv };
+export type ClaudeTurnInput = AgentTurnInput & {
+  queryFn?: QueryFn;
+  env?: NodeJS.ProcessEnv;
+  mcpRegistry?: McpRuntimeRegistry;
+};
 
 const commandIs = (input: AgentTurnInput, name: 'context' | 'compact') =>
   input.invocation?.kind === 'command' && input.invocation.name === name;
@@ -126,6 +132,7 @@ export class ClaudeRuntime {
   private readonly stream = createClaudeStream();
   private readonly mapper = new ClaudeEventMapper();
   private readonly query?: ClaudeQuery;
+  private releaseMcp?: () => void;
   private readonly consumer: Promise<void>;
   private current?: ClaudeTurn;
   private closing?: Promise<void>;
@@ -167,6 +174,14 @@ export class ClaudeRuntime {
     this.sessionId = input.sessionId;
     try {
       this.query = (input.queryFn ?? nativeClaudeQuery)({ prompt: this.stream.prompt, options });
+      this.releaseMcp = input.mcpRegistry?.register({
+        agent: 'claude',
+        projectId: input.workspace.id,
+        cwd: input.workspace.dir,
+        instanceId: this.instanceId,
+        sessionId: () => this.sessionId,
+        control: claudeMcpControl(this.query, this.instanceId),
+      });
     } catch (error) {
       // 原生进程创建失败不能让构造方抛错，改由首轮产出错误事件收尾。
       this.broken = true;
@@ -204,6 +219,7 @@ export class ClaudeRuntime {
   }
 
   private async shutdown(): Promise<void> {
+    this.releaseMcp?.();
     this.lifetime.abort();
     this.elicitations.close();
     this.stream.close();
@@ -225,6 +241,10 @@ export class ClaudeRuntime {
     } catch (error) {
       this.broken = true;
       if (!this.closing) this.current?.fail(error instanceof Error ? error.message : 'Claude 本轮运行失败');
+    } finally {
+      this.releaseMcp?.();
+      this.lifetime.abort();
+      this.elicitations.close();
     }
   }
 

@@ -85,7 +85,7 @@ AGY ACP 提问已实测使用 `elicitation/create`；Codex 0.166.0 的阻塞 `re
 | P05 | 队列与各 CLI 原生引导 | P03、P04 | 待做 | — |
 | P06 | 子代理历史与运行状态 | P02、P03 | 待做 | — |
 | P07 | Skills、规则/Hooks/代理定义管理 | P01 | 已完成 | 初审4项修复及仅Key事务复核通过；定向54项，独立复核18项；真实隔离验证通过 |
-| P08 | MCP 持久配置与运行管理 | P03、P07 | 待做 | — |
+| P08 | MCP 持久配置与运行管理 | P03、P07 | 已完成 | R1/R2独立复核关闭；27项及范围覆盖/类型/规范通过，真实MCP与合成OAuth、界面验证通过 |
 | P09 | 三 CLI 原生插件管理 | P07、P08 | 待做 | — |
 | P10 | 专用原生命令与能力遗漏复核 | P02–P09 | 待做 | — |
 | P11 | 综合审阅、受控实机、文档与整合 | 全部 | 待做 | — |
@@ -210,19 +210,23 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 ## P08：MCP 配置与运行状态
 
-文件：新增三 CLI `configuration/mcp.ts`、server `native-management/mcp-service.ts`、`http/native-management.routes.ts`、web `NativeMcpPanel.tsx` 与管理 API；扩展 P07 契约及现有维护锁。
+文件：新增三 CLI `configuration/mcp.ts`、server `native-management/mcp-service.ts`、独立 `http/native-mcp.routes.ts`、web `NativeMcpPanel.tsx` 与管理 API；扩展 P07 契约及现有维护锁。HTTP 保持相同 native-management 路径前缀，分文件避免管理类别相互耦合。
 
 接口：`NativeMcpEntry` 返回来源、作用域、transport、启用状态、脱敏配置及可用动作；`readMcp(context)` 为离线读取，`checkMcp(context,id)` 为显式连接。`saveMcp(context,{id?,revision,config})`、`operateMcp(context,{id,revision,action})` 处理指定来源；秘密字段使用保留/替换/清除动作，不回传旧值。
 
-- [ ] 核心回归先行：读取不启动MCP；URL/headers/env秘密遮蔽；重复名称作用域不同；修改外部更新冲突；部分失败后重读；托管/插件带入资源不误写。
-- [ ] Claude 用户/个人项目使用原生命令维护，项目 .mcp.json使用已支持安全事务；不整体改写混合状态文件。SDK运行态用于状态/重连/启停，区分运行态与持久配置。
-- [ ] Codex 持久配置保留TOML未知字段与注释；状态用 mcpServerStatus/list 分页，重载用 config/mcpServer/reload；不调用用户工具作为连接测试。
-- [ ] AGY 使用原生配置和 mcp add/remove/enable/disable 的已核实语义，标明全局/项目/插件来源；若没有可验证的运行状态接口，返回“配置已存在，未检查”而非“已连接”。
-- [ ] 提供添加 stdio/http/sse（按原生支持）、编辑、删除、启停、显式检查和支持的重连；参数为结构化数组，不提供任意shell命令执行接口。诊断只返回固定安全类别。
-- [ ] MCP OAuth 实现支持的原生跳转/完成通知，保持请求ID和取消；实际第三方账号授权留用户操作，不自动代登。无法保密提交的凭据路径必须保留高级配置入口，不在进程参数或日志中暴露明文秘密。
-- [ ] 区分持久配置维护锁与运行实例内控制：配置CRUD占CLI空闲维护锁；已有会话的状态/OAuth/重连使用该实例的窄控制租约，不等待其正在等待授权的回合结束，避免死锁。操作身份与运行代次绑定，原生实例销毁同步取消交互；新增实例的显式检查必须经过原生读活动锁，不能与CLI安装并发。
-- [ ] 验证三配置适配、鉴权/Origin、维护锁、敏感字段和组件；使用合成 stdio/http MCP 服务验证连接/失败/取消，外部请求为零。
-- [ ] 更新原生配置与界面；提交 `feat(mcp): 管理原生服务配置与连接状态`。
+- [x] 核心回归先行：读取不启动MCP；URL/headers/env秘密遮蔽；重复名称作用域不同；修改外部更新冲突；部分失败后重读；托管/插件带入资源不误写。
+- [x] Claude 用户/个人项目使用原生命令维护，项目 .mcp.json使用已支持安全事务；不整体改写混合状态文件。SDK运行态用于状态/重连/启停，区分运行态与持久配置。
+- [x] Codex 持久配置保留TOML未知字段与注释；状态用 mcpServerStatus/list 分页，重载用 config/mcpServer/reload；不调用用户工具作为连接测试。
+- [x] AGY 使用原生配置安全JSON事务落实 add/remove/enable/disable 的已核实语义（避免秘密进入命令参数），标明全局/项目/插件来源；若没有可验证的运行状态接口，返回“配置已存在，未检查”而非“已连接”。
+- [x] 提供添加 stdio/http/sse（按原生支持）、编辑、删除、启停、显式检查和支持的重连；参数为结构化数组，不提供任意shell命令执行接口。诊断只返回固定安全类别。
+- [x] Codex MCP OAuth 实现支持的原生跳转/完成通知，保持请求ID和取消；实际第三方账号授权留用户操作，不自动代登。无法保密提交的凭据路径必须保留高级配置入口，不在进程参数或日志中暴露明文秘密。
+- [x] 区分持久配置维护锁与运行实例内控制：配置CRUD占CLI空闲维护锁；已有会话的状态/OAuth/重连使用该实例的窄控制租约，不等待其正在等待授权的回合结束，避免死锁。操作身份与运行代次绑定，原生实例销毁同步取消交互；新增实例的显式检查必须经过原生读活动锁，不能与CLI安装并发。
+- [x] 验证三配置适配、鉴权/Origin、维护锁、敏感字段和组件；使用合成 stdio/http MCP 服务验证连接/失败/取消，外部请求为零。
+- [x] 更新原生配置与界面；实现与自审完成，待独立审阅及主线程阶段提交 `feat(mcp): 管理原生服务配置与连接状态`。
+
+实证细化（2026-11-11）：Claude 2.1.317 `mcp login --no-browser` 在 pipe stdin 下明确要求交互终端，本轮不新增 ConPTY 依赖，保留原生终端指引与 P03 SDK URL 请求通道。Codex OAuth 无 cancel RPC，采用独立有界 app-server 并绑定运行代次，取消只关闭授权进程。Codex 无线程状态原生返回 null 时只报告工具目录与未知运行状态；AGY 原生 list 已确认安全文件保存的配置/disabled 生效。Claude user/local add-json 无配置 stdin，含 URL/参数/秘密的写入保留高级入口；项目安全文件可完整编辑。Codex 插件清单可能联网，普通离线列表不调用，所属资源从插件管理入口处理。真实第三方账号、托管环境、AGY独立连接状态不记为已验收。
+
+独立审阅修复（2026-11-11）：R1 运行登记绑定规范化 cwd，枚举/控制/绑定OAuth核对当前目录；操作先取项目活动租约再重读目录，后台OAuth租约覆盖至原生进程退出，与换目录竞争有明确裁决且不等待回合结束。R2 插件 sourceId 纳入原生scope及规范化安装根，entryId和revision随来源区分，路径不外泄。四项新增回归已先红后绿，7文件27项定向验证及覆盖门槛通过；原独立审阅暂不通过结论保留，待复核关闭。
 
 ## P09：原生插件管理
 

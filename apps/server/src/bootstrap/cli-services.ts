@@ -48,6 +48,10 @@ import { createSessionToolsService } from '../settings/session-tools';
 import { createNativeManagementAccess } from '../native-management/access';
 import { createNativeManagementService } from '../native-management/service';
 import { registerNativeManagementRoutes } from '../http/native-management.routes';
+import { createNativeMcpService } from '../native-management/mcp-service';
+import { McpRuntimeRegistry } from '../native-management/mcp-runtime';
+import { createMcpControlService } from '../native-management/mcp-control-service';
+import { registerNativeMcpRoutes } from '../http/native-mcp.routes';
 
 import type { WorkspaceActivity } from '../workspaces/activity';
 import type { WorkspaceStore } from '../workspaces/store';
@@ -67,6 +71,7 @@ export function createCliServices({
 }) {
   const acquireWorkspace = (id: string) => activity.acquire(id);
   const nativeActivity = createCliActivity();
+  const mcpRegistry = new McpRuntimeRegistry();
   const launchEnvironment = createLaunchEnvironment({
     configDir: configDir,
     onSaved: (agent) => capabilities.invalidate(agent),
@@ -110,6 +115,17 @@ export function createCliServices({
     access: managementAccess,
     onChanged: nativeChanged,
   });
+  const nativeMcp = createNativeMcpService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+  });
+  const mcpControls = createMcpControlService({
+    service: nativeMcp,
+    registry: mcpRegistry,
+    access: managementAccess,
+    workspace: { acquire: acquireWorkspace, get: (id) => store.get(id) },
+  });
   const antigravityManagement = createAntigravitySessionManagement({
     environment: () => launchEnvironment.resolve('antigravity'),
   });
@@ -146,11 +162,11 @@ export function createCliServices({
   const runners = {
     claude: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('claude'),
-      create: (env) => createClaudeRunner({ env }),
+      create: (env) => createClaudeRunner({ env, mcpRegistry }),
     }),
     codex: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('codex'),
-      create: (env) => createCodexRunner({ env }),
+      create: (env) => createCodexRunner({ env, mcpRegistry }),
     }),
     antigravity: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('antigravity'),
@@ -188,7 +204,10 @@ export function createCliServices({
     turns,
     nativeActivity,
     disposeInstallations: () => installations.dispose(),
-    disposeSessionManagement: () => antigravityManagement.dispose(),
+    disposeSessionManagement: () => {
+      mcpControls.oauth.dispose();
+      return antigravityManagement.dispose();
+    },
     registerRoutes(a: FastifyInstance) {
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });
@@ -204,6 +223,7 @@ export function createCliServices({
       // 项目与 CLI 写租约已在服务内取得，避免 HTTP 包装重复取锁。
       registerNativeResourceRoutes(a, { service: nativeResources, store });
       registerNativeManagementRoutes(a, { service: nativeManagement, store });
+      registerNativeMcpRoutes(a, { service: nativeMcp, controls: mcpControls, store });
       registerModelSettingsRoutes(
         a,
         createModelSettingsService({ resources: nativeResources, environment: launchEnvironment }),

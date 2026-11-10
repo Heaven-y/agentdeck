@@ -5,7 +5,8 @@ import { resolveClaudeLaunch } from './launch';
 
 /** 固定SDK的控制契约；只收窄消息迭代内容，由映射器校验原生事件。 */
 export type ClaudeQuery = AsyncIterable<unknown> &
-  Pick<Query, 'interrupt' | 'close' | 'supportedCommands' | 'supportedModels' | 'getContextUsage'>;
+  Pick<Query, 'interrupt' | 'close' | 'supportedCommands' | 'supportedModels' | 'getContextUsage'> &
+  Partial<Pick<Query, 'mcpServerStatus' | 'reconnectMcpServer' | 'toggleMcpServer'>>;
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => ClaudeQuery;
 export const nativeClaudeQuery: QueryFn = (params) =>
   query({

@@ -9,6 +9,8 @@ import { nativePermissionRestore } from './permission-mode';
 import { CodexEventMapper, turnEnd } from './mapper';
 import { CodexPermissions } from './permissions';
 import { CodexInteractions } from './interactions';
+import { codexMcpControl } from './mcp-control';
+import { randomUUID } from 'node:crypto';
 import { checkedThread } from './sessions';
 import { emptyCodexUsage, updateCodexUsageBaseline, type CodexUsageBreakdown } from './observability';
 import {
@@ -26,6 +28,8 @@ const INTERRUPT_FALLBACK_MS = 5_000;
 const TURN_START_TIMEOUT_MS = 30_000;
 
 export class CodexRuntime {
+  private readonly mcpInstanceId = randomUUID();
+  private releaseMcp?: () => void;
   private client?: CodexClient;
   private nativeConfig?: RecordValue;
   private thread?: string;
@@ -93,6 +97,7 @@ export class CodexRuntime {
   }
 
   private async shutdown(): Promise<void> {
+    this.releaseMcp?.();
     this.current?.cancel();
     await this.client?.close().catch(() => undefined);
   }
@@ -118,16 +123,26 @@ export class CodexRuntime {
     client.onNotification = (method: string, params: RecordValue) => this.notification(method, params);
     try {
       await client.initialize();
+      this.releaseMcp = this.options.mcpRegistry?.register({
+        agent: 'codex',
+        projectId: input.workspace.id,
+        cwd: input.workspace.dir,
+        instanceId: this.mcpInstanceId,
+        sessionId: () => this.sessionId,
+        control: codexMcpControl(client, this.mcpInstanceId, () => this.sessionId),
+      });
       this.nativeConfig = await client.request('config/read', {
         cwd: input.workspace.dir,
         includeLayers: false,
       });
     } catch (error) {
       await client.close().catch(() => undefined);
+      this.releaseMcp?.();
       this.connecting = undefined;
       throw error;
     }
     void client.closed.then(() => {
+      this.releaseMcp?.();
       this.interactions?.close();
       this.broken = true;
       this.current?.fail('Codex 进程已退出，请重新发送');

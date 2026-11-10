@@ -15,6 +15,7 @@ import { invalidateNativeCapabilities } from '../../cli/shared/capability-cache'
 const NativeResourceEditor = lazy(() => import('./NativeResourceEditor'));
 const NativeResourceCreate = lazy(() => import('./NativeResourceCreate'));
 const NativeSkillsPanel = lazy(() => import('./NativeSkillsPanel'));
+const NativeMcpPanel = lazy(() => import('./NativeMcpPanel'));
 
 export default function NativeResourcesDialog({
   agent,
@@ -77,10 +78,7 @@ export default function NativeResourcesDialog({
   return (
     <SettingsDetailDialog title={`原生配置与扩展 · ${nativeAgentNames[agent]}`} onBack={onBack} onClose={onClose}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-1 text-sm text-muted-foreground">
-          <p>{project ? `当前项目：${project.name}` : '尚未选择项目，显示当前可用的原生入口。'}</p>
-          {project && <p className="break-all font-mono text-xs">{project.dir}</p>}
-        </div>
+        <ResourceProject project={project} />
         <button
           type="button"
           className={buttonClass('outline')}
@@ -133,6 +131,18 @@ export default function NativeResourcesDialog({
             }}
           />
         </Suspense>
+      ) : category === 'mcp' ? (
+        <Suspense fallback={<p role="status">正在打开 MCP 管理…</p>}>
+          <NativeMcpPanel
+            key={JSON.stringify([agent, projectId])}
+            context={{ agent, projectId }}
+            reload={reload}
+            onChanged={() => {
+              void invalidateNativeCapabilities(agent);
+              setReload((value) => value + 1);
+            }}
+          />
+        </Suspense>
       ) : catalog ? (
         <NativeResourceCatalog catalog={filteredCatalog(catalog, category)} select={setTarget} />
       ) : (
@@ -146,6 +156,14 @@ export default function NativeResourcesDialog({
   );
 }
 const catalogLoading = (catalog: Catalog | undefined, error: string) => !catalog && !error;
+function ResourceProject({ project }: { project?: Workspace }) {
+  return (
+    <div className="min-w-0 flex-1 space-y-1 text-sm text-muted-foreground">
+      <p>{project ? `当前项目：${project.name}` : '尚未选择项目，显示当前可用的原生入口。'}</p>
+      {project && <p className="break-all font-mono text-xs">{project.dir}</p>}
+    </div>
+  );
+}
 
 function filteredCatalog(catalog: Catalog, category: string): Catalog {
   if (category === 'all') return catalog;

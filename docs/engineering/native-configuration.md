@@ -106,6 +106,22 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 归档和恢复保留权限，删除会话时清理对应记录。Claude/Antigravity 重置时移除覆盖；Codex 的显式重置保留 `native` 动作，以便续接时重新读取原生有效配置。写入沿用事务与文件身份核对，不能覆盖同时发生的其他偏好更新；记录损坏时报告不可用，不静默重建。
 
+## MCP 配置与运行管理
+
+“原生配置与扩展 → MCP”离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的插件列表可能访问市场，普通列表只显示原生配置文件中的服务，插件带入服务转所属插件管理。
+
+Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
+
+秘密仅写：URL 只显示 origin，参数不回填，环境变量和请求头只显示名称；保留、替换和清除分别提交。保存携带来源身份和 revision，冲突不覆盖外部更新，界面保留原草稿及原 revision。持久写使用 CLI 空闲维护锁并与安装、项目活动和文件事务互斥；成功或可能部分写入的失败均失效相关能力并回收空闲实例。
+
+运行状态与持久配置分开。选择活实例后，Claude 使用 SDK 状态、重连和运行启停，Codex 使用分页 `mcpServerStatus/list` 与实例级 `config/mcpServer/reload`；操作针对所选实例中有效的同名服务，重载不是单个服务器的持久开关。没有实例时，只有显式检查才创建有界临时原生进程并发现工具，不执行工具或模型回合。Codex 无线程查询可能返回工具目录但 `runtimeStatus=null`，此时显示“无法核实运行状态”，不宣称持续连接。Antigravity 1.5.3 没有可靠的独立运行状态接口，保持“已配置，未检查”，检查与 OAuth 转原生 MCP 面板。
+
+运行实例身份同时包含项目 ID 与启动目录，项目换目录后不显示或接受旧目录实例。控制与检查先取得项目普通活动租约再重读目录，授权操作保持租约至原生进程结束；项目换目录、删除与这些操作互斥，同时不阻塞等待用户答复的回合。插件 MCP 的内部来源身份包含原生作用域和规范化安装根，同插件同名服务跨来源不碰撞，安装路径不直接返回网页。
+
+Codex OAuth 由独立 app-server 承载，授权链接只在用户启动后出现；成功以同一 loginId 的完成通知为准。取消、超时或所绑定对话实例退出会关闭授权进程，迟到成功无效；关闭设置后再次打开可恢复未结束操作。该操作使用原生读取活动租约，不等待正在等待授权的回合空闲。Claude 2.1.317 的 `mcp login --no-browser` 实测仍要求交互终端，管道 stdin 不可用；此入口提供原生终端指引，对话内 SDK URL 请求继续通过问题卡片处理。真实第三方账号授权由用户操作，本轮仅验证本地合成服务。
+
+2026-11-11 隔离验证：Claude stdio/HTTP 连接与失败、user/local 原生命令增删；Codex stdio/HTTP 工具发现、线程状态与重载、OAuth 成功/失败/取消；Antigravity 原生 `mcp list` 识别配置及禁用均有实测记录。未修改真实用户 profile，未执行 MCP 工具。后台任务对维护空闲的裁决由后续子代理阶段接入，不能把当前回合结束当作所有后台任务完成。
+
 ## Antigravity MCP 工具加载
 
 默认按原生方式加载 MCP。AGY 1.5.1 的通用工具包装未限制 Arguments 的类型；部分模型服务会返回 JSON 字符串，标准 MCP 服务要求对象而拒绝执行。可以在设置的 MCP 配置文件中，对确实需要的工具启用原生 `eager`：在已有服务器项内添加 `tools: { "read_notes": { "eager": true } }`，保留原来的 command、args、env 或地址。这会让模型直接看到该工具的完整参数定义，可能增加请求长度；不需要把所有工具改为 eager。
