@@ -2,18 +2,20 @@
 import type { AgentKind } from './agents';
 import type { CompactionState, ContextUsage, TokenUsage } from './capabilities';
 import type { InteractionEvent } from './interaction';
+import type { ChatAttachment, MessageAttachment } from './attachments';
 
 /** 同一次成功模型生成的原生计时；首段可能包含推理，流式时长不含工具执行。 */
 export type GenerationTiming = { durationMs: number; firstTokenMs?: number };
 
 export type AgentEvent =
+  | { type: 'input_attachments'; attachments: ChatAttachment[] }
   | InteractionEvent
   | { type: 'context'; usage: ContextUsage | null }
   | { type: 'compaction'; state: CompactionState }
   /** 会话开始或继续，sessionId 由 Agent 分配 */
   | { type: 'session'; sessionId: string; model: string; cwd: string; agent?: AgentKind }
   /** 用户消息（只出现在历史记录中，实时对话由前端自己显示） */
-  | { type: 'user_message'; text: string }
+  | { type: 'user_message'; text: string; attachments?: MessageAttachment[] }
   /** 助手文本增量 */
   | { type: 'text'; delta: string }
   /** 思考过程增量 */
@@ -24,6 +26,7 @@ export type AgentEvent =
       id: string;
       output: string;
       isError: boolean;
+      attachments?: MessageAttachment[];
       durationMs?: number;
       timingSource?: 'native' | 'observed';
       usage?: TokenUsage;

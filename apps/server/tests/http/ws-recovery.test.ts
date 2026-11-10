@@ -41,7 +41,13 @@ async function setup() {
     },
   });
   const auth = randomUUID();
-  const app = await buildApp({ token: auth, port: 0, routes: (server) => registerWsRoutes(server, { turns }) });
+  const app = await buildApp({
+    token: auth,
+    port: 0,
+    routes: (server) => {
+      registerWsRoutes(server, { turns });
+    },
+  });
   await app.listen({ host: '127.0.0.1', port: 0 });
   const address = app.server.address();
   if (!address || typeof address === 'string') throw new Error('缺少监听地址');

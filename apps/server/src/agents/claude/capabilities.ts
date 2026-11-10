@@ -108,7 +108,11 @@ function modelsFrom(models: ModelInfo[]): AgentModel[] {
     }));
 }
 
-async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeCapabilityCatalog> {
+async function readCatalog(
+  q: ClaudeQuery,
+  signal: AbortSignal,
+  evidence: { cliVersion?: string; sdkVersion?: string },
+): Promise<NativeCapabilityCatalog> {
   const [commands, models] = await Promise.allSettled([
     claudeControl(q.supportedCommands(), signal),
     claudeControl(q.supportedModels(), signal),
@@ -119,6 +123,8 @@ async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeC
     features: nativeFeaturesFor('claude', {
       runtime: 'claude-sdk',
       handshake: discovered ? 'confirmed' : 'failed',
+      ...evidence,
+      implemented: ['images', 'documents', 'questions', 'forms'],
     }),
     models: models.status === 'fulfilled' ? modelsFrom(models.value) : [],
     defaultModel:
@@ -138,7 +144,7 @@ async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeC
 export function createClaudeCapabilityDiscovery(queryFn: QueryFn = nativeClaudeQuery) {
   return async (
     dir: string,
-    options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
+    options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv; cliVersion?: string; sdkVersion?: string } = {},
   ): Promise<NativeCapabilityCatalog> => {
     if (options.signal?.aborted) throw new Error('Claude 能力读取已取消');
     const controller = new AbortController();
@@ -157,7 +163,10 @@ export function createClaudeCapabilityDiscovery(queryFn: QueryFn = nativeClaudeQ
           abortController: controller,
         },
       });
-      const catalog = await readCatalog(q, controller.signal);
+      const catalog = await readCatalog(q, controller.signal, {
+        cliVersion: options.cliVersion,
+        sdkVersion: options.sdkVersion,
+      });
       if (controller.signal.aborted) throw new Error('Claude 能力读取已取消');
       return catalog;
     } finally {

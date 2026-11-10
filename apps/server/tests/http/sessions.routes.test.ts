@@ -120,6 +120,23 @@ function setup(projects = [ws, other]) {
 }
 
 describe('子代理历史路由', () => {
+  it('原生媒体路由只接受已归属会话的定位器，拒绝路径和其他工作区并禁止缓存', async () => {
+    const { app, codex } = setup();
+    codex.assertBelongs = vi.fn(async (_id: string, dir: string) => {
+      if (dir !== ws.dir) throw new SessionError(404, 'session_missing', '会话不属于此项目');
+      return dir;
+    });
+    codex.media = vi.fn(async () => ({ mimeType: 'image/png', data: Buffer.from('fixture-image') }));
+    const url = '/api/workspaces/w1/sessions/s1/media?agent=codex&messageId=m&index=0&kind=user';
+    const reply = await app.inject(url);
+    expect(reply.statusCode).toBe(200);
+    expect(reply.headers['cache-control']).toBe('no-store');
+    expect(reply.headers['x-content-type-options']).toBe('nosniff');
+    expect(reply.headers['content-type']).toBe('image/png');
+    expect((await app.inject(url + '&path=private.png')).statusCode).toBe(400);
+    expect((await app.inject(url.replace('/w1/', '/w2/'))).statusCode).toBe(404);
+    expect(codex.media).toHaveBeenCalledOnce();
+  });
   it('拒绝路径形式的子代理 ID 和没有子代理身份的游标', async () => {
     const { app } = setup();
     for (const query of ['agentId=..%2Foutside', 'cursor=100', 'agentId=child&cursor=-1']) {

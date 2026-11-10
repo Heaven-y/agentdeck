@@ -8,6 +8,8 @@ import { AgentControls } from './AgentControls';
 import { ComposerStatus } from './ComposerStatus';
 import { SessionReferencePreview } from './SessionReferencePreview';
 import { ComposerSurface } from './ComposerSurface';
+import { AttachmentDropzone, ComposerAttachmentPicker, ComposerAttachments } from './ComposerAttachments';
+import { attachmentBlocked } from './attachment-actions';
 
 function ComposerActions({ disabled }: { disabled: boolean }) {
   const running = useChat((s) => s.running);
@@ -55,11 +57,14 @@ function placeholder(connected: boolean, hint?: string): string {
   return connected ? hint || '描述你想完成的任务…' : '等待连接…';
 }
 const emptyInput = (text: string, selection: AgentCapability | undefined) => !text.trim() && !selection;
+const anyBlocked = (conditions: unknown[]) => conditions.some(Boolean);
 
 /** 输入框：Enter 发送、Shift+Enter 换行（输入法组字时不发送）；运行中按钮变为"停止" */
 export function Composer() {
   const id = useId();
   const text = useChat((s) => s.draft);
+  const attachments = useChat((s) => s.draftAttachments);
+  const uploading = useChat((s) => s.attachmentsBusy);
   const setText = useChat((s) => s.setDraft);
   const running = useChat((s) => s.running);
   const connected = useChat((s) => s.connection === 'open');
@@ -71,9 +76,18 @@ export function Composer() {
   const managing = useChat(managementPending);
   const send = useChat((s) => s.send);
   const restriction = selectionRestriction(selection, sessionId, text);
-  const busy = running || loading || managing || permissionPending;
-  const empty = emptyInput(text, selection);
-  const blocked = !connected || empty || busy || !!historyError || !!restriction;
+  const busy = anyBlocked([running, loading, managing, permissionPending]);
+  const empty = emptyInput(text, selection) && !attachments.length;
+  const blocked = anyBlocked([
+    !connected,
+    empty,
+    busy,
+    historyError,
+    restriction,
+    attachmentBlocked({ draftAttachments: attachments, attachmentsBusy: uploading }),
+  ]);
+  const dropDisabled = anyBlocked([busy, !connected]);
+  const pickerDisabled = anyBlocked([dropDisabled, uploading]);
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -82,26 +96,30 @@ export function Composer() {
 
   return (
     <form onSubmit={submit} className="composer">
-      <ComposerSurface>
-        <label htmlFor={id} className="sr-only">
-          输入消息
-        </label>
-        <ComposerInput
-          id={id}
-          text={text}
-          onChange={setText}
-          onSend={submit}
-          busy={busy}
-          placeholder={placeholder(connected, selection?.argumentHint)}
-        />
-        {restriction && <p className="px-4 text-xs leading-5 text-warning">{restriction}</p>}
-        <SessionReferencePreview text={text} />
-        <div role="group" aria-label="消息选项" className="composer-toolbar">
-          <AgentControls disabled={busy}>
-            <ComposerActions disabled={blocked} />
-          </AgentControls>
-        </div>
-      </ComposerSurface>
+      <AttachmentDropzone disabled={dropDisabled}>
+        <ComposerSurface>
+          <ComposerAttachments />
+          <label htmlFor={id} className="sr-only">
+            输入消息
+          </label>
+          <ComposerInput
+            id={id}
+            text={text}
+            onChange={setText}
+            onSend={submit}
+            busy={busy}
+            placeholder={placeholder(connected, selection?.argumentHint)}
+          />
+          {restriction && <p className="px-4 text-xs leading-5 text-warning">{restriction}</p>}
+          <SessionReferencePreview text={text} />
+          <div role="group" aria-label="消息选项" className="composer-toolbar">
+            <AgentControls disabled={busy}>
+              <ComposerAttachmentPicker disabled={pickerDisabled} />
+              <ComposerActions disabled={blocked} />
+            </AgentControls>
+          </div>
+        </ComposerSurface>
+      </AttachmentDropzone>
       <ComposerStatus />
     </form>
   );

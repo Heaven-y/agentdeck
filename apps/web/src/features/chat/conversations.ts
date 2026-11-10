@@ -32,6 +32,9 @@ const fields = [
   'historyNotice',
   'banner',
   'draft',
+  'draftAttachments',
+  'attachmentsBusy',
+  'pendingAttachmentInput',
   'unread',
   'view',
 ] as const satisfies readonly (keyof ConversationView)[];
@@ -41,6 +44,8 @@ export const conversationBusy = (view: Pick<ConversationView, 'running' | 'pendi
 export const conversationHasDraft = (view: ConversationView) =>
   !!(
     view.draft ||
+    view.draftAttachments.length ||
+    view.pendingAttachmentInput ||
     view.selectedCapability ||
     view.permission ||
     Object.values(view.modelOverrides).some(Boolean) ||

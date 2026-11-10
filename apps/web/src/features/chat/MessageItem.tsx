@@ -4,6 +4,7 @@ import { Streamdown } from 'streamdown';
 import type { ChatItem } from './chat-reducer';
 import { PermissionCard } from './PermissionCard';
 import { InteractionCard } from './InteractionCard';
+import { MessageAttachments } from './MessageAttachments';
 import { ToolCard } from './ToolCard';
 import { CompactionStatus } from './ContextStatus';
 import type { ExpandedProps } from './timeline-model';
@@ -46,6 +47,7 @@ export const MessageItem = memo(function MessageItem({
       return (
         <div className="conversation-user">
           <SessionReferenceText text={item.text} />
+          <MessageAttachments attachments={item.attachments} />
         </div>
       );
     case 'assistant':

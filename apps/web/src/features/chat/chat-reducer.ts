@@ -5,6 +5,7 @@ import {
   type CompactionState,
   type UserInteraction,
   type InteractionResolution,
+  type MessageAttachment,
 } from '@agentdeck/shared/conversation';
 import { finiteCount, type ChatStatistics } from './chat-metrics';
 
@@ -24,7 +25,7 @@ export type ChatItem =
     })
   | { kind: 'fork-point'; id: string; pointId: string }
   | { kind: 'compaction'; id: string; state: CompactionState; incomplete?: boolean }
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; attachments?: MessageAttachment[] }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean }
   | { kind: 'reasoning'; id: string; text: string }
   | {
@@ -34,6 +35,7 @@ export type ChatItem =
       name: string;
       input: unknown;
       output?: string;
+      attachments?: MessageAttachment[];
       isError?: boolean;
       durationMs?: number;
       timingSource?: 'native' | 'observed';
@@ -83,7 +85,7 @@ export function reduceChat(items: ChatItem[], e: AgentEvent): ChatItem[] {
     case 'compaction':
       return updateCompaction(items, e.state);
     case 'user_message':
-      return [...items, { kind: 'user', id: nextId(items, 'user'), text: e.text }];
+      return [...items, userItem(items, e)];
     case 'text':
       return appendText(items, 'assistant', e.delta);
     case 'reasoning':
@@ -148,6 +150,7 @@ function toolUpdate(event: Extract<AgentEvent, { type: 'tool_result' | 'tool_pro
     ...(event.timingSource ? { timingSource: event.timingSource } : {}),
     ...(event.usage ? { usage: event.usage } : {}),
     output: event.output,
+    ...(event.attachments ? { attachments: event.attachments } : {}),
     isError: event.isError,
     status: 'done' as const,
     progress: undefined,
@@ -246,6 +249,12 @@ function updateCompaction(items: ChatItem[], state: CompactionState): ChatItem[]
 
 function reduceLifecycle(items: ChatItem[], e: AgentEvent): ChatItem[] {
   switch (e.type) {
+    case 'input_attachments': {
+      const index = items.findLastIndex((item) => item.kind === 'user');
+      return items.map((item, position) =>
+        position === index && item.kind === 'user' ? { ...item, attachments: e.attachments } : item,
+      );
+    }
     case 'interaction_request':
       return items.some((item) => item.kind === 'interaction' && item.id === e.interaction.id)
         ? items
@@ -287,4 +296,13 @@ export function markPermissionPending(items: ChatItem[], requestId: string): Cha
   return items.map((item) =>
     item.kind === 'permission' && item.id === requestId && !item.resolved ? { ...item, responding: true } : item,
   );
+}
+
+function userItem(items: ChatItem[], event: Extract<AgentEvent, { type: 'user_message' }>): ChatItem {
+  return {
+    kind: 'user',
+    id: nextId(items, 'user'),
+    text: event.text,
+    ...(event.attachments ? { attachments: event.attachments } : {}),
+  };
 }

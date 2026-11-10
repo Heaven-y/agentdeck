@@ -3,6 +3,7 @@ import type { ChatItem } from './chat-reducer';
 import type { ExpandedProps } from './timeline-model';
 import { finiteCount, formatDuration } from './chat-metrics';
 import { StatisticsLine } from './StatisticsLine';
+import { MessageAttachments } from './MessageAttachments';
 import { toolDisplayName, toolDescription, toolPrimaryArgument } from './tool-presentation';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
@@ -89,6 +90,7 @@ export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem 
       </summary>
       <div className="mt-1 mr-2 mb-2 ml-3.5 flex min-w-0 flex-col gap-3 border-l border-border py-1 pl-4">
         <ToolDescription item={item} />
+        <MessageAttachments attachments={item.attachments} />
         {item.status === 'incomplete' && <p className="text-xs text-warning">需核对实际执行状态</p>}
         {item.usage && <StatisticsLine statistics={{ ...item, scope: 'step' }} />}
         <div className="min-w-0">

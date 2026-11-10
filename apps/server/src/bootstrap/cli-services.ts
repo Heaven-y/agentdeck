@@ -1,6 +1,12 @@
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
 import type { FastifyInstance } from 'fastify';
+import path from 'node:path';
+import { AttachmentStore } from '../chat/attachments';
+import type { ResumeHub } from '../chat/resume-hub';
+import { registerChatAttachmentRoutes } from '../http/chat-attachments.routes';
+import { inputCapabilities } from '../chat/input-capabilities';
+import type { AgentTurnInput } from '../agents/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
 import { createAgentProbes, createLocalRunner } from '../agents/common/probe';
@@ -25,6 +31,7 @@ import {
   pageCodexSessions,
   mutateCodexSession,
   readCodexSession,
+  readCodexMedia,
 } from '../agents/codex';
 import { withCapabilityDirectory } from '../agents/common/capability-directory';
 import { createConfiguredRunner } from '../agents/common/configured-runner';
@@ -72,12 +79,17 @@ export function createCliServices({
   probeRunner?: ProcessRunner;
 }) {
   const acquireWorkspace = (id: string) => activity.acquire(id);
+  const attachments = new AttachmentStore(path.join(configDir, 'attachments'));
   const nativeActivity = createCliActivity();
   const mcpRegistry = new McpRuntimeRegistry();
   const launchEnvironment = createLaunchEnvironment({
     configDir: configDir,
     onSaved: (agent) => capabilities.invalidate(agent),
   });
+  const inputFeatures = (agent: AgentKind, input: AgentTurnInput, signal: AbortSignal) =>
+    nativeActivity.run(agent, async () =>
+      inputCapabilities(agent, input, await launchEnvironment.resolve(agent), signal),
+    );
   const capabilities = createCapabilitiesService(
     {
       claude: withCapabilityDirectory((dir, signal) =>
@@ -152,6 +164,7 @@ export function createCliServices({
           list: (dir, signal, archived) => listCodexSessions(dir, { signal, archived }),
           page: (dir, input, signal, archived) => pageCodexSessions(dir, input, { signal, archived }),
           read: (id, dir, signal) => readCodexSession(id, dir, { signal }),
+          media: (id, dir, locator, signal) => readCodexMedia(id, dir, locator, { signal }),
           assertBelongs: (id, dir, signal) => assertCodexSession(id, dir, { signal }),
           mutate: (id, dir, input) => mutateCodexSession(id, dir, input),
           fork: (id, dir, input) => forkCodexSession(id, dir, input),
@@ -191,6 +204,8 @@ export function createCliServices({
     capabilities,
     runners,
     acquireWorkspace,
+    attachments,
+    inputFeatures,
   });
   const installations = createCliInstallationService({
     backend:
@@ -210,6 +225,16 @@ export function createCliServices({
 
   return {
     turns,
+    registerAttachments(app: FastifyInstance, recovery: ResumeHub) {
+      registerChatAttachmentRoutes(app, {
+        attachments,
+        recovery,
+        acquireWorkspace,
+        inputFeatures,
+        getWorkspace: (id) => store.get(id),
+        assertBelongs: (workspace, agent, id) => sessions.assertBelongs(workspace, agent, id),
+      });
+    },
     nativeActivity,
     disposeInstallations: () => installations.dispose(),
     disposeSessionManagement: () => {

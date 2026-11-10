@@ -103,6 +103,38 @@ async function setup(mode = 'normal') {
 }
 
 describe('Codex app-server 核心边界', () => {
+  it('可能含媒体的历史请求仍按实际内容限制：纯文字超过8MiB拒绝，媒体历史有界接收', async () => {
+    for (const mode of ['large-text-history', 'large-image-history']) {
+      const { dir, options } = await setup(mode);
+      const client = await CodexClient.start({ ...options, cwd: dir });
+      try {
+        await client.initialize();
+        const request = client.request('thread/read', { threadId: 'native-thread', includeTurns: true });
+        if (mode === 'large-text-history') await expect(request).rejects.toThrow('8 MiB');
+        else expect(JSON.stringify(await request).length).toBeGreaterThan(8 * 1024 * 1024);
+      } finally {
+        await client.close();
+      }
+    }
+  });
+  it('图片输入允许有界大消息，工具图片通知可读取而同尺寸纯文字仍拒绝', async () => {
+    const { dir, options } = await setup();
+    const client = await CodexClient.start({ ...options, cwd: dir });
+    try {
+      await client.initialize();
+      const data = 'a'.repeat(9 * 1024 * 1024);
+      await client.request('turn/start', { input: [{ type: 'image', url: `data:image/png;base64,${data}` }] });
+      let imageSize = 0;
+      client.onNotification = (method, params) => {
+        if (method === 'item/completed') imageSize = Math.max(imageSize, JSON.stringify(params).length);
+      };
+      await client.request('fixture/media-notification', {});
+      expect(imageSize).toBeGreaterThan(8 * 1024 * 1024);
+      await expect(client.request('fixture/media-notification', { invalid: true })).rejects.toThrow('8 MiB');
+    } finally {
+      await client.close();
+    }
+  });
   it('真实子进程处理 UTF-8 分片、超时和意外退出且不透出 stderr', async () => {
     const { dir, options } = await setup();
     // timeoutMs 既是「请求超时」这个产品行为的阈值，也是本次连接等子进程启动的预算。

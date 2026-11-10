@@ -18,6 +18,7 @@ import { markPermissionPending, reduceChat } from './chat-reducer';
 import { capabilityRestriction, selectionRestriction } from './capability-selection';
 import { createChatEvents } from './chat-events';
 import { createChatHistory } from './chat-history';
+import { createAttachmentActions, attachmentBlocked } from './attachment-actions';
 import { saveConversationPermission } from './chat-permission';
 import { createConversationTabs, existingTabs, openedTab } from './conversation-tabs';
 import {
@@ -44,19 +45,27 @@ export function managementPending(current: ChatState): boolean {
   );
 }
 function cannotSend(current: ChatState, text: string): boolean {
-  return (
-    conversationBusy(current) ||
-    current.loadingHistory ||
-    current.permissionLoading ||
-    current.permissionSaving ||
-    !!current.permissionError ||
-    !!current.historyError ||
-    (!text.trim() && !current.selectedCapability) ||
-    managementPending(current)
-  );
+  const empty = !text.trim() && !current.selectedCapability && !current.draftAttachments.length;
+  return [
+    conversationBusy(current),
+    current.loadingHistory,
+    current.permissionLoading,
+    current.permissionSaving,
+    current.permissionError,
+    current.historyError,
+    empty,
+    attachmentBlocked(current),
+    managementPending(current),
+  ].some(Boolean);
 }
 function sendRestriction(current: ChatState, text: string): string | undefined {
+  if (current.draftAttachments.length && current.pendingAttachmentInput?.rejected)
+    return '请先恢复或放弃暂存输入，再发送新的附件消息。';
   return selectionRestriction(current.selectedCapability, current.sessionId, text);
+}
+function sentAttachmentInput(current: ChatState, text: string): ChatState['pendingAttachmentInput'] {
+  if (current.draftAttachments.length) return { text, attachments: current.draftAttachments };
+  return current.pendingAttachmentInput?.rejected ? current.pendingAttachmentInput : undefined;
 }
 function renamedConversation(current: ChatState, workspaceId: string, session: SessionRef, input: SessionActionInput) {
   if (input.action !== 'rename') return {};
@@ -90,6 +99,7 @@ function persistWorkspace(id?: string): void {
 export const useChat = create<ChatState>()((set, get) => {
   const history = createChatHistory(get, set);
   return {
+    ...createAttachmentActions(get, set, () => socket?.identity?.()),
     nativeInteractions: [],
     respondInteraction(id, answer) {
       if (!InteractionAnswerSchema.safeParse(answer).success) return false;
@@ -218,6 +228,10 @@ export const useChat = create<ChatState>()((set, get) => {
     },
     setAgent(agent) {
       const current = get();
+      if (current.draftAttachments.length || current.attachmentsBusy) {
+        set({ banner: '请先移除当前附件，再切换 CLI。' });
+        return;
+      }
       if (current.sessionId || current.running || current.loadingHistory || current.pendingClientTurnId) return;
       set({ initialDefaultsEligible: false });
       if (current.agent !== agent) {
@@ -363,6 +377,7 @@ export const useChat = create<ChatState>()((set, get) => {
       }
     },
     send(text) {
+      get().syncAttachmentIdentity();
       const current = get();
       if (!current.workspaceId || !socket || cannotSend(current, text)) return false;
       const restriction = sendRestriction(current, text);
@@ -378,6 +393,7 @@ export const useChat = create<ChatState>()((set, get) => {
         agent: current.agent,
         sessionId: current.sessionId,
         text: message,
+        ...attachmentRefs(current),
         ...(current.selectedCapability ? { selection: { id: current.selectedCapability.id } } : {}),
         model: current.modelOverrides[current.agent].trim() || undefined,
         reasoningEffort: current.reasoningEfforts[current.agent].trim() || undefined,
@@ -394,9 +410,12 @@ export const useChat = create<ChatState>()((set, get) => {
         items: reduceChat(state.items, {
           type: 'user_message',
           text: current.selectedCapability ? `/${current.selectedCapability.name}${text ? ` ${text}` : ''}` : message,
+          ...attachmentDisplay(current),
         }),
         selectedCapability: undefined,
         draft: '',
+        draftAttachments: [],
+        pendingAttachmentInput: sentAttachmentInput(current, message),
         // 旧轮次未确认的压缩留在历史中，新轮次不能把它重新显示为进行中。
         compaction: state.compaction?.status === 'running' ? undefined : state.compaction,
         running: true,
@@ -450,3 +469,12 @@ export function startChatConnection(connect: Connect = connectChat): void {
   );
 }
 export const reconnectChat = () => socket?.reconnect();
+
+function attachmentRefs(state: ChatState) {
+  return state.draftAttachments.length
+    ? { attachments: state.draftAttachments.map((item) => ({ id: item.asset!.id, revision: item.asset!.revision })) }
+    : {};
+}
+function attachmentDisplay(state: ChatState) {
+  return state.draftAttachments.length ? { attachments: state.draftAttachments.map((item) => item.asset!) } : {};
+}

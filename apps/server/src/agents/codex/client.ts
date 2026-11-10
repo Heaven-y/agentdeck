@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { resolveCodexCommand } from './launch';
+import { MEDIA_RPC_BYTES, mediaInput, mediaHistory, mediaNotification, mediaResponse } from './media-budget';
 import {
   cancelled,
   CodexError,
@@ -14,7 +15,7 @@ import {
 export const MAX_RPC_LINE_BYTES = 8 * 1024 * 1024;
 export const MAX_PENDING_REQUESTS = 128;
 export const RPC_TIMEOUT_MS = 30_000;
-type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; timer: NodeJS.Timeout };
+type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; timer: NodeJS.Timeout; media: boolean };
 type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 
 function requestFailure(error: unknown): CodexError {
@@ -36,6 +37,7 @@ export class CodexClient {
   private nextId = 1;
   private failure?: Error;
   private stopping = false;
+  private mediaActive = false;
   private closing?: Promise<void>;
   private resolveClosed!: () => void;
   private readonly timeoutMs: number;
@@ -91,7 +93,9 @@ export class CodexClient {
         this.pending.delete(id);
         reject(new CodexError('Codex 请求超时，请检查本机运行时状态。'));
       }, this.timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, media: mediaHistory(method, params) });
+      // 即使本轮没有上传图片，工具仍可返回媒体；解析后按具体事件再次执行8/32 MiB限制。
+      if (method === 'turn/start' || method === 'turn/steer') this.mediaActive = true;
       this.write({ id, method, params });
     });
   }
@@ -109,7 +113,8 @@ export class CodexClient {
   private write(message: RecordValue): void {
     if (this.failure || this.stopping) return;
     const line = `${JSON.stringify(message)}\n`;
-    if (Buffer.byteLength(line) > MAX_RPC_LINE_BYTES) {
+    const limit = mediaInput(message.method, record(message.params)) ? MEDIA_RPC_BYTES : MAX_RPC_LINE_BYTES;
+    if (Buffer.byteLength(line) > limit) {
       this.terminate(new CodexError('Codex 请求超过单条消息大小上限。'));
       return;
     }
@@ -121,7 +126,7 @@ export class CodexClient {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     let newline = this.buffer.indexOf(10);
     while (newline >= 0) {
-      if (newline > MAX_RPC_LINE_BYTES) {
+      if (newline > this.readLimit()) {
         this.oversize();
         return;
       }
@@ -131,7 +136,19 @@ export class CodexClient {
       if (this.failure) return;
       newline = this.buffer.indexOf(10);
     }
-    if (this.buffer.length > MAX_RPC_LINE_BYTES) this.oversize();
+    if (this.buffer.length > this.readLimit()) this.oversize();
+  }
+  private readLimit(): number {
+    return this.mediaActive || [...this.pending.values()].some((p) => p.media) ? MEDIA_RPC_BYTES : MAX_RPC_LINE_BYTES;
+  }
+  private allowsLarge(message: RecordValue): boolean {
+    if (mediaNotification(message)) return true;
+    const id = message.id;
+    return (
+      (typeof id === 'string' || typeof id === 'number') &&
+      this.pending.get(id)?.media === true &&
+      mediaResponse(message)
+    );
   }
 
   private oversize(): void {
@@ -141,6 +158,10 @@ export class CodexClient {
     try {
       const decoded: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(line));
       if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) throw new Error('协议格式');
+      if (line.length > MAX_RPC_LINE_BYTES && !this.allowsLarge(record(decoded))) {
+        this.oversize();
+        return;
+      }
       this.dispatch(record(decoded));
     } catch {
       this.terminate(new CodexError('Codex 返回了无效的通信消息。'));

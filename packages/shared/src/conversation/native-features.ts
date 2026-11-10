@@ -129,7 +129,7 @@ function featureLimits(
         runtime === 'claude-sdk'
           ? ['text-context', 'native-document']
           : runtime === 'antigravity-acp'
-            ? ['text-context']
+            ? ['file-reference']
             : ['file-reference'],
     };
   return undefined;

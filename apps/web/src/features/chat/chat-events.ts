@@ -6,6 +6,7 @@ import { nativeStatus, sameSession, sessionActionKey } from './chat-state-helper
 import { conversationById, conversationViews, updateConversation } from './conversations';
 import { refreshSessionLists } from '../sessions/session-queries';
 import { createChatRecovery, endedConversation as ended } from './chat-recovery';
+import { preserveAttachmentInput } from './attachment-actions';
 
 type SetState = (patch: Partial<ChatState>) => void;
 type Msg<T extends ServerMessage['type']> = Extract<ServerMessage, { type: T }>;
@@ -62,6 +63,9 @@ export function createChatEvents(
     set(
       updateConversation(get(), current, {
         draft: draft?.draft ?? current.draft,
+        draftAttachments: current.draftAttachments,
+        attachmentsBusy: current.attachmentsBusy,
+        pendingAttachmentInput: current.pendingAttachmentInput,
         selectedCapability: draft?.selectedCapability ?? current.selectedCapability,
       }),
     );
@@ -78,7 +82,12 @@ export function createChatEvents(
     if (value.type === 'session' && value.agent && value.agent !== view.agent) return;
     if (value.type === 'session' && view.sessionId && view.sessionId !== value.sessionId) return;
     const identity = reported(view, value);
-    change(view, { items: reduceChat(view.items, value), ...nativeStatus(value), ...identity });
+    change(view, {
+      items: reduceChat(view.items, value),
+      ...nativeStatus(value),
+      ...identity,
+      ...failedAttachmentInput(view, value),
+    });
     if (value.type === 'session') {
       mergeIdentity(view.conversationId);
       if (!view.sessionId) void refreshSessionLists(view.agent);
@@ -88,7 +97,11 @@ export function createChatEvents(
     void refreshSessionLists(msg.agent);
     const view = conversationViews(get()).find((entry) => entry.turnId === msg.turnId);
     if (!view || view.workspaceId !== msg.workspaceId || view.agent !== msg.agent) return;
-    change(view, { ...ended, items: reduceChat(view.items, { type: 'turn_end', isError: false }) });
+    change(view, {
+      ...ended,
+      items: reduceChat(view.items, { type: 'turn_end', isError: false }),
+      pendingAttachmentInput: view.pendingAttachmentInput?.rejected ? view.pendingAttachmentInput : undefined,
+    });
   }
   function error(msg: Msg<'error'>) {
     if (msg.clientTurnId) recovery.restore(msg.clientTurnId);
@@ -96,12 +109,20 @@ export function createChatEvents(
     const views = conversationViews(get());
     const running = msg.turnId && views.find((entry) => entry.turnId === msg.turnId);
     const view = running || views.find((entry) => !!msg.clientTurnId && entry.pendingClientTurnId === msg.clientTurnId);
-    if (view) change(view, { banner: msg.message, ...(!running ? ended : {}) });
+    if (view)
+      change(view, { banner: msg.message, ...(!running ? { ...ended, ...preserveAttachmentInput(view) } : {}) });
+  }
+  function rejectedInput(msg: Msg<'input.rejected'>) {
+    const view = conversationViews(get()).find((view) => view.turnId === msg.turnId);
+    if (!view?.pendingAttachmentInput) return;
+    change(view, { banner: msg.message, ...preserveAttachmentInput(view) });
   }
   return {
     onRecovery: recovery.onRecovery,
     onMessage(msg: ServerMessage) {
       switch (msg.type) {
+        case 'input.rejected':
+          return rejectedInput(msg);
         case 'interaction.event':
           set({
             nativeInteractions: reduceChat(get().nativeInteractions, msg.event).filter(
@@ -125,6 +146,7 @@ export function createChatEvents(
     },
     onStatus(status: ConnectionStatus) {
       if (status === 'open') {
+        get().syncAttachmentIdentity();
         set({
           nativeInteractions: get().nativeInteractions.map((item) =>
             item.kind === 'interaction' && !item.resolved ? { ...item, responding: false } : item,
@@ -142,4 +164,8 @@ export function createChatEvents(
       set({ connection: status });
     },
   };
+}
+
+function failedAttachmentInput(view: ConversationView, event: AgentEvent): Partial<ConversationView> {
+  return event.type === 'turn_end' && event.isError && view.pendingAttachmentInput ? preserveAttachmentInput(view) : {};
 }

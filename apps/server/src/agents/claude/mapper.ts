@@ -1,5 +1,6 @@
 // 把 Claude Agent SDK 的消息转换成统一的 AgentEvent
 import { NativeSessionIdSchema, type AgentEvent } from '@agentdeck/shared/conversation';
+import { claudeMediaRefs, claudeToolMedia } from '../common/native-media';
 import { claudeCompactionBoundary, claudeCompactionStatus, ClaudeReplayFilter } from './compaction';
 import {
   claudeHistoryUsage,
@@ -109,13 +110,24 @@ function turnEndEvent(msg: Rec, forkPoint?: string): AgentEvent[] {
 }
 
 /** 用户消息中的纯文本（字符串内容或 text 块） */
-function userTexts(msg: Rec): AgentEvent[] {
+function userTexts(msg: Rec, sessionId?: string): AgentEvent[] {
   const inner = isRec(msg.message) ? msg.message : undefined;
   if (typeof inner?.content === 'string') return [{ type: 'user_message', text: inner.content }];
-  return blocksOf(msg).flatMap((b): AgentEvent[] => {
+  const attachments = claudeMediaRefs(msg, str(msg.session_id) ?? str(msg.sessionId) ?? sessionId ?? '');
+  const events = blocksOf(msg).flatMap((b): AgentEvent[] => {
+    if (isRec(b) && b.type === 'document')
+      return [{ type: 'user_message', text: `文件：${str(b.title) || '文档附件'}` }];
     const text = isRec(b) && b.type === 'text' ? str(b.text) : undefined;
     return text ? [{ type: 'user_message', text }] : [];
   });
+  if (!attachments.length) return events;
+  return [
+    {
+      type: 'user_message',
+      text: events.flatMap((event) => (event.type === 'user_message' ? [event.text] : [])).join('\n'),
+      attachments,
+    },
+  ];
 }
 
 /** content_block_delta 中的文本或思考增量 */
@@ -201,7 +213,7 @@ export class ClaudeEventMapper {
       return events;
     }
     if (msg.type !== 'user') return [];
-    return [...userTexts(msg), ...this.toolResults(msg, false)];
+    return [...userTexts(msg, this.historySessionId), ...this.toolResults(msg, false)];
   }
 
   /** SDK 将同一 API 回复拆成多条内容块；统计只放在最后一块之后，保持正文连续。 */
@@ -261,6 +273,7 @@ export class ClaudeEventMapper {
               id: str(b.tool_use_id) ?? '',
               output: truncate(toolResultText(b.content), this.options.preserveToolContent),
               isError: b.is_error === true,
+              ...claudeToolMedia(b, str(msg.session_id) ?? this.historySessionId ?? ''),
             },
           ]
         : [],

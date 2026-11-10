@@ -37,8 +37,10 @@ export function guardSessionProvider(
 ): SessionProvider {
   const page = provider.page?.bind(provider);
   const subagents = provider.subagents?.bind(provider);
+  const media = provider.media?.bind(provider);
   return {
     ...provider,
+    ...(media ? { media: (...args: Parameters<typeof media>) => activity.run(agent, () => media(...args)) } : {}),
     list: (...args) => activity.run(agent, () => provider.list(...args)),
     read: (...args) => activity.run(agent, () => provider.read(...args)),
     assertBelongs: (...args) => activity.run(agent, () => provider.assertBelongs(...args)),

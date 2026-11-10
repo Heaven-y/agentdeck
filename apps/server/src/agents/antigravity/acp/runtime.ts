@@ -4,6 +4,7 @@ import { antigravityInvocationText } from '../commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
 import { AcpInteractions } from './interactions';
+import { acpInput, fileReference, markEmbedded } from '../../common/attachment-input';
 import { AntigravityAcpMapper, acpTurnUsage } from './mapper';
 import { configureSession, needsHeadless } from './selection';
 import { AcpError, cancelled, object, list, protocolFailure, type AcpConnection, type AcpRecord } from './types';
@@ -24,6 +25,7 @@ class AcpTurn {
   private permissions?: AcpPermissions;
   private interactions?: AcpInteractions;
   private nativeId?: string;
+  private promptCapabilities?: AcpRecord;
   private sent = false;
   private ended = false;
   private failed?: AcpError;
@@ -73,6 +75,7 @@ class AcpTurn {
     };
     const initialized = await this.initialize(this.client);
     const capabilities = object(initialized.agentCapabilities);
+    this.promptCapabilities = object(capabilities.promptCapabilities);
     const resume = object(capabilities.sessionCapabilities).resume !== undefined;
     if (this.input.sessionId && !resume) throw new AcpError('unavailable', '当前 ACP 未提供无重放续接。');
     const response = await this.client.request(
@@ -114,10 +117,15 @@ class AcpTurn {
   }
 
   private async useHeadless(): Promise<void> {
+    if (this.input.attachments?.some((file) => file.kind === 'image'))
+      throw new AcpError('selection', '当前 Antigravity 兼容运行路径不支持图片，请保留附件并选择可用的 ACP 模型。');
     await this.client?.close();
     this.client = undefined;
     this.controller.signal.throwIfAborted();
-    this.fallback = this.options.headless(this.input);
+    this.fallback = this.options.headless({
+      ...this.input,
+      text: [this.input.text, ...(this.input.attachments ?? []).map(fileReference)].filter(Boolean).join('\n\n'),
+    });
     await this.fallback.done;
   }
 
@@ -161,7 +169,17 @@ class AcpTurn {
       await this.useHeadless();
     }
   }
+  private validateAttachments(): void {
+    if (this.input.attachments?.some((file) => file.kind === 'image') && this.promptCapabilities?.image !== true)
+      throw new AcpError('selection', '当前 Antigravity 运行通道没有确认图片输入支持。');
+    if (
+      this.input.attachments?.some((file) => file.kind === 'text') &&
+      this.promptCapabilities?.embeddedContext !== true
+    )
+      throw new AcpError('selection', '当前 Antigravity 运行通道没有确认文件上下文支持。');
+  }
   private async prompt(model: string): Promise<void> {
+    this.validateAttachments();
     const invoke =
       this.options.invocationText ??
       ((input: AgentTurnInput, signal: AbortSignal) =>
@@ -179,12 +197,13 @@ class AcpTurn {
     const started = performance.now();
     const result = await this.client!.request(
       'session/prompt',
-      { sessionId: this.nativeId!, prompt: [{ type: 'text', text: inputText }] },
+      { sessionId: this.nativeId!, prompt: acpInput(inputText, this.input.attachments) },
       { timeoutMs: 0 },
     );
     if (this.failed) throw this.failed;
     if (this.controller.signal.aborted || result.stopReason === 'cancelled') throw cancelled();
     const isError = result.stopReason !== 'end_turn';
+    if (!isError) await markEmbedded(this.input, ['image']);
     if (isError)
       this.input.emit({ type: 'error', message: 'Antigravity 未完整完成本轮，请检查原生停止原因或调整本轮请求。' });
     this.input.emit({

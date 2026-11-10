@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { askClaudeQuestion } from './interactions';
 import { ClaudeElicitationOwner } from './elicitation-owner';
+import { claudeInput, markEmbedded } from '../common/attachment-input';
 import { claudeMcpControl } from './mcp-control';
 import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
@@ -269,6 +270,7 @@ export class ClaudeRuntime {
     for (const event of this.mapper.map(message)) {
       if (event.type === 'turn_end') {
         ended = true;
+        if (!event.isError) await markEmbedded(turn.input, ['image', 'text', 'pdf']);
         turn.complete(elapsed === undefined ? event : { ...event, durationMs: elapsed, timingSource: 'observed' });
       } else {
         turn.deliver(event);
@@ -290,7 +292,7 @@ export class ClaudeRuntime {
       // 中断已经生效时不再投递正文，避免取消后仍向原生进程发送用户消息。
       if (!turn.active || turn.cancelled) return;
       turn.markSent();
-      this.stream.send(text);
+      this.stream.send(claudeInput(text, turn.input.attachments));
     } catch (error) {
       if (turn.active) turn.fail(error instanceof Error ? error.message : 'Claude 本轮运行失败');
     }

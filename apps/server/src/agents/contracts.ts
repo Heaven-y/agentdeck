@@ -1,4 +1,6 @@
 import type { PermissionSelection } from '@agentdeck/shared/conversation';
+import type { ChatAttachment } from '@agentdeck/shared/conversation';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
 import type { InteractionSpec, InteractionAnswer, InteractionOwner } from '@agentdeck/shared/conversation';
 import type {
   AgentEvent,
@@ -30,12 +32,15 @@ export type AgentTurnInput = {
   reasoningEffort?: string;
   permission?: PermissionSelection;
   text: string;
+  attachments?: NativeAttachment[];
+  attachmentsStored?(ids: string[]): Promise<void>;
   invocation?: NativeInvocation;
   emit(event: AgentEvent): void;
   requestPermission(request: { requestId: string; toolName: string; input: unknown }): Promise<PermissionAnswer>;
   requestInteraction?: InteractionRequester;
   completeInteraction?(runtimeId: string, completionId: string): void;
 };
+export type NativeAttachment = ChatAttachment & { path: string; data: Buffer };
 export type TurnHandle = { interrupt(): Promise<void>; done: Promise<void> };
 export type RuntimeTaskSnapshot = {
   id: string;
@@ -85,6 +90,12 @@ export type NativeSessionRead = {
 export type NativeSessionFork = Pick<NativeSessionRead, 'session' | 'cwd'>;
 
 export type SessionProvider = {
+  media?(
+    id: string,
+    dir: string,
+    locator: NativeMediaLocator,
+    signal?: AbortSignal,
+  ): Promise<{ data: Buffer; mimeType: string }>;
   capabilities?: Partial<SessionCapabilities>;
   list(dir: string, signal?: AbortSignal, archived?: boolean): Promise<NativeSessionRow[]>;
   page?(

@@ -46,11 +46,11 @@ export function createClaudeStream() {
   };
   return {
     prompt,
-    send(text: string) {
+    send(content: SDKUserMessage['message']['content']) {
       if (closed) throw new Error('Claude 输入流已关闭');
       queue.push({
         type: 'user',
-        message: { role: 'user', content: text },
+        message: { role: 'user', content },
         session_id: '',
         parent_tool_use_id: null,
         uuid: randomUUID(),

@@ -8,6 +8,8 @@ import type {
   PermissionSelection,
   ServerMessage,
   SessionRef,
+  NativeInteractionFeatures,
+  ChatAttachment,
 } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import type {
@@ -18,6 +20,7 @@ import type {
   NativeInteractionRequest,
 } from '../agents/contracts';
 import { InteractionHub } from './interactions';
+import type { AttachmentStore, AttachmentLease } from './attachments';
 import { SessionError } from '../agents/errors';
 import type { CapabilitiesService } from './capabilities';
 
@@ -33,6 +36,8 @@ export type TurnManagerDeps = {
   };
   capabilities?: Pick<CapabilitiesService, 'prepare'>;
   acquireWorkspace?: (id: string) => () => void;
+  attachments?: AttachmentStore;
+  inputFeatures?(agent: AgentKind, input: AgentTurnInput, signal: AbortSignal): Promise<NativeInteractionFeatures>;
 };
 type Turn = {
   id: string;
@@ -49,6 +54,10 @@ type Turn = {
   sessionRejected?: boolean;
   finished: boolean;
   releaseWorkspace?: () => void;
+  attachments?: AttachmentLease;
+  attachmentEvents?: Promise<void>;
+  attachmentBindingFailed?: boolean;
+  hasAttachments?: boolean;
   failed?: boolean;
   startedAt: number;
 };
@@ -211,6 +220,37 @@ export class TurnManager {
   }
 
   private event(turn: Turn, event: AgentEvent): void {
+    if (turn.attachmentEvents) {
+      turn.attachmentEvents = turn.attachmentEvents.then(() => this.deliverEvent(turn, event));
+      return;
+    }
+    if (turn.attachments && event.type === 'session') {
+      turn.attachmentEvents = this.bindAttachments(turn, event);
+      return;
+    }
+    this.deliverEvent(turn, event);
+  }
+  private async bindAttachments(turn: Turn, event: Extract<AgentEvent, { type: 'session' }>): Promise<void> {
+    try {
+      if (!NativeSessionIdSchema.safeParse(event.sessionId).success || (event.agent && event.agent !== turn.agent))
+        throw new Error('原生会话身份不正确');
+      // 原生ID已核实后立即占用会话；磁盘绑定期间其他页面也不能启动同一会话。
+      if (!this.bindSession(turn, event.sessionId)) throw new Error('原生会话已被占用');
+      await turn.attachments!.bind(event.sessionId);
+      this.deliverEvent(turn, event);
+    } catch {
+      turn.attachmentBindingFailed = true;
+      turn.failed = true;
+      turn.controller.abort();
+      const message = '附件未能绑定原生会话，本轮已停止；请核对原生历史后恢复文字与附件。';
+      this.send(turn.socket, { type: 'input.rejected', turnId: turn.id, message });
+      this.send(turn.socket, { type: 'error', turnId: turn.id, message });
+      this.send(turn.socket, { type: 'agent.event', turnId: turn.id, event: { type: 'turn_end', isError: true } });
+      void turn.handle?.interrupt().catch(() => undefined);
+    }
+  }
+  private deliverEvent(turn: Turn, event: AgentEvent): void {
+    if (turn.attachmentBindingFailed) return;
     if (turn.finished) return;
     if (event.type === 'session') {
       if (!this.acceptSessionEvent(turn, event)) return;
@@ -255,6 +295,12 @@ export class TurnManager {
   }
 
   private preparationFailed(turn: Turn, error: unknown) {
+    if (turn.hasAttachments && !turn.handle)
+      this.send(turn.socket, {
+        type: 'input.rejected',
+        turnId: turn.id,
+        message: error instanceof SessionError ? error.message : '无法确认附件输入能力，请保留附件并稍后重试。',
+      });
     if (!turn.controller.signal.aborted)
       this.send(turn.socket, {
         type: 'error',
@@ -290,6 +336,7 @@ export class TurnManager {
       finished: false,
       startedAt: Date.now(),
       releaseWorkspace: lease.release,
+      hasAttachments: hasAttachments(msg),
     };
     this.turns.set(turn.id, turn);
     if (key) this.sessions.set(key, turn.id);
@@ -327,7 +374,7 @@ export class TurnManager {
     signal.throwIfAborted();
     const runner = this.runners[turn.agent];
     if (!runner) throw new SessionError(503, 'agent_unavailable', '当前 Agent 适配器不可用');
-    turn.handle = runner({
+    const input: AgentTurnInput = {
       workspace: ws,
       sessionId: msg.sessionId,
       model: msg.model,
@@ -339,15 +386,42 @@ export class TurnManager {
       requestPermission: (req) => this.permission(turn, req),
       requestInteraction: (request, options) => this.interaction(turn, request, options),
       completeInteraction: (runtimeId, id) => this.interactions.complete(turn.socket, runtimeId, id),
-    });
+    };
+    if (hasAttachments(msg)) await this.prepareAttachments(turn, msg, input);
+    signal.throwIfAborted();
+    turn.handle = runner(input);
     if (signal.aborted) void turn.handle.interrupt();
     turn.completion = turn.handle.done
       .catch(() => {
         turn.failed = true;
         this.send(turn.socket, { type: 'error', turnId: turn.id, message: 'Agent 运行失败，请检查本机运行时和配置' });
       })
+      .then(() => turn.attachmentEvents)
       .then(() => this.rememberPermission(turn))
       .then(() => this.finish(turn));
+  }
+  private async prepareAttachments(turn: Turn, msg: Send, input: AgentTurnInput): Promise<void> {
+    if (!this.deps.attachments || !this.deps.inputFeatures || !msg.conversationId)
+      throw new SessionError(400, 'attachment_unavailable', '当前附件输入不可用，请重新连接。');
+    if (input.invocation?.kind === 'command')
+      throw new SessionError(400, 'attachment_unavailable', '原生命令不能附带文件，请先移除附件。');
+    const scope = {
+      workspaceId: msg.workspaceId,
+      agent: msg.agent,
+      conversationId: msg.conversationId,
+      sessionId: msg.sessionId,
+    };
+    const assets = await this.deps.attachments.inspect(turn.socket, scope, msg.attachments!);
+    const features = await preparing(
+      this.deps.inputFeatures(turn.agent, input, turn.controller.signal),
+      turn.controller.signal,
+    );
+    validateInputFeatures(assets, features);
+    const lease = await this.deps.attachments.acquire(turn.socket, scope, msg.attachments!);
+    turn.attachments = lease;
+    input.attachments = lease.files;
+    input.attachmentsStored = (ids) => lease.stored(ids);
+    this.event(turn, { type: 'input_attachments', attachments: assets });
   }
 
   private interaction(turn: Turn, request: NativeInteractionRequest, options?: { signal?: AbortSignal }) {
@@ -398,6 +472,7 @@ export class TurnManager {
   }
 
   private async rememberPermission(turn: Turn): Promise<void> {
+    if (turn.attachmentBindingFailed) return;
     if (turn.sessionRejected || !turn.explicitPermission || !turn.sessionId || !this.deps.sessions.rememberPermission)
       return;
     try {
@@ -432,6 +507,7 @@ export class TurnManager {
     const key = turn.sessionId && sessionKey(turn.agent, turn.sessionId);
     if (key && this.sessions.get(key) === turn.id) this.sessions.delete(key);
     turn.releaseWorkspace?.();
+    turn.attachments?.release();
     this.send(turn.socket, {
       type: 'turn.finished',
       turnId: turn.id,
@@ -448,4 +524,18 @@ function contextualInteraction(spec: NativeInteractionRequest['spec'], turn: Tur
 function interactionSignal(kind: string, turn: AbortSignal, signal?: AbortSignal): AbortSignal | undefined {
   if (kind !== 'turn') return signal;
   return signal ? AbortSignal.any([turn, signal]) : turn;
+}
+
+function hasAttachments(message: Send): boolean {
+  return !!message.attachments?.length;
+}
+function validateInputFeatures(assets: ChatAttachment[], features: NativeInteractionFeatures): void {
+  if (assets.some((file) => file.kind === 'image') && !features.images.available)
+    throw new SessionError(400, 'attachment_unavailable', features.images.reason ?? '当前模型或运行通道不支持图片。');
+  if (assets.some((file) => file.kind !== 'image') && !features.documents.available)
+    throw new SessionError(
+      400,
+      'attachment_unavailable',
+      features.documents.reason ?? '当前运行通道不支持文件上下文。',
+    );
 }

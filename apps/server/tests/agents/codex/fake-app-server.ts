@@ -60,6 +60,7 @@ const historyToolItems =
       ]
     : [];
 const readThread = (message: Message) => {
+  if (largeHistory(message)) return;
   const id = String(message.params?.threadId);
   const result = thread(
     mode === 'wrong-session-id' ? 'another-thread' : id,
@@ -68,7 +69,7 @@ const readThread = (message: Message) => {
   const turns = [
     {
       id: 'old-turn',
-      status: mode === 'fork-in-progress' ? 'inProgress' : mode === 'fork-unknown-status' ? 'unknown' : 'completed',
+      status: historyStatus(),
       itemsView: mode === 'partial-history' ? 'summary' : 'full',
       items: [
         { id: 'user', type: 'userMessage', content: [{ type: 'text', text: '历史问题' }] },
@@ -89,6 +90,21 @@ const readThread = (message: Message) => {
     });
   reply(message, { thread: { ...result, turns: message.params?.includeTurns ? turns : [] } });
 };
+function historyStatus(): string {
+  return mode === 'fork-in-progress' ? 'inProgress' : mode === 'fork-unknown-status' ? 'unknown' : 'completed';
+}
+function largeHistory(message: Message): boolean {
+  if (mode !== 'large-text-history' && mode !== 'large-image-history') return false;
+  const item =
+    mode === 'large-image-history'
+      ? {
+          type: 'userMessage',
+          content: [{ type: 'image', url: 'data:image/png;base64,' + 'a'.repeat(9 * 1024 * 1024) }],
+        }
+      : { type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) };
+  reply(message, { thread: { ...thread(), turns: [{ items: [item] }] } });
+  return true;
+}
 function listThreads(message: Message): void {
   const cursor = message.params?.cursor;
   const first = [
@@ -281,6 +297,13 @@ const handlers: Record<string, (message: Message) => void> = {
     }
   },
   echo,
+  'fixture/media-notification': (message) => {
+    const item = message.params?.invalid
+      ? { type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) }
+      : { type: 'mcpToolCall', result: { content: [{ type: 'image', data: 'a'.repeat(9 * 1024 * 1024) }] } };
+    notify('item/completed', { item });
+    reply(message, {});
+  },
   hang: () => {},
   oversize: () => {
     process.stdout.write('x'.repeat(8 * 1024 * 1024 + 1));

@@ -14,7 +14,8 @@ import { type SessionProvider } from '../contracts';
 import { ClaudeEventMapper, claudeHistoryForkPoint } from './mapper';
 import { sameSessionDirectory, sessionDirectoryWithin } from '../common/session-scope';
 import { claudeSessionActivity } from './session-activity';
-import { createClaudeSubagents, type ClaudeSubagentApi } from './subagents';
+import { createClaudeSubagents, createClaudeSubagentMedia, type ClaudeSubagentApi } from './subagents';
+import { claudeMediaBlock, imageSource } from '../common/native-media';
 
 export type ClaudeSessionsApi = {
   list(dir: string, page?: NativeSessionPageInput): Promise<SDKSessionInfo[]>;
@@ -34,6 +35,12 @@ const nativeApi: ClaudeSessionsApi = {
   delete: (id, dir) => deleteSession(id, { dir }),
   fork: (id, dir, input) => forkSession(id, { dir, ...(input.pointId ? { upToMessageId: input.pointId } : {}) }),
 };
+
+async function checkedInfo(record: SDKSessionInfo | undefined, id: string, dir: string): Promise<SDKSessionInfo> {
+  if (!record || record.sessionId !== id || (record.cwd && !(await sameSessionDirectory(record.cwd, dir))))
+    throw new SessionError(404, 'session_missing', 'Claude Code 在当前工作区中没有此会话');
+  return record;
+}
 
 function modelValue(message: object): string | undefined {
   const model = 'model' in message && typeof message.model === 'string' ? message.model.trim() : '';
@@ -84,12 +91,20 @@ export function createClaudeSessions(
   options: { preserveToolContent?: boolean } = {},
 ): SessionProvider {
   const readSubagents = createClaudeSubagents(subagentApi);
+  const readSubagentMedia = createClaudeSubagentMedia(subagentApi);
   async function info(id: string, dir: string): Promise<SDKSessionInfo> {
-    const record = await api.info(id, dir);
     // 老会话可能没有 cwd；SDK 带 dir 的读取仍限定原生项目存储位置。
-    if (!record || record.sessionId !== id || (record.cwd && !(await sameSessionDirectory(record.cwd, dir))))
-      throw new SessionError(404, 'session_missing', 'Claude Code 在当前工作区中没有此会话');
-    return record;
+    return checkedInfo(await api.info(id, dir), id, dir);
+  }
+  async function readSource(id: string, dir: string) {
+    const scoped = await api.info(id, dir);
+    // 只读补救Windows短路径存储键；写入/分叉仍须SDK按目录找到原生记录。
+    const global = !scoped && api === nativeApi ? await getSessionInfo(id) : undefined;
+    const record = await checkedInfo(scoped ?? (global?.cwd ? global : undefined), id, dir);
+    return {
+      record,
+      messages: () => (global ? getSessionMessages(id, { includeSystemMessages: true }) : api.messages(id, dir)),
+    };
   }
   async function mutableInfo(id: string, dir: string): Promise<void> {
     const record = await info(id, dir);
@@ -108,6 +123,14 @@ export function createClaudeSessions(
     };
   }
   return {
+    async media(id, dir, locator, signal) {
+      signal?.throwIfAborted();
+      const source = await readSource(id, dir);
+      if (locator.subagentId) return readSubagentMedia(id, dir, locator, signal);
+      const messages = await source.messages();
+      signal?.throwIfAborted();
+      return imageSource(claudeMediaBlock(messages, locator));
+    },
     async subagents(id, dir, query, signal) {
       signal?.throwIfAborted();
       await info(id, dir);
@@ -131,8 +154,9 @@ export function createClaudeSessions(
     },
     async read(id, dir, signal) {
       signal?.throwIfAborted();
-      const record = await info(id, dir);
-      const messages = await api.messages(id, dir);
+      const source = await readSource(id, dir);
+      const record = source.record;
+      const messages = await source.messages();
       const mapper = new ClaudeEventMapper(id, options);
       return {
         session: await summary(record, signal),

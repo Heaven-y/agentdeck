@@ -7,6 +7,7 @@ export * from './subagents';
 export * from './capabilities';
 export * from './native-features';
 export * from './interaction';
+export * from './attachments';
 export * from './legacy-session-capabilities';
 export * from './protocol-version';
 export * from './permissions';

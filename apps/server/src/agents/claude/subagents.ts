@@ -7,6 +7,8 @@ import {
 } from '@agentdeck/shared/conversation';
 import { SessionError } from '../errors';
 import { ClaudeEventMapper } from './mapper';
+import { claudeMediaBlock, imageSource, mediaMissing } from '../common/native-media';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
 
 export type ClaudeSubagentApi = {
   list(id: string, dir: string): Promise<string[]>;
@@ -56,16 +58,26 @@ async function completePage(api: ClaudeSubagentApi, input: PageInput) {
   };
 }
 
-function childEvents(messages: unknown[]): AgentEvent[] {
+function childEvents(messages: unknown[], id: string, agentId: string): AgentEvent[] {
   // SDK 已按子代理文件读取；解除父引用过滤只限此独立视图，不能改变主会话映射。
   const normalized = messages.map((message) => ({
     ...record(message),
     parent_tool_use_id: null,
     parent_agent_id: null,
   }));
-  return new ClaudeEventMapper()
-    .mapHistoryBatch(normalized)
-    .map((event) => (event.type === 'turn_end' ? { type: 'turn_end', isError: event.isError } : event));
+  return new ClaudeEventMapper(id).mapHistoryBatch(normalized).map((event) => {
+    if (event.type === 'turn_end') return { type: 'turn_end', isError: event.isError };
+    if ((event.type === 'user_message' || event.type === 'tool_result') && event.attachments)
+      return {
+        ...event,
+        attachments: event.attachments.map((media) =>
+          media.kind === 'native-image'
+            ? { ...media, locator: { ...media.locator, sessionId: id, subagentId: agentId } }
+            : media,
+        ),
+      };
+    return event;
+  });
 }
 
 export function createClaudeSubagents(api: ClaudeSubagentApi = nativeApi) {
@@ -82,9 +94,26 @@ export function createClaudeSubagents(api: ClaudeSubagentApi = nativeApi) {
       .find((value) => SubagentIdSchema.safeParse(value).success);
     return {
       agentId: query.agentId,
-      events: childEvents(page),
+      events: childEvents(page, id, query.agentId),
       ...(typeof parent === 'string' ? { parentAgentId: parent } : {}),
       ...(nextCursor ? { nextCursor } : {}),
     };
+  };
+}
+export function createClaudeSubagentMedia(api: ClaudeSubagentApi = nativeApi) {
+  return async (id: string, dir: string, locator: NativeMediaLocator, signal?: AbortSignal) => {
+    const child = locator.subagentId;
+    if (!child || !(await api.list(id, dir)).includes(child)) throw mediaMissing();
+    for (let offset = 0; offset < 10_000; offset += PAGE_SIZE) {
+      signal?.throwIfAborted();
+      const messages = await api.messages(id, child, dir, { offset, limit: PAGE_SIZE });
+      try {
+        return await imageSource(claudeMediaBlock(messages, locator));
+      } catch (error) {
+        if (!(error instanceof SessionError) || error.code !== 'media_missing') throw error;
+      }
+      if (messages.length < PAGE_SIZE) break;
+    }
+    throw mediaMissing();
   };
 }

@@ -9,6 +9,9 @@ import type {
   NativeSessionPage,
 } from '../contracts';
 import { SessionError } from '../errors';
+import { imageSource, mediaMissing } from '../common/native-media';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
+import { codexToolImage } from './media';
 import { CodexClient } from './client';
 import { CodexEventMapper, codexForkPoint } from './mapper';
 import { cancelled, CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from './types';
@@ -88,12 +91,31 @@ export async function readCodexSession(
   return withClient(dir, options, async (client) => {
     await checkedThread(client, id, dir);
     const thread = await checkedThread(client, id, dir, true);
-    const mapper = new CodexEventMapper({ preserveToolContent: options.preserveToolContent });
+    const mapper = new CodexEventMapper({ preserveToolContent: options.preserveToolContent, sessionId: id });
     return {
       session: summary(thread),
       cwd: text(thread.cwd),
       events: completeTurns(thread).flatMap((turn) => mapper.history(turn)),
     };
+  });
+}
+export async function readCodexMedia(
+  id: string,
+  dir: string,
+  locator: NativeMediaLocator,
+  options: CodexRuntimeOptions = {},
+) {
+  if (locator.subagentId) throw mediaMissing();
+  return withClient(dir, options, async (client) => {
+    const thread = await checkedThread(client, id, dir, true);
+    const item = completeTurns(thread)
+      .flatMap((turn) => (Array.isArray(turn.items) ? turn.items.map(record) : []))
+      .find((item) => item.id === locator.messageId);
+    if (!item) throw mediaMissing();
+    if (locator.kind === 'user' && item.type === 'userMessage')
+      return imageSource(Array.isArray(item.content) ? item.content[locator.index] : undefined);
+    if (locator.kind === 'tool') return codexToolImage(item, locator.index);
+    throw mediaMissing();
   });
 }
 

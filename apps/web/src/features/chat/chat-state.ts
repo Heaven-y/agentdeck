@@ -11,6 +11,8 @@ import type {
 import type { ProductSettings } from '@agentdeck/shared/settings';
 import type { ConnectionStatus } from '../../lib/ws';
 import type { ChatItem } from './chat-reducer';
+import type { DraftAttachment } from './attachment-actions';
+import type { ChatIdentity } from '../../lib/ws';
 export type SessionOperation = { action: SessionActionInput['action'] | 'fork'; pending: boolean; error?: string };
 export type ChatState = {
   nativeInteractions: ChatItem[];
@@ -23,6 +25,18 @@ export type ChatState = {
   moveConversationTab(id: string, target: string): void;
   conversationVisible: boolean;
   draft: string;
+  draftAttachments: DraftAttachment[];
+  attachmentsBusy: boolean;
+  pendingAttachmentInput?: { text: string; attachments: DraftAttachment[]; rejected?: boolean; uncertain?: boolean };
+  attachmentIdentity(): ChatIdentity | undefined;
+  invalidateAttachmentIdentity(): void;
+  syncAttachmentIdentity(): void;
+  addAttachments(files: File[]): Promise<void>;
+  retryAttachments(): Promise<void>;
+  removeAttachment(id: string): void;
+  attachmentPreviewFailed(id: string): void;
+  restoreAttachmentInput(): void;
+  discardAttachmentInput(): void;
   unread: boolean;
   view: 'chat' | 'trajectory';
   setDraft(text: string): void;
@@ -121,6 +135,9 @@ export type ConversationView = Pick<
   | 'historyNotice'
   | 'banner'
   | 'draft'
+  | 'draftAttachments'
+  | 'attachmentsBusy'
+  | 'pendingAttachmentInput'
   | 'unread'
   | 'view'
 >;

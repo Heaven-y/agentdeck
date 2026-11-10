@@ -178,7 +178,7 @@ function skillFeedback(skills: PromiseSettledResult<{ entries: Entry[]; warnings
 
 export async function discoverCodexCapabilities(
   dir: string,
-  options: CodexRuntimeOptions = {},
+  options: CodexRuntimeOptions & { cliVersion?: string } = {},
 ): Promise<NativeCapabilityCatalog> {
   const client = await CodexClient.start({ ...options, cwd: dir });
   try {
@@ -193,7 +193,12 @@ export async function discoverCodexCapabilities(
       entries: commands(),
       models: [],
       warnings: [],
-      features: nativeFeaturesFor('codex', { runtime: 'codex-app-server', handshake: 'confirmed' }),
+      features: nativeFeaturesFor('codex', {
+        runtime: 'codex-app-server',
+        handshake: 'confirmed',
+        cliVersion: options.cliVersion,
+        implemented: ['images', 'documents', 'questions', 'forms'],
+      }),
     };
     if (skills.status === 'fulfilled') {
       catalog.entries.push(...skills.value.entries);

@@ -8,7 +8,13 @@ import type {
   RecoveryServerMessage,
 } from '@agentdeck/shared/conversation';
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
-export type ChatSocket = { send(msg: ClientMessage): boolean; reconnect(): void; close(): void };
+export type ChatIdentity = { token: string; instanceId: string };
+export type ChatSocket = {
+  send(msg: ClientMessage): boolean;
+  reconnect(): void;
+  close(): void;
+  identity?(): ChatIdentity | undefined;
+};
 type Handlers = {
   onMessage(msg: ServerMessage): void;
   onStatus(status: ConnectionStatus): void;
@@ -143,6 +149,7 @@ export function connectChat(handlers: Handlers): ChatSocket {
     }
   });
   return {
+    identity: () => (ready ? { token: identity.token, instanceId } : undefined),
     send(message) {
       if (!ready || ws.readyState !== ws.OPEN) return false;
       ws.send(JSON.stringify(message));

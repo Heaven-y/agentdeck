@@ -6,6 +6,8 @@ import { sameSessionDirectory } from '../common/session-scope';
 import type { NativeSessionSummary, SessionProvider, NativeSessionPageInput } from '../contracts';
 import { SessionError } from '../errors';
 import { antigravityHistory } from './history';
+import { imageSource, mediaMissing } from '../common/native-media';
+import { record, list } from '../common/user-interaction-fields';
 import type { AntigravitySessionManagement } from './session-management-types';
 import { readSummaries, type SummaryRow } from './summaries';
 
@@ -75,6 +77,17 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
   }
 
   return {
+    async media(id, dir, locator, signal) {
+      const found = belongs(id, dir);
+      if (locator.subagentId || locator.kind !== 'user' || !api.management?.readTrajectory) throw mediaMissing();
+      const cwd = nativeSessionDirectory({ workspaceUris: found.workspaceUris });
+      if (!cwd || !(await sameSessionDirectory(cwd, dir))) throw mediaMissing();
+      const { trajectory } = await api.management.readTrajectory(id, cwd, signal);
+      if (trajectory.cascadeId !== id) throw mediaMissing();
+      const step = record(list(trajectory.steps)[Number(locator.messageId)]);
+      if (step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') throw mediaMissing();
+      return imageSource(list(record(step.userInput).media)[locator.index]);
+    },
     capabilities: {
       rename: !!api.management?.rename,
       fork: api.management ? 'native' : null,

@@ -9,6 +9,7 @@ import { nativePermissionRestore } from './permission-mode';
 import { CodexEventMapper, turnEnd } from './mapper';
 import { CodexPermissions } from './permissions';
 import { CodexInteractions } from './interactions';
+import { codexAttachments, markEmbedded } from '../common/attachment-input';
 import { codexMcpControl } from './mcp-control';
 import { randomUUID } from 'node:crypto';
 import { checkedThread } from './sessions';
@@ -239,6 +240,7 @@ export class CodexTurn {
       const { client, threadId } = await this.runtime.ensure(this.input, this.preparation.signal);
       this.client = client;
       this.mapper.setModel(this.runtime.sessionModel ?? '');
+      this.mapper.setSessionId(threadId);
       this.permissions = new CodexPermissions(client, this.input, this.mapper);
       this.input.emit({
         type: 'session',
@@ -363,6 +365,7 @@ export class CodexTurn {
       throw new CodexError('Codex 未确认本次压缩完成，请重新读取会话状态。');
     if (turn.status === 'failed')
       this.input.emit({ type: 'error', message: 'Codex 本轮执行失败，请检查本机模型与工具配置。' });
+    if (turn.status === 'completed') await markEmbedded(this.input, ['image']);
     return turnEnd(turn, this.mapper.turnUsage());
   }
 
@@ -395,6 +398,7 @@ export class CodexTurn {
     if (this.input.text.trim()) items.push({ type: 'text', text: this.input.text, text_elements: [] });
     const invocation = this.input.invocation;
     if (invocation?.kind === 'skill') items.push({ type: 'skill', name: invocation.name, path: invocation.path });
+    items.push(...codexAttachments(this.input.attachments));
     if (!items.length) throw new CodexError('请输入消息或选择技能。');
     return items;
   }

@@ -142,6 +142,11 @@ export class ResumeHub {
     owner.peer = undefined;
     owner.offlineAt = Date.now();
   }
+  /** HTTP附件请求必须来自仍拥有此恢复连接的页面，不以客户端会话ID授权。 */
+  identity(token: string, instanceId: string): Socket | undefined {
+    const owner = this.owners.get(token);
+    return owner?.instanceId === instanceId && owner.peer?.isOpen() ? owner.socket : undefined;
+  }
 
   dispose(): void {
     this.closed = true;

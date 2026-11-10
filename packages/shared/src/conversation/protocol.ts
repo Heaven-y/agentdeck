@@ -4,6 +4,7 @@ import { CapabilitySelectionSchema } from './capabilities';
 import type { AgentEvent } from './events';
 import { PermissionSelectionSchema } from './permissions';
 import { InteractionAnswerSchema, type InteractionEvent } from './interaction';
+import { AttachmentRefSchema } from './attachments';
 
 const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
@@ -18,6 +19,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       /** 继续已有会话时传入 */
       sessionId: NativeSessionIdSchema.optional(),
       text: z.string(),
+      attachments: z.array(AttachmentRefSchema).max(8).optional(),
       selection: CapabilitySelectionSchema.optional(),
       /** 不传表示跟随本地配置 */
       model: z.string().min(1).optional(),
@@ -29,7 +31,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       /** 仅用于刷新后重建本网页的会话分组，后端不据此授权操作。 */
       conversationId: z.string().min(1).max(200).optional(),
     })
-    .refine((message) => message.text.trim().length > 0 || !!message.selection, {
+    .refine((message) => message.text.trim().length > 0 || !!message.selection || !!message.attachments?.length, {
       message: '请输入消息或选择技能与命令',
     })
     .refine((message) => !message.permission || message.permission.agent === message.agent, {
@@ -63,6 +65,7 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // 后端 → 前端的 WebSocket 消息
 export type ServerMessage =
+  | { type: 'input.rejected'; turnId: string; message: string }
   | {
       type: 'interaction.event';
       workspaceId: string;

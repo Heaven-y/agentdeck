@@ -52,6 +52,7 @@ export function createChatHistory(get: () => ChatState, set: SetState) {
       ...historyParameters(current, session),
       items: historyRetryItems(current, session, options),
       draft: same ? current.draft : '',
+      ...attachmentDraft(current, same),
       view: same ? current.view : 'chat',
       lastSentAt: same ? current.lastSentAt : undefined,
       selectedCapability: same ? current.selectedCapability : undefined,
@@ -109,4 +110,14 @@ export function createChatHistory(get: () => ChatState, set: SetState) {
     }
   }
   return { changeSelection, read };
+}
+
+function attachmentDraft(current: ChatState, same: boolean) {
+  return same
+    ? {
+        draftAttachments: current.draftAttachments,
+        attachmentsBusy: current.attachmentsBusy,
+        pendingAttachmentInput: current.pendingAttachmentInput,
+      }
+    : { draftAttachments: [], attachmentsBusy: false, pendingAttachmentInput: undefined };
 }
