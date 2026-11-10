@@ -11,6 +11,7 @@ import { antigravityDiagnostic } from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
 import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
+import { createAntigravityAcpRunner } from './acp/runtime';
 
 export type AntigravityProcess = Pick<
   ChildProcessWithoutNullStreams,
@@ -251,7 +252,7 @@ class AntigravityTurn {
   }
 }
 
-export function createAntigravityRunner(options: Options = {}): TurnRunner {
+export function createAntigravityHeadlessRunner(options: Options = {}): TurnRunner {
   const active = new Set<AntigravityTurn>();
   const runner: TurnRunner = (input): TurnHandle => {
     const turn = new AntigravityTurn(
@@ -282,4 +283,11 @@ export function createAntigravityRunner(options: Options = {}): TurnRunner {
     }
   };
   return runner;
+}
+
+/** 注入旧流进程的受控调用仍走headless；正式运行按原生模型与协议选择接入。 */
+export function createAntigravityRunner(options: Options = {}): TurnRunner {
+  const headless = createAntigravityHeadlessRunner(options);
+  if (options.launch) return headless;
+  return createAntigravityAcpRunner({ env: options.env, headless, invocationText: options.invocationText });
 }

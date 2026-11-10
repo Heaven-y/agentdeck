@@ -93,7 +93,7 @@ Claude SDK 的 lastModified 为文件 mtime，工作台对当前页读取 JSONL 
 |---|---|---|
 | Claude | SDK 会话列表、历史、改名/删除/分叉 | 探测与回合共同定位本机程序；SDK 仅作为协议客户端，界面承接原生审批 |
 | Codex | app-server 原生会话、工具与审批 | 省略未选择的参数，按需加载能力，回合和管理均绑定原生身份 |
-| Antigravity | SQLite 摘要、时间和 `workspace_uris`；原生服务读取历史步骤 | 新建、续接、流式、中断；后台会话服务提供历史、改名/分支/删除 |
+| Antigravity | SQLite 摘要、时间和 `workspace_uris`；原生服务读取历史步骤 | 支持的Gemini会话使用ACP；自定义模型等选择保留headless，发送前选定路径；原生服务提供历史和管理 |
 
 探测运行本地版本/帮助命令，Codex 另检查生成的协议 schema；每个 CLI 单次探测超时为 5 秒，输出有独立上限。stdout 与 stderr 一起核对，四态结果不意味着登录成功或真实模型请求已通过。
 

@@ -61,6 +61,8 @@ Turn 提供 durationMs 和起止时间；ThreadItem 有可选 startedAtMs/comple
 
 ## Antigravity 的接入点与限制
 
+ACP 与下述 headless 为不同运行路径。ACP prompt 响应在本机1.5.3隔离验证中提供该请求的 usage，普通单次prompt可标为本轮；存在引导时旧请求会提前结束，计数须由引导归属逻辑另行核对，不能套用普通回合规则。ACP公开通知用于文本、工具与计划；原始stderr不进入诊断内容。新接入状态见实施计划，不能用协议握手推定所有统计接口已可用。
+
 Antigravity 接入证据基线为 CLI 1.5.1。公开 headless result.usage 有 input_tokens、output_tokens、thinking_tokens、cache_read_tokens、total_tokens，另有 duration_seconds。step_update 在已知时可带 usage 和 duration_seconds，step_index 和状态可用于步骤归属。
 
 官方定义的 result 是累计口径；工作台每轮新进程续接时也不把其用量和耗时推定为本轮。现仅采用范围明确的步骤报告，避免将旧会话计数计入新回复。
