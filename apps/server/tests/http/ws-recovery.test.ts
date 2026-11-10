@@ -147,3 +147,53 @@ it('刷新从后端重建全部保留回合，另一页签不能并发接管，�
     await f.close();
   }
 });
+
+it('刷新后问题仍可答，其他连接不能提交且秘密值不随恢复事件回放', async () => {
+  const f = await setup();
+  try {
+    const token = randomUUID();
+    const a = await f.connect();
+    a.send({ type: 'connection.resume', token, create: true, rebuild: true, afterSequence: 0 });
+    await vi.waitFor(() => expect(a.received.at(-1)?.type).toBe('connection.ready'));
+    a.send(send('question'));
+    await vi.waitFor(() => expect(f.runs).toHaveLength(1));
+    const pending = f.runs[0]!.input.requestInteraction!({
+      runtimeId: 'fixture',
+      spec: {
+        kind: 'form',
+        title: '资料',
+        blocking: true,
+        fields: [{ id: 'key', type: 'text', label: '令牌', secret: true, required: true }],
+      },
+    });
+    await vi.waitFor(() =>
+      expect(a.received.some((m) => JSON.stringify(m).includes('interaction_request'))).toBe(true),
+    );
+    const envelope = a.received.find((m) => JSON.stringify(m).includes('interaction_request')) as unknown as {
+      message: { event: { interaction: { id: string } } };
+    };
+    const id = envelope.message.event.interaction.id;
+    const other = await f.connect();
+    other.send({ type: 'connection.resume', token: randomUUID(), create: true, rebuild: true, afterSequence: 0 });
+    await vi.waitFor(() => expect(other.received.at(-1)?.type).toBe('connection.ready'));
+    other.send({ type: 'interaction.respond', id, answer: { action: 'cancel' } });
+    a.ws.close();
+    await once(a.ws, 'close');
+    const b = await f.connect();
+    b.send({ type: 'connection.resume', token, create: false, rebuild: true, afterSequence: 0 });
+    await vi.waitFor(() => expect(b.received.at(-1)?.type).toBe('connection.ready'));
+    expect(b.received.some((m) => JSON.stringify(m).includes('interaction_request'))).toBe(true);
+    b.send({
+      type: 'interaction.respond',
+      id,
+      answer: { action: 'submit', values: { key: 'synthetic-private-answer' } },
+    });
+    expect(await pending).toEqual({ action: 'submit', values: { key: 'synthetic-private-answer' } });
+    await vi.waitFor(() =>
+      expect(b.received.some((m) => JSON.stringify(m).includes('interaction_resolved'))).toBe(true),
+    );
+    expect(JSON.stringify(b.received)).not.toContain('synthetic-private-answer');
+  } finally {
+    await f.close();
+  }
+});

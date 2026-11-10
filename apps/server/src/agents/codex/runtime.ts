@@ -8,6 +8,7 @@ import { threadParams } from './config';
 import { nativePermissionRestore } from './permission-mode';
 import { CodexEventMapper, turnEnd } from './mapper';
 import { CodexPermissions } from './permissions';
+import { CodexInteractions } from './interactions';
 import { checkedThread } from './sessions';
 import { emptyCodexUsage, updateCodexUsageBaseline, type CodexUsageBreakdown } from './observability';
 import {
@@ -36,6 +37,8 @@ export class CodexRuntime {
   /** 仅由完整轮次边界推进；恢复历史时不假定累计用量从零开始。 */
   usageBaseline?: CodexUsageBreakdown;
   current?: CodexTurn;
+  interactions?: CodexInteractions;
+  private interactionInput?: AgentTurnInput;
 
   constructor(private readonly options: CodexRuntimeOptions = {}) {}
 
@@ -57,6 +60,7 @@ export class CodexRuntime {
   }
 
   private notification(method: string, params: RecordValue): void {
+    if (method === 'serverRequest/resolved') this.resolveRequest(params);
     const lateUsage =
       method === 'thread/tokenUsage/updated' &&
       params.threadId === this.thread &&
@@ -71,9 +75,13 @@ export class CodexRuntime {
     this.usageBaseline = updateCodexUsageBaseline(this.usageBaseline, record(params.tokenUsage).total);
     this.current?.invalidateRunningUsage();
   }
+  private resolveRequest(params: RecordValue): void {
+    if (params.threadId === this.thread) this.interactions?.resolved(params.requestId);
+  }
 
   /** 首次使用时启动进程并读取原生配置；后续轮次直接复用。 */
   async ensure(input: AgentTurnInput, signal: AbortSignal): Promise<{ client: CodexClient; threadId: string }> {
+    this.interactionInput = input;
     const client = await this.connect(input, signal);
     if (!this.thread) await this.openThread(client, input, signal);
     return { client, threadId: this.thread! };
@@ -101,6 +109,11 @@ export class CodexRuntime {
       signal,
     });
     this.client = client;
+    this.interactions = new CodexInteractions(client, () => ({
+      input: this.interactionInput ?? input,
+      sessionId: this.sessionId ?? '',
+      matchesTurn: (id) => !!this.current && !this.current.foreignRequest({ threadId: this.sessionId, turnId: id }),
+    }));
     client.onRequest = (request: ServerRequest) => this.route(client, request);
     client.onNotification = (method: string, params: RecordValue) => this.notification(method, params);
     try {
@@ -115,6 +128,7 @@ export class CodexRuntime {
       throw error;
     }
     void client.closed.then(() => {
+      this.interactions?.close();
       this.broken = true;
       this.current?.fail('Codex 进程已退出，请重新发送');
     });
@@ -148,6 +162,7 @@ export class CodexRuntime {
   }
 
   private route(client: CodexClient, request: ServerRequest): void {
+    if (this.interactions?.request(request)) return;
     const turn = this.current;
     if (!turn || turn.foreignRequest(request.params)) client.rejectRequest(request.id);
     else turn.onRequest(request);
@@ -225,15 +240,19 @@ export class CodexTurn {
         this.input.emit({ type: 'error', message: safeError(error) });
       }
     } finally {
-      this.finishUsage();
-      this.phase = 'done';
-      clearTimeout(this.interruptTimer);
-      this.permissions?.cancel();
-      for (const event of this.mapper.finishCompaction(this.stopped ? 'interrupted' : 'failed')) this.input.emit(event);
-      this.input.emit({ ...end, isError: end.isError || this.stopped });
-      if (this.runtime.current === this) this.runtime.current = undefined;
-      this.complete();
+      this.finish(end);
     }
+  }
+  private finish(end: Extract<AgentEvent, { type: 'turn_end' }>): void {
+    this.finishUsage();
+    this.runtime.interactions?.cancelTurn(this.turnId);
+    this.phase = 'done';
+    clearTimeout(this.interruptTimer);
+    this.permissions?.cancel();
+    for (const event of this.mapper.finishCompaction(this.stopped ? 'interrupted' : 'failed')) this.input.emit(event);
+    this.input.emit({ ...end, isError: end.isError || this.stopped });
+    if (this.runtime.current === this) this.runtime.current = undefined;
+    this.complete();
   }
 
   /** 其他线程或轮次的审批请求不属于本会话，直接拒绝。 */

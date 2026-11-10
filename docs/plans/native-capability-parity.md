@@ -47,6 +47,8 @@
 
 AGY ACP 初始握手已经在隔离目录真实验证：`protocolVersion=1`、`loadSession=true`、`image=true`、`embeddedContext=true`，提供 Gemini API key 认证入口。该证据尚不等于 URL＋Key 的模型回合、审批、提问和历史均通过；必须完成 P02 的受控闭环。
 
+AGY ACP 提问已实测使用 `elicitation/create`；Codex 0.166.0 的阻塞 `request_user_input` 仅在计划模式可用，普通模式 `request_user_input_async` 发出 `agentMessage(delivery=async, questions)`，不走待答 RPC。P03 完成阻塞问题与表单；普通模式异步问题卡片和答复投递由 P05 接续消息生命周期，P10 补计划模式入口。三者分别验收，不能用阻塞 RPC 测试代替异步回答。
+
 ### 方案取舍
 
 1. 只补页面和配置编辑：不能承接问题、引导、状态及原生安装流程，不能满足本轮目标。
@@ -77,8 +79,8 @@ AGY ACP 初始握手已经在隔离目录真实验证：`protocolVersion=1`、`l
 |---|---|---|---|---|
 | P00 | 完整能力审计、计划、自审和独立审阅 | 无 | 已完成 | 独立审阅4项重要问题已修订关闭；文档检查通过 |
 | P01 | 原生交互能力契约与可用性 | P00 | 已完成 | 16文件/130项、类型/规范/格式/文档通过，独立审阅通过 |
-| P02 | AGY ACP 对话、续接与兼容路径 | P01 | 已实现并验证 | 正式runner两轮/同ID/原生读回通过；关联162项，新增边界22项；范围覆盖达标；最终独立审阅仍覆盖 |
-| P03 | 三 CLI 提问与 MCP 交互表单 | P01、P02 | 进行中 | — |
+| P02 | AGY ACP 对话、续接与兼容路径 | P01 | 已完成 | 正式runner两轮/同ID/原生读回通过；关联162项与边界22项、范围覆盖达标；独立审阅通过 |
+| P03 | 三 CLI 提问与 MCP 交互表单 | P01、P02 | 已完成 | 关联270项；审阅6项修复后117项、范围覆盖/类型/规范通过；独立复核9项、真实隔离CLI与界面通过 |
 | P04 | 图片、附件与历史展示 | P01、P02 | 待做 | — |
 | P05 | 队列与各 CLI 原生引导 | P03、P04 | 待做 | — |
 | P06 | 子代理历史与运行状态 | P02、P03 | 待做 | — |
@@ -126,16 +128,18 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 接口：`UserInteraction` 区分 `questions`、`form`、`url`；`InteractionAnswer` 区分提交、拒绝、取消。共享交互服务 `requestInteraction(owner, request)` 支持 owner 为 turn、session、nativeOperation，绑定已认证的宿主连接/操作身份及原生运行实例，不能仅依赖客户端传入ID。`AgentTurnInput.requestInteraction` 是回合包装，P02创建会话前的ACP request-scoped表单和P08无活动回合的OAuth使用操作包装。宿主交互ID与原生RPC requestId分开；新增 `interaction.respond` 客户端消息与 request/resolved 事件。题目最多 4 个，每题选项最多 20，表单最多 20 字段，单次答复最多 16 KiB；超限明确结束请求。
 
-- [ ] 核心回归先行：错误所属连接/运行实例/owner/request、重复/迟到答案拒绝；无活动回合的操作表单也能回答；单选、多选、自由输入、必填与秘密字段正确；中断、原生撤销、退出释放等待。
-- [ ] Claude 将 AskUserQuestion 的答案按原生 `answers` 写回；支持已核实的 `onUserDialog`，未知 dialogKind 返回 cancelled；`onElicitation` 仅映射已支持结构。
-- [ ] Codex 接 `item/tool/requestUserInput`，按 question.id 返回 answers；校验 threadId/turnId/itemId；尊重 isBlocking，不凭时间自动选择答案。
-- [ ] AGY ACP 按协商的 elicitation 扩展接入；无扩展时显示原生文字问题，不能伪造成功提交。明确协议来源与降级状态。
-- [ ] MCP 表单支持字符串、布尔、有限数值、单/多选与原生约束；不支持的组合 schema 拒绝。URL 仅允许原生返回的 http/https，用户点击才打开，不读取浏览器凭据。
-- [ ] 各协议单独映射结束：Claude AskUserQuestion提交使用allow＋updatedInput.answers，取消用deny；Claude MCP/ACP elicitation使用accept/decline/cancel；Claude onUserDialog只声明已验证的supportedDialogKinds，未知返回cancelled；Codex requestUserInput只有answers，取消先用隔离实验验证空answers的跳过语义，不支持时明确中断所属回合，不能发送虚构action字段。ACP批准使用用户选择的原生optionId，取消为cancelled outcome；session/cancel同步取消全部待批请求。
-- [ ] URL请求的“已打开/已提交”与“原生授权完成”分开；按原生elicitationId/loginId匹配完成或撤销。回合外请求不随普通turn.finished被删除。
-- [ ] 接入背景会话和断线恢复；秘密答案不进入消息历史、查询缓存或恢复日志；失效卡片保留“已取消/已回答”状态。
-- [ ] 验证 shared、turn manager、recovery、三交互适配、reducer/store 与组件相关测试；深浅主题、键盘及窄屏验证。
-- [ ] 更新需求/界面/原生对话文档；提交 `feat(chat): 承接原生提问与交互表单`。
+- [x] 核心回归先行：错误所属连接/运行实例/owner/request、重复/迟到答案拒绝；无活动回合的操作表单也能回答；单选、多选、自由输入、必填与秘密字段正确；中断、原生撤销、退出释放等待。
+- [x] Claude 将 AskUserQuestion 的答案按原生 `answers` 写回；只声明已核实的 `onUserDialog` 种类，未知 dialogKind 不回答（SDK明确禁止把取消冒充用户关闭）；当前 supportedDialogKinds 为空，refusal_fallback_prompt 核查移交P10；`onElicitation` 仅映射已支持结构。
+- [x] Codex 接 `item/tool/requestUserInput`，按 question.id 返回 answers；校验 threadId/turnId/itemId；尊重 isBlocking，不凭时间自动选择答案。
+- [x] AGY ACP 按协商的 elicitation 扩展接入；无扩展时显示原生文字问题，不能伪造成功提交。明确协议来源与降级状态。
+- [x] MCP 表单支持字符串、布尔、有限数值、单/多选与原生约束；不支持的组合 schema 拒绝。URL 仅允许原生返回的 http/https，用户点击才打开，不读取浏览器凭据。
+- [x] 各协议单独映射结束：Claude AskUserQuestion提交使用allow＋updatedInput.answers，取消用deny；Claude MCP/ACP elicitation使用accept/decline/cancel；Claude onUserDialog只声明已验证的supportedDialogKinds，未知不回答并由原生按期限处理；Codex requestUserInput只有answers，取消先用隔离实验验证空answers的跳过语义，不支持时明确中断所属回合，不能发送虚构action字段。ACP批准使用用户选择的原生optionId，取消为cancelled outcome；session/cancel同步取消全部待批请求。
+- [x] URL请求的“已打开/已提交”与“原生授权完成”分开；按原生elicitationId/loginId匹配完成或撤销。回合外请求不随普通turn.finished被删除。
+- [x] 接入背景会话和断线恢复；秘密答案不进入消息历史、查询缓存或恢复日志；失效卡片保留“已取消/已回答”状态。
+- [x] 验证 shared、turn manager、recovery、三交互适配、reducer/store 与组件相关测试；深浅主题、键盘及窄屏验证。
+- [x] 更新需求/界面/原生对话文档；独立审阅通过，阶段提交 `feat(chat): 承接原生提问与交互表单`。
+
+阶段边界：阻塞问题和标准表单已接通，独立审阅通过。Claude 专用拒绝回退对话与 Codex 计划模式入口在 P10；Codex 默认异步问题的结构化卡片/追加答复在 P05；真实 MCP 连接及 OAuth 状态闭环在 P08。CLI 合成模型已验证 Claude/ACP 正式 runner 的提问与取消、Codex 显式 Plan 模式的提交与空 answers 取消；未访问外部账号服务。
 
 ## P04：图片与文件上下文
 
@@ -159,6 +163,7 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 - [ ] 核心回归先行：首次消息尚无 sessionId、后台切换、重连重发去重、回合完成竞争、队列满、取消/失败暂停、修改模式/模型边界。
 - [ ] 实现服务端有界队列和编辑/删除/清空；每会话 10 条、全宿主 100 条。绑定创建会话身份，成功结束顺序推进；失败/停止暂停，完整退出不持久自动重发。
+- [ ] Codex 默认异步问题按 agentMessage delivery=async/questions 显示可回答卡片；以稳定原生消息/问题身份投递答案作为追加输入，重复答复去重、后台归属和结束后续接都验收，不发送不存在的RPC答复。
 - [ ] Codex 原生引导使用当前 threadId 与 expectedTurnId；原生回合已结束时保留输入并提示，没有自动降级排队。
 - [ ] Codex透传稳定clientUserMessageId，但不凭该字段假定原生幂等。队列、去重与暂停记录绑定恢复owner＋会话而非创建它的旧turn；队列非空/投递未决时不随旧turn五分钟记录回收。队列清空且全部确认后保留去重回执30分钟，上限每owner1000条；超限拒绝新追加，不提前删除未决记录。
 - [ ] Claude 使用 SDK 的真实输入机制进行隔离调度实验；只有确认同一回合接收、消息归属与取消语义后启用“引导本轮”，否则提供明确“排队发送”。原生 priority 不得直接解释成确定的立即执行。
@@ -241,6 +246,7 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 接口：已有 `NativeInvocation` 扩展明确的命令变体；每个变体有自己的输入schema、原生方法与完成事件。检查点预览/执行分离，执行只能使用原生返回的可回退位置和本次预览身份。
 
+- [ ] Claude 核查 refusal_fallback_prompt 专用用户对话；只有真实payload与取消证据完整才声明supportedDialogKinds，未知种类不得代答。Codex补原生计划/默认协作模式入口，按实际协商启用所需experimental字段并保留原生设置，不能仅为触发问题自动切换模式。
 - [ ] Claude 核查文件checkpoint/rewind与现有会话分支差别；提供可验证的预览及明确确认后的文件回退，禁止自行git reset或复制恢复未追踪文件。
 - [ ] Codex核查 review/start 与当前本地版本支持的历史回退；不使用已删除的thread/rollback。审查按明确目标执行；会话历史回退与文件撤销分别说明、分别确认。
 - [ ] AGY核查 ACP可用斜杠命令与模式/模型配置，补可验证的原生操作，保留已有技能校验；headless不能执行的界面命令不得转成提示词发送。

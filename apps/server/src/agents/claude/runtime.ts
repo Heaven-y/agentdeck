@@ -2,6 +2,8 @@ import { claudePermissionOptions } from './permissions';
 // 长驻 Claude 运行时：一个原生进程承载同一会话的多轮对话，空闲超时后回收。
 import { randomUUID } from 'node:crypto';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { askClaudeQuestion } from './interactions';
+import { ClaudeElicitationOwner } from './elicitation-owner';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput, TurnHandle } from '../contracts';
 import { claudeInvocationText } from './capabilities';
@@ -117,6 +119,10 @@ class ClaudeTurn {
 }
 
 export class ClaudeRuntime {
+  private readonly instanceId = randomUUID();
+  private readonly lifetime = new AbortController();
+  private interactionInput: AgentTurnInput;
+  private readonly elicitations: ClaudeElicitationOwner;
   private readonly stream = createClaudeStream();
   private readonly mapper = new ClaudeEventMapper();
   private readonly query?: ClaudeQuery;
@@ -128,7 +134,12 @@ export class ClaudeRuntime {
   private launchError?: Error;
   sessionId?: string;
 
-  constructor(private readonly input: ClaudeTurnInput) {
+  constructor(input: ClaudeTurnInput) {
+    this.interactionInput = input;
+    this.elicitations = new ClaudeElicitationOwner(this.instanceId, () => ({
+      input: this.interactionInput,
+      sessionId: this.sessionId,
+    }));
     const { workspace } = input;
     const effort = claudeEffort(input.reasoningEffort);
     const options = {
@@ -139,6 +150,15 @@ export class ClaudeRuntime {
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       canUseTool: (toolName: string, toolInput: Record<string, unknown>, opts: { signal: AbortSignal }) =>
         this.permission(toolName, toolInput, opts),
+      onElicitation: (
+        request: Parameters<NonNullable<Options['onElicitation']>>[0],
+        context: Parameters<NonNullable<Options['onElicitation']>>[1],
+      ) =>
+        this.elicitations.request(request, {
+          requestId: context.requestId,
+          signal: AbortSignal.any([context.signal, this.lifetime.signal]),
+        }),
+      supportedDialogKinds: [],
       includePartialMessages: true,
       ...(input.sessionId ? { resume: input.sessionId } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -163,6 +183,7 @@ export class ClaudeRuntime {
 
   run(input: AgentTurnInput): TurnHandle {
     if (this.current?.active) throw new Error('Claude 运行时正在处理另一轮对话');
+    this.interactionInput = input;
     const turn = new ClaudeTurn(input);
     this.mapper.beginTurn();
     this.current = turn;
@@ -183,6 +204,8 @@ export class ClaudeRuntime {
   }
 
   private async shutdown(): Promise<void> {
+    this.lifetime.abort();
+    this.elicitations.close();
     this.stream.close();
     try {
       this.query?.close();
@@ -208,6 +231,7 @@ export class ClaudeRuntime {
   /** 单条原生消息的分发：轮次结束消息单独收尾，其余按事件映射后投递。 */
   private async dispatch(message: unknown): Promise<void> {
     const turn = this.current;
+    if (this.elicitations.complete(message)) return;
     if (turn?.active && isResult(message)) {
       await this.finishTurn(turn, message);
       return;
@@ -277,6 +301,8 @@ export class ClaudeRuntime {
   ): Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }> {
     const turn = this.current;
     if (!turn?.active) return { behavior: 'deny', message: '本轮已结束' };
+    if (toolName === 'AskUserQuestion')
+      return askClaudeQuestion(turn.input, toolInput, { runtimeId: this.instanceId, signal: opts.signal });
     const requestId = randomUUID();
     turn.input.emit({ type: 'permission_request', requestId, toolName, input: toolInput });
     const answer = await waitAnswer(

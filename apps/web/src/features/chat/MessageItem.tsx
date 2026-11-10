@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { Streamdown } from 'streamdown';
 import type { ChatItem } from './chat-reducer';
 import { PermissionCard } from './PermissionCard';
+import { InteractionCard } from './InteractionCard';
 import { ToolCard } from './ToolCard';
 import { CompactionStatus } from './ContextStatus';
 import type { ExpandedProps } from './timeline-model';
@@ -70,6 +71,8 @@ export const MessageItem = memo(function MessageItem({
       return <ActivityCard item={item} expanded={expanded} onExpandedChange={onExpandedChange} />;
     case 'permission':
       return <PermissionCard item={item} />;
+    case 'interaction':
+      return <InteractionCard item={item} />;
     case 'error':
       return (
         <div

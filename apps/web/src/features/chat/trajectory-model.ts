@@ -45,7 +45,7 @@ export const trajectoryRoles: Record<TrajectoryRole, string> = {
 export function trajectoryRole(item: TrajectoryItem): TrajectoryRole {
   if (item.kind === 'compaction') return 'context';
   if (item.kind === 'user') return 'user';
-  if (item.kind === 'tool' || item.kind === 'permission') return 'tool';
+  if (item.kind === 'tool' || item.kind === 'permission' || item.kind === 'interaction') return 'tool';
   return 'assistant';
 }
 
@@ -126,6 +126,7 @@ export function trajectoryCategory(item: TrajectoryItem): string {
       assistant: '回复',
       reasoning: '思考',
       permission: '审批',
+      interaction: '提问',
       error: '错误',
       compaction: '压缩',
       statistics: '统计',
@@ -146,6 +147,8 @@ export function trajectorySummary(item: TrajectoryItem): string {
       return item.name;
     case 'permission':
       return `${shortToolName(item.toolName)} ${toolPrimaryArgument(item.input) ?? ''}`.trim();
+    case 'interaction':
+      return item.interaction.title;
     case 'error':
       return item.message;
     case 'compaction':
@@ -185,10 +188,7 @@ export function trajectoryStatus(item: TrajectoryItem): { label: string; tone: s
 }
 
 function otherStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
-  if (item.kind === 'permission') {
-    const label = item.resolved ? { allow: '已批准', deny: '已拒绝', cancelled: '已取消' }[item.resolved] : '等待确认';
-    return { label, tone: item.resolved ? 'text-muted-foreground' : 'text-warning' };
-  }
+  if (item.kind === 'interaction' || item.kind === 'permission') return interactionStatus(item);
   if (item.kind === 'assistant' && item.streaming) return { label: '生成中', tone: 'text-muted-foreground' };
   if (item.kind === 'error') return { label: '失败', tone: 'text-destructive-foreground' };
   if (item.kind !== 'compaction') return;
@@ -196,4 +196,18 @@ function otherStatus(item: TrajectoryItem): { label: string; tone: string } | un
     ? '未完成'
     : { running: '进行中', completed: '完成', failed: '失败', cancelled: '中断' }[item.state.status];
   return { label, tone: 'text-muted-foreground' };
+}
+
+function interactionStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
+  if (item.kind === 'interaction')
+    return {
+      label: item.resolved
+        ? { submitted: '已提交', declined: '已拒绝', cancelled: '已取消', completed: '已完成' }[item.resolved]
+        : '等待回答',
+      tone: item.resolved ? 'text-muted-foreground' : 'text-warning',
+    };
+  if (item.kind === 'permission') {
+    const label = item.resolved ? { allow: '已批准', deny: '已拒绝', cancelled: '已取消' }[item.resolved] : '等待确认';
+    return { label, tone: item.resolved ? 'text-muted-foreground' : 'text-warning' };
+  }
 }

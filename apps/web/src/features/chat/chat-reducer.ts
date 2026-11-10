@@ -1,8 +1,21 @@
 // 把 Agent 事件转成界面条目：实时对话和历史记录共用，纯函数，不修改入参
-import { NativeSessionIdSchema, type AgentEvent, type CompactionState } from '@agentdeck/shared/conversation';
+import {
+  NativeSessionIdSchema,
+  type AgentEvent,
+  type CompactionState,
+  type UserInteraction,
+  type InteractionResolution,
+} from '@agentdeck/shared/conversation';
 import { finiteCount, type ChatStatistics } from './chat-metrics';
 
 export type ChatItem =
+  | {
+      kind: 'interaction';
+      id: string;
+      interaction: UserInteraction;
+      resolved?: InteractionResolution;
+      responding?: boolean;
+    }
   | ({ kind: 'statistics'; id: string; nativeId?: string } & ChatStatistics)
   | (Omit<Extract<AgentEvent, { type: 'activity' }>, 'type'> & {
       kind: 'activity';
@@ -177,6 +190,8 @@ function finishItems(items: ChatItem[]): ChatItem[] {
 }
 
 function finishActivity(item: ChatItem): ChatItem {
+  if (item.kind === 'interaction' && !item.resolved && item.interaction.owner.kind === 'turn')
+    return { ...item, resolved: 'cancelled', responding: false };
   return item.kind === 'activity' && item.status === 'running' ? { ...item, incomplete: true } : item;
 }
 
@@ -231,6 +246,14 @@ function updateCompaction(items: ChatItem[], state: CompactionState): ChatItem[]
 
 function reduceLifecycle(items: ChatItem[], e: AgentEvent): ChatItem[] {
   switch (e.type) {
+    case 'interaction_request':
+      return items.some((item) => item.kind === 'interaction' && item.id === e.interaction.id)
+        ? items
+        : [...items, { kind: 'interaction', id: e.interaction.id, interaction: e.interaction }];
+    case 'interaction_resolved':
+      return items.map((item) =>
+        item.kind === 'interaction' && item.id === e.id ? { ...item, resolved: e.resolution, responding: false } : item,
+      );
     case 'permission_request':
       return [
         ...items,

@@ -3,6 +3,7 @@ import { readAntigravityModelSettings, type AntigravityModelSettings } from '../
 import { antigravityInvocationText } from '../commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
+import { AcpInteractions } from './interactions';
 import { AntigravityAcpMapper, acpTurnUsage } from './mapper';
 import { configureSession, needsHeadless } from './selection';
 import { AcpError, cancelled, object, list, protocolFailure, type AcpConnection, type AcpRecord } from './types';
@@ -21,6 +22,7 @@ class AcpTurn {
   private readonly mapper = new AntigravityAcpMapper();
   private client?: AcpConnection;
   private permissions?: AcpPermissions;
+  private interactions?: AcpInteractions;
   private nativeId?: string;
   private sent = false;
   private ended = false;
@@ -41,7 +43,11 @@ class AcpTurn {
       {
         protocolVersion: 1,
         clientInfo: { name: 'agentdeck', title: 'AgentDeck', version: '0.1.1' },
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          ...(this.input.requestInteraction ? { elicitation: { form: {}, url: {} } } : {}),
+        },
       },
       { signal },
     );
@@ -60,6 +66,11 @@ class AcpTurn {
       bypass: this.input.permission?.mode === 'bypass',
     });
     signal.throwIfAborted();
+    this.interactions = new AcpInteractions(this.client, this.input, () => this.nativeId);
+    this.client.onNotification = (method, params) => this.notification(method, params);
+    this.client.onRequest = (request) => {
+      if (!this.interactions?.request(request)) this.client?.reject(request.id);
+    };
     const initialized = await this.initialize(this.client);
     const capabilities = object(initialized.agentCapabilities);
     const resume = object(capabilities.sessionCapabilities).resume !== undefined;
@@ -76,12 +87,18 @@ class AcpTurn {
     const selected = await configureSession(this.client, this.input, { response, settings, signal });
     this.nativeId = selected.id;
     this.permissions = new AcpPermissions(this.client, this.input, selected.id);
-    this.client.onRequest = (request) => this.permissions?.request(request);
+    this.client.onRequest = (request) => {
+      if (!this.interactions?.request(request)) this.permissions?.request(request);
+    };
     this.client.onNotification = (method, params) => this.notification(method, params);
     return selected.model;
   }
 
   private notification(method: string, params: AcpRecord): void {
+    if (method === 'elicitation/complete') {
+      this.interactions?.complete(params);
+      return;
+    }
     if (this.ended || !this.sent || method !== 'session/update') return;
     if (params.sessionId !== this.nativeId) {
       this.failed = protocolFailure();
@@ -113,6 +130,7 @@ class AcpTurn {
       this.input.emit({ type: 'turn_end', isError: true });
     } finally {
       this.ended = true;
+      this.interactions?.close();
       this.permissions?.cancel();
       await this.client?.close();
     }
@@ -181,6 +199,7 @@ class AcpTurn {
   async interrupt(): Promise<void> {
     if (this.ended) return;
     this.controller.abort();
+    this.interactions?.close();
     this.permissions?.cancel();
     if (this.fallback) {
       await this.fallback.interrupt();

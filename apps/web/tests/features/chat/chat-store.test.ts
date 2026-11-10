@@ -93,6 +93,48 @@ beforeEach(() => {
   });
   useChat.getState().selectWorkspace('w1');
 });
+it('已提交URL仍等待原生终态，另一表单到达不能删除它的完成或取消反馈', () => {
+  const interaction = {
+    id: 'auth',
+    owner: { kind: 'session' as const, id: 'session', runtimeId: 'runtime' },
+    kind: 'url' as const,
+    title: '授权',
+    blocking: true,
+    url: 'https://example.test',
+  };
+  const event = (event: Extract<ServerMessage, { type: 'interaction.event' }>['event']) =>
+    emit({ type: 'interaction.event', workspaceId: 'w1', agent: 'claude', event });
+  event({ type: 'interaction_request', interaction });
+  event({ type: 'interaction_resolved', id: 'auth', resolution: 'submitted' });
+  event({ type: 'interaction_request', interaction: { ...interaction, id: 'form', kind: 'form', fields: [] } });
+  expect(useChat.getState().nativeInteractions.map((item) => item.id)).toEqual(['auth', 'form']);
+  event({ type: 'interaction_resolved', id: 'auth', resolution: 'completed' });
+  expect(useChat.getState().nativeInteractions[0]).toMatchObject({ id: 'auth', resolved: 'completed' });
+});
+it('恢复身份失效会关闭回合外卡片，新连接不能继续发送旧操作答案', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  emit({
+    type: 'interaction.event',
+    workspaceId: 'w1',
+    agent: 'claude',
+    event: {
+      type: 'interaction_request',
+      interaction: {
+        id,
+        owner: { kind: 'session', id: 'session', runtimeId: 'runtime' },
+        kind: 'form',
+        title: '表单',
+        blocking: true,
+        fields: [],
+      },
+    },
+  });
+  recovery({ type: 'connection.rejected', code: 'owner_missing', message: '恢复失败' });
+  recovery({ type: 'connection.ready', sequence: 0, acceptedClientTurnIds: [] });
+  expect(useChat.getState().nativeInteractions[0]).toMatchObject({ resolved: 'cancelled', responding: false });
+  expect(useChat.getState().respondInteraction(id, { action: 'submit', values: {} })).toBe(false);
+  expect(sent).toHaveLength(0);
+});
 
 it('具体会话的权限重新读取后恢复，保存期间禁止抢先发送，迟到保存不影响新会话', async () => {
   vi.spyOn(sessionsApi, 'sessionEvents').mockImplementation(async (_workspace, sessionId, agent) => ({

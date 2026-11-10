@@ -10,6 +10,7 @@ export type AcpConnection = {
   notify(method: string, params: AcpRecord): void;
   respond(id: AcpId, result: AcpRecord): void;
   reject(id: AcpId): void;
+  ownsRequest?(id: AcpId): boolean;
   close(): Promise<void>;
 };
 export const object = (value: unknown): AcpRecord =>

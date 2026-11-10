@@ -1,4 +1,5 @@
 import type { PermissionSelection } from '@agentdeck/shared/conversation';
+import type { InteractionAnswer } from '@agentdeck/shared/conversation';
 import type {
   AgentKind,
   AgentCapability,
@@ -12,6 +13,9 @@ import type { ConnectionStatus } from '../../lib/ws';
 import type { ChatItem } from './chat-reducer';
 export type SessionOperation = { action: SessionActionInput['action'] | 'fork'; pending: boolean; error?: string };
 export type ChatState = {
+  nativeInteractions: ChatItem[];
+  respondInteraction(id: string, answer: InteractionAnswer): boolean;
+  dismissInteraction(id: string): void;
   conversationId: string;
   background: Record<string, ConversationView>;
   tabIds: string[];

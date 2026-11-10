@@ -1,5 +1,6 @@
 import type { ChatState } from './chat-state';
 import type { SessionRef, SessionActionInput } from '@agentdeck/shared/conversation';
+import { InteractionAnswerSchema } from '@agentdeck/shared/conversation';
 import {
   DEFAULT_REASONING_EFFORTS,
   EMPTY_MODEL_OVERRIDES,
@@ -89,6 +90,28 @@ function persistWorkspace(id?: string): void {
 export const useChat = create<ChatState>()((set, get) => {
   const history = createChatHistory(get, set);
   return {
+    nativeInteractions: [],
+    respondInteraction(id, answer) {
+      if (!InteractionAnswerSchema.safeParse(answer).success) return false;
+      const state = get();
+      const view = [state, ...Object.values(state.background)].find((view) =>
+        view.items.some((item) => item.kind === 'interaction' && item.id === id && !item.resolved),
+      );
+      const items = view?.items ?? state.nativeInteractions;
+      if (
+        !items.some((item) => item.kind === 'interaction' && item.id === id && !item.resolved && !item.responding) ||
+        !socket?.send({ type: 'interaction.respond', id, answer })
+      )
+        return false;
+      const updated = items.map((item) =>
+        item.kind === 'interaction' && item.id === id ? { ...item, responding: true } : item,
+      );
+      set(view ? updateConversation(state, view, { items: updated }) : { nativeInteractions: updated });
+      return true;
+    },
+    dismissInteraction(id) {
+      set((state) => ({ nativeInteractions: state.nativeInteractions.filter((item) => item.id !== id) }));
+    },
     cancelHistoryRead: () => {
       history.changeSelection();
     },

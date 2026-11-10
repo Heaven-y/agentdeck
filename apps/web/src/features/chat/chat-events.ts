@@ -102,6 +102,17 @@ export function createChatEvents(
     onRecovery: recovery.onRecovery,
     onMessage(msg: ServerMessage) {
       switch (msg.type) {
+        case 'interaction.event':
+          set({
+            nativeInteractions: reduceChat(get().nativeInteractions, msg.event).filter(
+              (item) =>
+                item.kind === 'interaction' &&
+                (!item.resolved ||
+                  (item.interaction.kind === 'url' && item.resolved === 'submitted') ||
+                  ('id' in msg.event && item.id === msg.event.id)),
+            ),
+          });
+          return;
         case 'turn.started':
           return started(msg);
         case 'agent.event':
@@ -114,6 +125,11 @@ export function createChatEvents(
     },
     onStatus(status: ConnectionStatus) {
       if (status === 'open') {
+        set({
+          nativeInteractions: get().nativeInteractions.map((item) =>
+            item.kind === 'interaction' && !item.resolved ? { ...item, responding: false } : item,
+          ),
+        });
         for (const [clientTurnId, turnId] of delayedInterrupts) {
           if (interrupts.has(clientTurnId) && send({ type: 'chat.interrupt', turnId })) {
             const view = conversationViews(get()).find((entry) => entry.turnId === turnId);

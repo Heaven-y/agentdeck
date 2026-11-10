@@ -1,4 +1,5 @@
 import type { PermissionSelection } from '@agentdeck/shared/conversation';
+import type { InteractionSpec, InteractionAnswer, InteractionOwner } from '@agentdeck/shared/conversation';
 import type {
   AgentEvent,
   SessionActionInput,
@@ -12,6 +13,16 @@ import type { Workspace } from '@agentdeck/shared/projects';
 import type { NativeInvocation } from './capability-types';
 
 export type PermissionAnswer = { allow: boolean; message?: string };
+export type NativeInteractionRequest = {
+  spec: InteractionSpec;
+  runtimeId: string;
+  completionId?: string;
+  scope?: Pick<InteractionOwner, 'kind' | 'id'>;
+};
+export type InteractionRequester = (
+  request: NativeInteractionRequest,
+  options?: { signal?: AbortSignal },
+) => Promise<InteractionAnswer>;
 export type AgentTurnInput = {
   workspace: Workspace;
   sessionId?: string;
@@ -22,6 +33,8 @@ export type AgentTurnInput = {
   invocation?: NativeInvocation;
   emit(event: AgentEvent): void;
   requestPermission(request: { requestId: string; toolName: string; input: unknown }): Promise<PermissionAnswer>;
+  requestInteraction?: InteractionRequester;
+  completeInteraction?(runtimeId: string, completionId: string): void;
 };
 export type TurnHandle = { interrupt(): Promise<void>; done: Promise<void> };
 export type RuntimeTaskSnapshot = {

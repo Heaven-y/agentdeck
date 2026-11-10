@@ -2,7 +2,7 @@ import type { RecoveryNotice, RecoveryTurn } from '@agentdeck/shared/conversatio
 import type { ChatState, ConversationView } from './chat-state';
 import { emptyConversation, DEFAULT_REASONING_EFFORTS, EMPTY_MODEL_OVERRIDES } from './chat-state-helpers';
 import { conversationBusy, conversationById, conversationViews, updateConversation } from './conversations';
-import { reduceChat } from './chat-reducer';
+import { reduceChat, type ChatItem } from './chat-reducer';
 import { openedTab } from './conversation-tabs';
 
 type SetState = (patch: Partial<ChatState>) => void;
@@ -70,7 +70,9 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
           updateConversation(get(), view, {
             interruptRequested: false,
             items: view.items.map((item) =>
-              item.kind === 'permission' && !item.resolved ? { ...item, responding: false } : item,
+              (item.kind === 'permission' || item.kind === 'interaction') && !item.resolved
+                ? { ...item, responding: false }
+                : item,
             ),
           }),
         );
@@ -106,9 +108,15 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
         case 'connection.rejected':
           interrupts.clear();
           saved.clear();
-          set({ banner: notice.message });
+          set({ banner: notice.message, nativeInteractions: get().nativeInteractions.map(cancelInteraction) });
           for (const view of conversationViews(get()).filter(conversationBusy)) fail(view, notice.message);
       }
     },
   };
+}
+function cancelInteraction(item: ChatItem): ChatItem {
+  if (item.kind !== 'interaction') return item;
+  if (!item.resolved || (item.interaction.kind === 'url' && item.resolved === 'submitted'))
+    return { ...item, resolved: 'cancelled', responding: false };
+  return item;
 }

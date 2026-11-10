@@ -65,6 +65,64 @@ function setup(limits: Partial<ResumeLimits> = {}) {
   };
 }
 
+it('会话表单独立于旧回合回收，刷新可回答且秘密答案不进入恢复缓存', async () => {
+  const f = setup({ completedMs: 100, offlineMs: 1000 });
+  try {
+    const token = randomUUID();
+    const a = peer();
+    const socket = f.hub.attach(a.value, request(token, { create: true }))!;
+    await f.hub.handle(a.value, socket, send());
+    const answer = f.runs[0]!.input.requestInteraction!({
+      runtimeId: 'runtime',
+      scope: { kind: 'session', id: 'native' },
+      spec: {
+        kind: 'form',
+        title: '授权',
+        blocking: true,
+        fields: [{ id: 'key', type: 'text', label: '密钥', secret: true, required: true }],
+      },
+    });
+    const sent = a.messages.find((m) => m.type === 'connection.event' && m.message.type === 'interaction.event');
+    if (
+      sent?.type !== 'connection.event' ||
+      sent.message.type !== 'interaction.event' ||
+      sent.message.event.type !== 'interaction_request'
+    )
+      throw new Error('缺少表单');
+    f.runs[0]!.finish();
+    await vi.advanceTimersByTimeAsync(201);
+    f.hub.detach(a.value, socket);
+    const b = peer();
+    const resumed = f.hub.attach(b.value, request(token, { rebuild: true }))!;
+    expect(b.messages.some((m) => m.type === 'connection.event' && m.message.type === 'interaction.event')).toBe(true);
+    await f.hub.handle(b.value, resumed, {
+      type: 'interaction.respond',
+      id: sent.message.event.interaction.id,
+      answer: { action: 'submit', values: { key: 'secret-answer' } },
+    });
+    expect(await answer).toEqual({ action: 'submit', values: { key: 'secret-answer' } });
+    f.hub.detach(b.value, resumed);
+    const c = peer();
+    f.hub.attach(c.value, request(token, { rebuild: true }));
+    expect(JSON.stringify(c.messages)).not.toContain('secret-answer');
+    expect(
+      c.messages.some(
+        (m) =>
+          m.type === 'connection.event' &&
+          m.message.type === 'interaction.event' &&
+          m.message.event.type === 'interaction_resolved',
+      ),
+    ).toBe(true);
+    await vi.advanceTimersByTimeAsync(201);
+    f.hub.detach(c.value, resumed);
+    const d = peer();
+    f.hub.attach(d.value, request(token, { rebuild: true }));
+    expect(d.messages.some((m) => m.type === 'connection.event' && m.message.type === 'interaction.event')).toBe(false);
+  } finally {
+    await f.dispose();
+  }
+});
+
 it('离线宽限到期中断所有回合并取消审批，超时身份不能复活；关闭后端同样清理', async () => {
   const f = setup({ offlineMs: 100 });
   try {

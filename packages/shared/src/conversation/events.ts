@@ -1,11 +1,13 @@
 // Agent 对话事件：后端把各 CLI 的原始消息统一转换成这些事件，再推送给前端
 import type { AgentKind } from './agents';
 import type { CompactionState, ContextUsage, TokenUsage } from './capabilities';
+import type { InteractionEvent } from './interaction';
 
 /** 同一次成功模型生成的原生计时；首段可能包含推理，流式时长不含工具执行。 */
 export type GenerationTiming = { durationMs: number; firstTokenMs?: number };
 
 export type AgentEvent =
+  | InteractionEvent
   | { type: 'context'; usage: ContextUsage | null }
   | { type: 'compaction'; state: CompactionState }
   /** 会话开始或继续，sessionId 由 Agent 分配 */

@@ -3,11 +3,13 @@ import { AgentKindSchema, NativeSessionIdSchema, type AgentKind } from './agents
 import { CapabilitySelectionSchema } from './capabilities';
 import type { AgentEvent } from './events';
 import { PermissionSelectionSchema } from './permissions';
+import { InteractionAnswerSchema, type InteractionEvent } from './interaction';
 
 const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
 // 前端 → 后端的 WebSocket 消息，后端用 schema 校验
 export const ClientMessageSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('interaction.respond'), id: z.uuid(), answer: InteractionAnswerSchema }),
   z
     .object({
       type: z.literal('chat.send'),
@@ -61,6 +63,14 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // 后端 → 前端的 WebSocket 消息
 export type ServerMessage =
+  | {
+      type: 'interaction.event';
+      workspaceId: string;
+      agent: AgentKind;
+      sessionId?: string;
+      turnId?: string;
+      event: InteractionEvent;
+    }
   | { type: 'turn.started'; turnId: string; clientTurnId: string; workspaceId: string; agent: AgentKind }
   | { type: 'agent.event'; turnId: string; event: AgentEvent }
   | { type: 'turn.finished'; turnId: string; workspaceId: string; agent: AgentKind }

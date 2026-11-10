@@ -127,6 +127,9 @@ export class AntigravityAcpClient implements AcpConnection {
   reject(id: AcpId): void {
     this.write({ jsonrpc: '2.0', id, error: { code: -32601, message: '当前客户端不支持此请求' } });
   }
+  ownsRequest(id: AcpId): boolean {
+    return this.pending.has(id);
+  }
 
   private write(value: unknown): void {
     if (this.stopped || this.child.stdin.destroyed) return;

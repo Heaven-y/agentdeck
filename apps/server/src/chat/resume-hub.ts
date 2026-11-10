@@ -24,7 +24,7 @@ const DEFAULT_LIMITS: ResumeLimits = {
   owners: 64,
 };
 type SavedTurn = RecoveryTurn & { bytes: number; turnId?: string; completedAt?: number };
-type SavedEvent = { sequence: number; data: string; bytes: number; clientTurnId?: string };
+type SavedEvent = { sequence: number; data: string; bytes: number; clientTurnId?: string; interactionId?: string };
 type Owner = {
   token: string;
   socket: Socket;
@@ -35,6 +35,7 @@ type Owner = {
   floor: number;
   bytes: number;
   turns: Map<string, SavedTurn>;
+  interactions: Map<string, { completedAt?: number }>;
   events: SavedEvent[];
 };
 const messages: Record<RecoveryFailureCode, string> = {
@@ -156,6 +157,7 @@ export class ResumeHub {
       floor: 0,
       bytes: 0,
       turns: new Map(),
+      interactions: new Map(),
       events: [],
     };
     this.owners.set(token, owner);
@@ -165,12 +167,13 @@ export class ResumeHub {
   private publish(owner: Owner, message: ServerMessage): void {
     if (this.owners.get(owner.token) !== owner) return;
     const clientTurnId = recordTurn(owner, message);
+    const interactionId = recordInteraction(owner, message);
     const sequence = owner.sequence + 1;
     const data = JSON.stringify({ type: 'connection.event', sequence, message });
     const bytes = sizeOf(data);
     if (!this.reserve(owner, bytes)) return;
     owner.sequence = sequence;
-    owner.events.push({ sequence, data, bytes, clientTurnId });
+    owner.events.push({ sequence, data, bytes, clientTurnId, interactionId });
     if (owner.peer?.isOpen()) owner.peer.send(data);
   }
 
@@ -202,8 +205,14 @@ export class ResumeHub {
         this.totalBytes -= turn.bytes;
         owner.turns.delete(id);
       }
+      const expiredInteractions = new Set(
+        [...owner.interactions]
+          .filter(([, value]) => value.completedAt !== undefined && now - value.completedAt >= this.limits.completedMs)
+          .map(([id]) => id),
+      );
+      for (const id of expiredInteractions) owner.interactions.delete(id);
       owner.events = owner.events.filter((event) => {
-        if (!event.clientTurnId || !expired.has(event.clientTurnId)) return true;
+        if (!expiredEvent(event, expired, expiredInteractions)) return true;
         owner.bytes -= event.bytes;
         this.totalBytes -= event.bytes;
         owner.floor = Math.max(owner.floor, event.sequence);
@@ -225,4 +234,21 @@ export class ResumeHub {
     this.notify(peer, { type: 'connection.rejected', code, message: messages[code] });
     return undefined;
   }
+}
+
+function recordInteraction(owner: Owner, message: ServerMessage): string | undefined {
+  if (message.type !== 'interaction.event') return;
+  const event = message.event;
+  if (event.type === 'interaction_request') {
+    owner.interactions.set(event.interaction.id, {});
+    return event.interaction.id;
+  }
+  owner.interactions.set(event.id, { completedAt: Date.now() });
+  return event.id;
+}
+function expiredEvent(event: SavedEvent, turns: Set<string>, interactions: Set<string>): boolean {
+  return (
+    (!!event.clientTurnId && turns.has(event.clientTurnId)) ||
+    (!!event.interactionId && interactions.has(event.interactionId))
+  );
 }

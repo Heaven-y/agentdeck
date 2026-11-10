@@ -139,4 +139,4 @@ export function conversationTitle(view: Pick<ConversationView, 'title' | 'items'
   return first?.kind === 'user' ? first.text.slice(0, 60) : view.draft.slice(0, 60) || '新会话';
 }
 export const waitingPermission = (view: ConversationView) =>
-  view.items.some((item) => item.kind === 'permission' && !item.resolved);
+  view.items.some((item) => (item.kind === 'permission' || item.kind === 'interaction') && !item.resolved);

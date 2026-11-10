@@ -10,7 +10,14 @@ import type {
   SessionRef,
 } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
-import type { AgentTurnInput, PermissionAnswer, TurnHandle, TurnRunner } from '../agents/contracts';
+import type {
+  AgentTurnInput,
+  PermissionAnswer,
+  TurnHandle,
+  TurnRunner,
+  NativeInteractionRequest,
+} from '../agents/contracts';
+import { InteractionHub } from './interactions';
 import { SessionError } from '../agents/errors';
 import type { CapabilitiesService } from './capabilities';
 
@@ -60,6 +67,7 @@ function preparing<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export class TurnManager {
+  readonly interactions = new InteractionHub();
   private turns = new Map<string, Turn>();
   private sessions = new Map<string, string>();
   private pending = new Map<string, Pending>();
@@ -111,6 +119,9 @@ export class TurnManager {
 
   async handle(socket: Socket, msg: ClientMessage): Promise<void> {
     switch (msg.type) {
+      case 'interaction.respond':
+        this.interactions.respond(socket, msg.id, msg.answer);
+        return;
       case 'chat.send':
         return this.start(socket, msg);
       case 'chat.interrupt': {
@@ -126,6 +137,7 @@ export class TurnManager {
   }
 
   socketClosed(socket: Socket): void {
+    this.interactions.cancelChannel(socket);
     this.closed.add(socket);
     for (const [id, pending] of this.pending) {
       if (pending.turn.socket === socket) {
@@ -143,6 +155,7 @@ export class TurnManager {
   /** 退出后端时停止本进程拥有的轮次，并关闭长驻运行时。 */
   async dispose(): Promise<void> {
     this.stopping = true;
+    this.interactions.dispose();
     const pending: Promise<unknown>[] = [];
     for (const turn of this.turns.values()) {
       this.closed.add(turn.socket);
@@ -324,6 +337,8 @@ export class TurnManager {
       invocation: prepared.invocation,
       emit: (event) => this.event(turn, event),
       requestPermission: (req) => this.permission(turn, req),
+      requestInteraction: (request, options) => this.interaction(turn, request, options),
+      completeInteraction: (runtimeId, id) => this.interactions.complete(turn.socket, runtimeId, id),
     });
     if (signal.aborted) void turn.handle.interrupt();
     turn.completion = turn.handle.done
@@ -333,6 +348,33 @@ export class TurnManager {
       })
       .then(() => this.rememberPermission(turn))
       .then(() => this.finish(turn));
+  }
+
+  private interaction(turn: Turn, request: NativeInteractionRequest, options?: { signal?: AbortSignal }) {
+    const owner = { ...(request.scope ?? { kind: 'turn' as const, id: turn.id }), runtimeId: request.runtimeId };
+    if (this.closed.has(turn.socket) || this.stopping || (owner.kind === 'turn' && turn.finished))
+      return Promise.resolve({ action: 'cancel' as const });
+    const signal = interactionSignal(owner.kind, turn.controller.signal, options?.signal);
+    return this.interactions.request(
+      {
+        channel: turn.socket,
+        owner,
+        completionId: request.completionId,
+        emit: (event) => {
+          if (owner.kind === 'turn') this.event(turn, event);
+          else
+            this.send(turn.socket, {
+              type: 'interaction.event',
+              workspaceId: turn.workspaceId,
+              agent: turn.agent,
+              sessionId: turn.sessionId,
+              event,
+            });
+        },
+      },
+      contextualInteraction(request.spec, turn),
+      { signal },
+    );
   }
 
   private async selectedPermission(turn: Turn, msg: Send): Promise<PermissionSelection | undefined> {
@@ -376,6 +418,8 @@ export class TurnManager {
 
   private finish(turn: Turn): void {
     if (turn.finished) return;
+    // 会话/管理操作交互独立生存，只结束本轮所属的问题。
+    this.interactions.cancelTurn(turn.id);
     turn.finished = true;
     this.deps.sessions.invalidate?.(turn.agent);
     for (const [id, pending] of this.pending) {
@@ -395,4 +439,13 @@ export class TurnManager {
       agent: turn.agent,
     });
   }
+}
+function contextualInteraction(spec: NativeInteractionRequest['spec'], turn: Turn): NativeInteractionRequest['spec'] {
+  const cli = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' }[turn.agent];
+  return { ...spec, source: [cli, turn.workspace?.name, spec.source].filter(Boolean).join(' · ').slice(0, 200) };
+}
+
+function interactionSignal(kind: string, turn: AbortSignal, signal?: AbortSignal): AbortSignal | undefined {
+  if (kind !== 'turn') return signal;
+  return signal ? AbortSignal.any([turn, signal]) : turn;
 }
