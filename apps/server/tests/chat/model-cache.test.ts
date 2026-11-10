@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { NativeCapabilityCatalog } from '../../src/agents/capability-types';
+import { nativeFeaturesFor } from '@agentdeck/shared/conversation';
 import { createCapabilitiesService } from '../../src/chat/capabilities';
 import * as files from '../../src/platform/files/safe-file';
 import { createHash } from 'node:crypto';
@@ -101,6 +102,24 @@ it('重启后复用同一原生目录的模型，技能和诊断不落盘，手�
   expect((await createCapabilitiesService({}, f.options).read(f.ws, 'claude')).models).toEqual(f.catalog.models);
   expect((await service.read({ ...f.ws, dir: path.join(f.ws.dir, 'nested') }, 'claude')).discovered).toBe(false);
   expect((await service.read(f.ws, 'codex')).discovered).toBe(false);
+});
+
+it('磁盘仅恢复明确模型输入类型，运行功能不能随模型缓存跨进程启用', async () => {
+  const f = await fixture();
+  f.catalog.models[0]!.inputModalities = ['text'];
+  f.catalog.features = nativeFeaturesFor('claude', {
+    runtime: 'claude-sdk',
+    cliVersion: '2.1.317',
+    sdkVersion: '0.3.286',
+    handshake: 'confirmed',
+    implemented: ['images'],
+  });
+  const fresh = await createCapabilitiesService({ claude: f.provider }, f.options).refresh(f.ws, 'claude');
+  expect(fresh.features?.images.available).toBe(true);
+  const cached = await createCapabilitiesService({}, f.options).read(f.ws, 'claude');
+  expect(cached.models[0]?.inputModalities).toEqual(['text']);
+  expect(cached.features?.images.available).toBe(false);
+  expect(await readFile(path.join(f.root, 'model-cache', 'claude.json'), 'utf8')).not.toContain('features');
 });
 
 it('配置保存清除磁盘与在途旧结果，其他 CLI 保留，下一次读取不重发发现', async () => {

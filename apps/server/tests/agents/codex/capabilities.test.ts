@@ -78,9 +78,18 @@ async function setup(mode = 'normal') {
 }
 
 describe('Codex 原生能力目录与发送', () => {
+  it('保留模型原生明确报告的输入类型，不为未报告类型的配置模型补猜测', async () => {
+    const { dir, options } = await setup('model-modalities');
+    const catalog = await discoverCodexCapabilities(dir, options);
+    expect(catalog.models.find((model) => model.id === 'suggested-model')?.inputModalities).toEqual(['text', 'image']);
+    expect(catalog.models.find((model) => model.id === 'other-model')?.inputModalities).toEqual(['text']);
+    expect(catalog.models.find((model) => model.id === 'native-model')?.inputModalities).toBeUndefined();
+  });
+
   it('刷新技能、区分同名路径，完整分页模型并读取实际配置的默认值', async () => {
     const { dir, options, messages, skillPath } = await setup('catalog');
     const catalog = await discoverCodexCapabilities(dir, options);
+    expect(catalog.features?.steer).toMatchObject({ support: 'unknown', available: false });
     const duplicates = catalog.entries.filter((entry) => entry.kind === 'skill' && entry.name === 'example');
     expect(new Set(duplicates.map((entry) => entry.id)).size).toBe(2);
     expect(duplicates).toContainEqual(

@@ -24,7 +24,26 @@ export type AgentTurnInput = {
   requestPermission(request: { requestId: string; toolName: string; input: unknown }): Promise<PermissionAnswer>;
 };
 export type TurnHandle = { interrupt(): Promise<void>; done: Promise<void> };
+export type RuntimeTaskSnapshot = {
+  id: string;
+  sessionId: string;
+  parentTaskId?: string;
+  status: 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+  /** 仅表示当前实例可以停止该任务，不能由停止整轮的接口推断。 */
+  canStop: boolean;
+};
+/** 会话实例控制独立于单轮，后台任务仍存活时不能随 TurnHandle 完成而丢弃。 */
+export type RuntimeControl = {
+  readonly instanceId: string;
+  readonly sessionId: string;
+  tasks(): readonly RuntimeTaskSnapshot[];
+  stopTask(id: string): Promise<void>;
+  /** 标记技能/MCP/插件等资源过期，阻止旧实例后续复用；不能据此中断活动任务。 */
+  invalidateResources(): Promise<void>;
+};
 export type TurnRunner = ((input: AgentTurnInput) => TurnHandle) & {
+  /** 只返回已核实归属的活实例；未实现时不声明后台任务停止能力。 */
+  runtimeControl?(sessionId: string): RuntimeControl | undefined;
   /** 关闭长驻运行时；单轮实现可省略。 */
   dispose?(): Promise<void>;
 };

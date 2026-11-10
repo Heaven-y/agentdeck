@@ -1,5 +1,11 @@
 import path from 'node:path';
-import type { AgentCapabilities, AgentKind, AgentModel, CapabilitySelection } from '@agentdeck/shared/conversation';
+import {
+  nativeFeaturesFor,
+  type AgentCapabilities,
+  type AgentKind,
+  type AgentModel,
+  type CapabilitySelection,
+} from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import type { CapabilityProvider, NativeCapabilityCatalog, NativeInvocation } from '../agents/capability-types';
 import { SessionError } from '../agents/errors';
@@ -90,6 +96,7 @@ export function createCapabilitiesService(
         discovered: savedModels?.current ?? false,
         commandsDiscovered: false,
         ...structuredClone(savedModels?.snapshot ?? { models: [] }),
+        features: nativeFeaturesFor(agent),
         entries: [],
         warnings: savedModels ? [] : ['打开模型菜单或点击刷新即可读取 CLI 能力。'],
       };

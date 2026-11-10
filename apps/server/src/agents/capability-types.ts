@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { AgentCapability, AgentKind, AgentModel } from '@agentdeck/shared/conversation';
+import type { AgentCapability, AgentKind, AgentModel, NativeInteractionFeatures } from '@agentdeck/shared/conversation';
 
 export type NativeInvocation =
   { kind: 'skill'; name: string; path?: string } | { kind: 'command'; name: 'compact' | 'context' };
@@ -12,6 +12,7 @@ export type NativeCapabilityCatalog = {
   warnings: string[];
   modelWarning?: string;
   commandWarnings?: string[];
+  features?: NativeInteractionFeatures;
 };
 export type CapabilityProvider = (dir: string, signal?: AbortSignal) => Promise<NativeCapabilityCatalog>;
 export function capabilityId(agent: AgentKind, ...identity: string[]): string {

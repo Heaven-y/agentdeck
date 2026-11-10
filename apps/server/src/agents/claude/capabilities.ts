@@ -1,4 +1,4 @@
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import type { ModelInfo, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
 import { claudeControl, createClaudeStream, nativeClaudeQuery, type ClaudeQuery, type QueryFn } from './query';
@@ -113,8 +113,13 @@ async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeC
     claudeControl(q.supportedCommands(), signal),
     claudeControl(q.supportedModels(), signal),
   ]);
+  const discovered = [commands, models].some((result) => result.status === 'fulfilled');
   return {
     entries: commands.status === 'fulfilled' ? entriesFrom(usableCommands(commands.value)) : [],
+    features: nativeFeaturesFor('claude', {
+      runtime: 'claude-sdk',
+      handshake: discovered ? 'confirmed' : 'failed',
+    }),
     models: models.status === 'fulfilled' ? modelsFrom(models.value) : [],
     defaultModel:
       models.status === 'fulfilled'

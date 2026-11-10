@@ -43,6 +43,7 @@ it('账号模式通过隔离 models 读取目录，不触发交互式登录或�
   expect(catalog.models).toEqual([{ id: 'Example Native', label: 'Example Native' }]);
   expect(catalog.defaultModel).toBe('Example Native');
   expect(catalog.modelWarning).toBe('');
+  expect(catalog.features?.images).toMatchObject({ support: 'unsupported', available: false });
   expect(runProcess).toHaveBeenCalledOnce();
 });
 

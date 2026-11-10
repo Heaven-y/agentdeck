@@ -1,4 +1,4 @@
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import type { NativeCapabilityCatalog } from '../capability-types';
 import {
   configuredAntigravityDefault,
@@ -41,6 +41,7 @@ export async function discoverAntigravityCapabilities(
   if (models.status === 'rejected') throw models.reason;
   return {
     ...models.value,
+    features: nativeFeaturesFor('antigravity', { runtime: 'antigravity-headless', handshake: 'unknown' }),
     entries: commands.status === 'fulfilled' ? commands.value : [],
     commandWarnings: commands.status === 'rejected' ? ['暂时无法读取技能与命令。'] : [],
   };

@@ -76,13 +76,13 @@ AGY ACP 初始握手已经在隔离目录真实验证：`protocolVersion=1`、`l
 | 编号 | 可验收结果 | 依赖 | 状态 | 提交/验证 |
 |---|---|---|---|---|
 | P00 | 完整能力审计、计划、自审和独立审阅 | 无 | 已完成 | 独立审阅4项重要问题已修订关闭；文档检查通过 |
-| P01 | 原生交互能力契约与可用性 | P00 | 进行中 | — |
-| P02 | AGY ACP 对话、续接与兼容路径 | P01 | 待做 | — |
+| P01 | 原生交互能力契约与可用性 | P00 | 已完成 | 16文件/130项、类型/规范/格式/文档通过，独立审阅通过 |
+| P02 | AGY ACP 对话、续接与兼容路径 | P01 | 进行中 | 原生隔离调查已核实对话/恢复/图片/提问/取消/引导边界 |
 | P03 | 三 CLI 提问与 MCP 交互表单 | P01、P02 | 待做 | — |
 | P04 | 图片、附件与历史展示 | P01、P02 | 待做 | — |
 | P05 | 队列与各 CLI 原生引导 | P03、P04 | 待做 | — |
 | P06 | 子代理历史与运行状态 | P02、P03 | 待做 | — |
-| P07 | Skills、规则/Hooks/代理定义管理 | P01 | 待做 | — |
+| P07 | Skills、规则/Hooks/代理定义管理 | P01 | 进行中 | 与P02无共享实现文件，保持总并发2 |
 | P08 | MCP 持久配置与运行管理 | P03、P07 | 待做 | — |
 | P09 | 三 CLI 原生插件管理 | P07、P08 | 待做 | — |
 | P10 | 专用原生命令与能力遗漏复核 | P02–P09 | 待做 | — |
@@ -92,16 +92,16 @@ AGY ACP 初始握手已经在隔离目录真实验证：`protocolVersion=1`、`l
 
 ## P01：能力契约与可用性
 
-文件：新增 `packages/shared/src/conversation/native-features.ts`；修改 `capabilities.ts`、`index.ts`、三适配器 `capabilities.ts`、`apps/web/src/features/chat/AgentControls.tsx`；关联测试放 `packages/shared/tests` 和现有 capabilities 测试。
+文件：新增 `packages/shared/src/conversation/native-features.ts`；修改 `capabilities.ts`、`index.ts`、三适配器 `capabilities.ts`、server 会话控制契约和模型缓存；关联测试放 `packages/shared/tests` 和现有 capabilities 测试。本阶段没有已接入的新交互，不为 `AgentControls.tsx` 添加无用途入口；P03–P06 实际接入时使用 `featuresForModel` 收紧所选模型能力，既有子代理历史入口不变。
 
 接口：`NativeInteractionFeatures` 描述 `images`、`documents`、`questions`、`forms`、`steer`、`subagents` 的支持状态与限制说明；`AgentCapabilities.features?` 兼容旧缓存。`nativeFeaturesFor(agent, evidence)` 只依据已核对版本、协议握手与运行路径返回能力。
 
 P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl` 契约（运行实例ID、原生会话ID、任务快照、`stopTask(id)`及资源失效），由P06实现。它的生命期独立于单轮TurnHandle；没有实现时不声明停止后台任务能力。
 
-- [ ] 补核心回归：旧缓存无 features 不意外开启新功能；AGY headless 与 ACP 区分；未知或握手失败保留文本能力，错误不显示成完整支持。
-- [ ] 实现共享契约和各适配器能力映射；模型 inputModalities 有明确限制时优先模型限制。
-- [ ] 运行 shared 与三 capabilities 关联测试、shared/server/web 类型；预期全部通过。
-- [ ] 更新原生对话能力说明、记录证据、提交 `feat(capabilities): 标记各 CLI 原生交互能力`。
+- [x] 补核心回归：旧缓存无 features 不意外开启新功能；AGY headless 与 ACP 区分；未知或握手失败保留文本能力，错误不显示成完整支持。
+- [x] 实现共享契约和各适配器能力映射；模型 inputModalities 有明确限制时优先模型限制。
+- [x] 运行 shared 与三 capabilities 关联测试、shared/server/web 类型；全部通过，另覆盖命令投递、能力缓存和模型缓存关联路径。
+- [x] 更新原生对话能力说明、记录证据、提交 `feat(capabilities): 标记各 CLI 原生交互能力`。独立审阅通过。
 
 ## P02：AGY ACP 原生交互基础
 
@@ -115,6 +115,7 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 - [ ] 添加协议回归：逐行有界解析、stderr 排空、握手失败、断流、不同会话 ID、取消迟到结果、审批撤回及工具终态。
 - [ ] 实现 ACP 并映射原生公开文本、工具、计划、上下文和完成状态；使用 CLI 的实际读写/工具实现，不由工作台冒充编辑器执行任意 RPC。
 - [ ] 仅在发送前可选择兼容路径；已投递 prompt 后绝不切换协议重发。若自定义模型或版本不支持 ACP，保留原 headless 并明确能力差异。
+  - 隔离实测补充：AGY 1.5.3 ACP允许API Key＋自定义服务地址，但新会话默认Gemini型号并拒绝未知自定义模型ID（`Unknown model ID`）。必须核对用户显式/原生默认模型与ACP实际选择；不匹配则发送前走headless，不能悄悄换模型。协议试探不得在普通会话列表留下孤立空会话。
 - [ ] 核对原有 AGY 524 累计错误修复在两条路径上的行为；不再把 headless 专用累计诊断补丁套到无关协议。
 - [ ] 运行 ACP 与 Antigravity 直接关联测试、server 类型和范围规范；受控真实新建/续聊/读回/取消通过后提交。
 - [ ] 更新 `native-dialogue.md`、`architecture.md`、`cli-observability.md`；提交 `feat(antigravity): 接入 ACP 原生交互通道`。
@@ -162,6 +163,7 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 - [ ] Codex透传稳定clientUserMessageId，但不凭该字段假定原生幂等。队列、去重与暂停记录绑定恢复owner＋会话而非创建它的旧turn；队列非空/投递未决时不随旧turn五分钟记录回收。队列清空且全部确认后保留去重回执30分钟，上限每owner1000条；超限拒绝新追加，不提前删除未决记录。
 - [ ] Claude 使用 SDK 的真实输入机制进行隔离调度实验；只有确认同一回合接收、消息归属与取消语义后启用“引导本轮”，否则提供明确“排队发送”。原生 priority 不得直接解释成确定的立即执行。
 - [ ] AGY ACP 验证重复 session/prompt 的 steering 与完成归属，headless 保留宿主排队。兼容路径不提供未经证明的引导入口。
+  - 1.5.3隔离实测：第二次prompt用于引导时，原prompt请求会提前返回end_turn；最终输出与usage由新的prompt请求收尾。因此工作台回合完成门必须跟随最新受理的prompt，旧请求返回不能结束整个回合；覆盖多次引导与取消竞争。
 - [ ] 图片/文件随队列持有租约，提问等待与权限等待不被排队覆盖；更改下一条模型/权限不偷偷改变正在执行的引导消息。
 - [ ] 验证 queue、turn manager、recovery、三 adapter/runtime 与 store/composer；实测连续排两条、引导竞争、停止后不继续发送。
 - [ ] 更新交互与生命周期规则；提交 `feat(chat): 区分排队发送与原生回合引导`。

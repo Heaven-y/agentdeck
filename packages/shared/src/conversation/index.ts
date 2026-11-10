@@ -5,6 +5,7 @@ export * from './session';
 export * from './session-reference';
 export * from './subagents';
 export * from './capabilities';
+export * from './native-features';
 export * from './legacy-session-capabilities';
 export * from './protocol-version';
 export * from './permissions';

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
 import { sameSessionDirectory } from '../common/session-scope';
 import { CodexClient } from './client';
@@ -103,6 +103,18 @@ function modelEntry(value: unknown): AgentModel | undefined {
         ]
       : undefined,
     defaultReasoningEffort: text(model.defaultReasoningEffort) || undefined,
+    ...(Array.isArray(model.inputModalities)
+      ? {
+          inputModalities: [
+            ...new Set(
+              model.inputModalities.filter(
+                (modality): modality is string =>
+                  typeof modality === 'string' && modality.length > 0 && modality.length <= 64,
+              ),
+            ),
+          ].slice(0, 32),
+        }
+      : {}),
   };
 }
 
@@ -177,7 +189,12 @@ export async function discoverCodexCapabilities(
       configuredModel(client, dir),
     ]);
     if (options.signal?.aborted) throw cancelled();
-    const catalog: NativeCapabilityCatalog = { entries: commands(), models: [], warnings: [] };
+    const catalog: NativeCapabilityCatalog = {
+      entries: commands(),
+      models: [],
+      warnings: [],
+      features: nativeFeaturesFor('codex', { runtime: 'codex-app-server', handshake: 'confirmed' }),
+    };
     if (skills.status === 'fulfilled') {
       catalog.entries.push(...skills.value.entries);
       catalog.warnings.push(...skills.value.warnings);
