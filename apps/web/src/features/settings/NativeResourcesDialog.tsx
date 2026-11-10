@@ -16,6 +16,7 @@ const NativeResourceEditor = lazy(() => import('./NativeResourceEditor'));
 const NativeResourceCreate = lazy(() => import('./NativeResourceCreate'));
 const NativeSkillsPanel = lazy(() => import('./NativeSkillsPanel'));
 const NativeMcpPanel = lazy(() => import('./NativeMcpPanel'));
+const NativePluginsPanel = lazy(() => import('./NativePluginsPanel'));
 
 export default function NativeResourcesDialog({
   agent,
@@ -134,6 +135,18 @@ export default function NativeResourcesDialog({
       ) : category === 'mcp' ? (
         <Suspense fallback={<p role="status">正在打开 MCP 管理…</p>}>
           <NativeMcpPanel
+            key={JSON.stringify([agent, projectId])}
+            context={{ agent, projectId }}
+            reload={reload}
+            onChanged={() => {
+              void invalidateNativeCapabilities(agent);
+              setReload((value) => value + 1);
+            }}
+          />
+        </Suspense>
+      ) : category === 'plugins' ? (
+        <Suspense fallback={<p role="status">正在打开原生插件管理…</p>}>
+          <NativePluginsPanel
             key={JSON.stringify([agent, projectId])}
             context={{ agent, projectId }}
             reload={reload}

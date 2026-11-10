@@ -20,7 +20,19 @@ Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环�
 
 用户配置根尊重 Claude 的 CLAUDE_CONFIG_DIR 和 Codex 的 CODEX_HOME；Codex 共享 Skills 的用户目录仍是 ~/.agents/skills。项目与子目录按真实来源标注，列表不会把工作台当前选择解释成原生最终生效顺序。
 
-原生插件不同于工作台插件。配置页显示原生路径、作用域和相应命令说明，不直接改写安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。完整插件生命周期与 MCP 服务管理仍按原生能力补齐计划分阶段接入。
+原生插件不同于工作台插件。原生配置页提供各 CLI 实际支持的插件生命周期和 MCP 管理，全部原文入口保留；不直接改写插件安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。
+
+## 原生插件管理
+
+“原生插件”按 CLI、实际来源、作用域、版本和启用状态列出安装记录，支持详情、安装、卸载和原生启停。Claude 使用原生 install/update/enable/disable/uninstall/validate/configure，卸载固定保留数据；Codex 使用 add/remove 和 marketplace 命令，启停只定点修改所选原生 plugins 配置字段；Antigravity 使用 install/uninstall/enable/disable/validate，不伪造独立更新。未知 CLI 版本、来源、托管资源或未能唯一核实的 Codex 安装缓存保持只读。
+
+Claude 原生列表会跨项目返回记录，插件、Skills 和 MCP 共同按当前规范化目录与原生 projectPath 过滤项目/个人项目安装。Codex 普通 GET 联合本地配置和安装缓存读取目录，并通过 config/read 的原生层级判断托管及项目可信状态；不调用生产禁用的 plugin RPC，不自动调用可能联网的 plugin list。显式刷新 Git 市场后只对指定市场调用原生 list；本地 Codex 市场没有 Git 刷新按钮。Claude 支持按 user/project/local 增删市场及指定来源刷新，未知作用域不开放写入。Antigravity 没有自定义市场管理入口，也不预装来源。
+
+prepare 仅生成宿主 operationId 与来源、动作、作用域和影响预览，不执行安装。Claude 没有 dry-run，首次 start 收到原生 shownCommand 后进入“等待命令确认”；用户核对全文与 SHA-256 后以同 operationId 继续，只有准确摘要通过 --accept-command 传入原生，不使用无条件 --yes。同一执行代次重复 start 返回原任务；参数或摘要变化拒绝。进程异常或部分失败重读真实状态并标记结果待核对，不重启安装。关闭设置可恢复同一宿主中的任务；宿主重启后旧操作 ID 不再执行，必须重新核对原生状态。
+
+所有操作持有 CLI 空闲、原生维护和项目空闲租约至进程退出与能力失效结束，开始前复核项目目录和 revision。取消清理整棵原生进程树；单次安装命令预算 120 秒、输出 512 KiB，命令确认最多等待 10 分钟，预览 15 分钟过期。终态及部分失败都会失效能力与会话缓存并回收闲置实例，任务最多保留 100 条、24 小时。Claude 配置只展示需求和已配置状态，秘密与默认值不回填；通过 values-stdin 写入，未填写项保留。配置另有带宿主密钥的摘要校验，外部修改后拒绝覆盖，任务结束/取消/过期后清除待写值。Antigravity 缺变量时保留原生禁用状态，并引导到原生面板配置。
+
+接口为 `GET /api/native-management/:agent/plugins` 及 `POST .../detail`、`.../prepare`、`.../start`、`.../operation`、`.../cancel`，继承本机会话鉴权、Origin 与 no-store。客户端只能选择固定动作和来源，不接受任意程序或命令参数。
 
 ## Skills 与定制资源管理
 
@@ -108,7 +120,7 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 ## MCP 配置与运行管理
 
-“原生配置与扩展 → MCP”离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的插件列表可能访问市场，普通列表只显示原生配置文件中的服务，插件带入服务转所属插件管理。
+“原生配置与扩展 → MCP”离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的原生命令列表可能访问市场，普通列表从配置和已核实安装缓存读取插件 .mcp.json，保留所属插件、实际 scope 和安装根身份；插件带入服务只读。
 
 Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
 

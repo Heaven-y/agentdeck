@@ -7,6 +7,7 @@ import type { NativeSkill, SkillConfigSource, SkillContext } from '../../../nati
 import { resolveLocalCommand } from '../../../platform/process/executable';
 import { runProcess } from '../../../platform/process/run';
 import { inspectDirectory, readConfigFile } from '../../../platform/files/safe-file';
+import { claudePluginRecords } from '../../../native-management/plugin-utils';
 
 export const claudeSkillStates: NativeSkillState[] = ['inherit', 'on', 'name-only', 'user-invocable-only', 'off'];
 export async function claudeSkillConfig(context: SkillContext) {
@@ -114,5 +115,5 @@ export async function readClaudeInstalledSkills(context: SkillContext): Promise<
     outputCap: 512 * 1024,
   });
   if (result.exitCode !== 0) throw new NativeManagementError('native_unavailable');
-  return claudeSkillsFromPlugins(JSON.parse(result.stdout.toString('utf8')));
+  return claudeSkillsFromPlugins(await claudePluginRecords(context, JSON.parse(result.stdout.toString('utf8'))));
 }

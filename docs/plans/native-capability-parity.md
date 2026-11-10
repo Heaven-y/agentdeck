@@ -86,7 +86,7 @@ AGY ACP 提问已实测使用 `elicitation/create`；Codex 0.166.0 的阻塞 `re
 | P06 | 子代理历史与运行状态 | P02、P03 | 待做 | — |
 | P07 | Skills、规则/Hooks/代理定义管理 | P01 | 已完成 | 初审4项修复及仅Key事务复核通过；定向54项，独立复核18项；真实隔离验证通过 |
 | P08 | MCP 持久配置与运行管理 | P03、P07 | 已完成 | R1/R2独立复核关闭；27项及范围覆盖/类型/规范通过，真实MCP与合成OAuth、界面验证通过 |
-| P09 | 三 CLI 原生插件管理 | P07、P08 | 待做 | — |
+| P09 | 三 CLI 原生插件管理 | P07、P08 | 已完成 | 独立复核R1/R2/R3关闭；53项关联及修复29项、范围覆盖/类型/规范通过，真实CLI与界面验证通过 |
 | P10 | 专用原生命令与能力遗漏复核 | P02–P09 | 待做 | — |
 | P11 | 综合审阅、受控实机、文档与整合 | 全部 | 待做 | — |
 
@@ -232,17 +232,19 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 文件：新增三 CLI `configuration/plugins.ts`、server `native-management/plugin-service.ts`、web `NativePluginsPanel.tsx`；复用 CLI 安装任务的有界执行/取消模式，不复用其包名判断。
 
-接口：`NativePluginEntry` 包含原生身份、来源、scope、版本、enabled及支持动作；`preparePluginOperation(input)` 返回服务器生成operationId、确切来源/动作/影响及原生要求确认的命令摘要；`startPluginOperation({operationId,revision,confirmation?})` 按该操作ID幂等受理并可读取终态。同操作重复请求返回原任务，变更参数拒绝；原生已启动而确认丢失记结果未知并重读，不能重新安装。客户端不能传任意可执行程序或shell。
+接口：`NativePluginEntry` 包含原生身份、来源、scope、版本、enabled及支持动作；`preparePluginOperation(input)` 返回服务器生成operationId、确切来源/动作/影响，不提前执行安装。Claude没有安装dry-run，首次start收到原生shownCommand时转awaiting-confirmation，展示命令及sha256后以同operationId继续；`startPluginOperation({operationId,revision,confirmation?})` 按该操作ID幂等受理并可读取终态。同操作重复请求返回原任务，变更参数拒绝；原生已启动而确认丢失记结果未知并重读，不能重新安装。客户端不能传任意可执行程序或shell。
 
-- [ ] 核心回归先行：同名不同市场/作用域、原生要求二次确认、错误revision、恶意来源/命令参数、部分安装、取消和关闭设置后继续跟踪。
-- [ ] Claude 使用 plugin list --json、install/enable/disable/update/uninstall；原生 shownCommand.sha256 确认与对应操作绑定，禁止无条件 --yes；卸载默认 --keep-data。
-- [ ] Codex 使用 plugin add/list/remove 与 marketplace 命令；插件启停按原生 plugins.<name@marketplace>.enabled与托管层判断。官方明确不用于生产的 plugin RPC 不调用；市场刷新与插件更新不混为一谈。
-- [ ] AGY 使用 plugin list --json、install/uninstall/enable/disable/validate；没有已确认独立更新命令时不给“更新成功”假按钮，也不先卸载再重装来冒充更新。
-- [ ] 页面提供实际支持的列表、详情、安装来源、启停、卸载与更新/验证；列表离线来源不足时，显式“刷新来源”才允许联网。插件所带Skills/MCP标明从属关系。
-- [ ] 对原生支持的市场来源提供列表/添加/移除/指定来源刷新；不预装来源。Claude 插件 configure 读取配置需求，秘密值通过 values-stdin 写入；AGY 缺变量时保持原生待配置状态，不能自动启用。
-- [ ] 所有任务复核实际安装结果、失效相关能力与资源；错误可能部分写入时同样重读。运行/维护互斥，取消有界清理子进程。
-- [ ] 受控CLI夹具验证命令参数、原生确认、失败与恢复；真实验证只在隔离profile安装本地合成插件，不能碰用户插件或擅自访问付费/私有市场。
-- [ ] 更新原生配置/架构/界面；提交 `feat(plugins): 接入各 CLI 原生插件管理`。
+- [x] 核心回归先行：同名不同市场/作用域、原生要求二次确认、错误revision、恶意来源/命令参数、部分安装、取消和关闭设置后继续跟踪。
+- [x] Claude 使用 plugin list --json、install/enable/disable/update/uninstall；原生 shownCommand.sha256 确认与对应操作绑定，禁止无条件 --yes；卸载默认 --keep-data。
+- [x] Codex 使用 plugin add/list/remove 与 marketplace 命令；普通 GET 读配置与安装缓存，config/read 核对托管/信任层；指定 Git 市场显式刷新后才调用限定 marketplace 的 list，本地源没有 upgrade；插件启停按原生 plugins.<name@marketplace>.enabled与托管层判断。官方明确不用于生产的 plugin RPC 不调用；市场刷新与插件更新不混为一谈。
+- [x] AGY 使用 plugin list --json、install/uninstall/enable/disable/validate；没有已确认独立更新命令时不给“更新成功”假按钮，也不先卸载再重装来冒充更新。
+- [x] 页面提供实际支持的列表、详情、安装来源、启停、卸载与更新/验证；列表离线来源不足时，显式“刷新来源”才允许联网。插件所带Skills/MCP标明从属关系。
+- [x] 对原生支持的市场来源提供列表/添加/移除/指定来源刷新；不预装来源。Claude 插件 configure 读取配置需求，inputs/default 不回填，配置另有带宿主密钥的 revision 防止外部修改后覆盖，秘密值通过 values-stdin 写入；AGY 缺变量时保持原生待配置状态，不能自动启用。
+- [x] 所有任务复核实际安装结果、失效相关能力与资源；错误可能部分写入时同样重读。运行/维护互斥，取消有界清理子进程。
+- [x] 受控CLI夹具验证命令参数、原生确认、失败与恢复；真实验证只在隔离profile安装本地合成插件，不能碰用户插件或擅自访问付费/私有市场。
+- [x] 原生配置/架构/界面文档已更新；独立审阅通过后由主线程提交 `feat(plugins): 接入各 CLI 原生插件管理`。
+
+P09 实测修订：Claude plugin list 会返回其他项目的安装记录，插件/Skills/MCP 共用 projectPath 与规范化当前目录过滤；Codex 本地 marketplace upgrade 原生拒绝，因此仅 Git 来源显示刷新。任务在原生退出、真实重读和能力失效结束后才发布终态，取消与生成命令确认竞争时不会重新进入等待。验收证据与保留的初次失败见本地 p09-report.md；未进行真实第三方市场、账号授权或管理员策略环境验收。
 
 ## P10：专用操作与遗漏复核
 

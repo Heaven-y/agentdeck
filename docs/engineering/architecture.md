@@ -99,6 +99,8 @@ Claude SDK 的 lastModified 为文件 mtime，工作台对当前页读取 JSONL 
 
 `runProcess` 用 `shell: false` 和隐藏窗口启动，支持 stdin、独立环境、AbortSignal、输出上限和超时。长期对话管道由各适配器管理，prompt 不写进命令行参数。
 
+原生插件管理通过固定 CLI 参数数组和安装进程 runner 执行，prepare 不运行安装，宿主 operationId 负责幂等、进度与取消。命令确认绑定原生 SHA-256，配置秘密只经 stdin；操作全程持有既有维护/项目租约，能力失效与进程清理完成后才发布终态。Codex 插件不使用官方标为不可生产使用的 plugin RPC，配置层级读取使用 config/read，离线目录来自本地配置与安装缓存。接口与能力差异见[原生配置](native-configuration.md#原生插件管理)。
+
 ### 4.3 回合控制与原生参数
 
 `TurnManager` 在准备前建立轮次，用 Agent+原生会话 id 占用会话；改名、删除、归档与分叉复用同一占用边界。停止取消准备或交给运行器中断，错误和结束都必须释放资源。

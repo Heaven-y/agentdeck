@@ -5,6 +5,8 @@ import { readSkillConfig } from './config';
 import { object, type McpContext, type McpPlugin } from './mcp-types';
 import type { NativeResourceScope } from '@agentdeck/shared/settings';
 import { NativeManagementError } from './errors';
+import { codexPlugins } from '../agents/codex/configuration/plugins';
+import { claudePluginRecords } from './plugin-utils';
 function relativePluginFile(root: string, file: string): string {
   const relative = file.replace(/^\$\{CLAUDE_PLUGIN_ROOT\}[\\/]/, '');
   const target = path.resolve(root, relative),
@@ -30,7 +32,22 @@ async function claudeManifestServers(root: string): Promise<Record<string, unkno
 }
 /** 只查询已安装插件目录；Codex plugin list 可能访问市场，因此不在离线 GET 使用。 */
 export async function readMcpPlugins(context: McpContext): Promise<McpPlugin[]> {
-  if (context.agent === 'codex') return [];
+  if (context.agent === 'codex') {
+    const inventory = await codexPlugins({
+      ...context,
+      run: () => Promise.reject(new Error()),
+    });
+    return mcpPluginsFromRecords(
+      context,
+      inventory.plugins
+        .filter((plugin) => plugin.root)
+        .map((plugin) => ({
+          id: plugin.selector,
+          scope: plugin.scope,
+          installPath: plugin.root,
+        })),
+    );
+  }
   const cli = resolveLocalCommand(context.agent === 'claude' ? 'claude' : 'agy', context.env);
   const result = await runProcess(cli.command, [...cli.args, 'plugin', 'list', '--json'], {
     cwd: context.project?.dir ?? context.homeDir,
@@ -40,7 +57,10 @@ export async function readMcpPlugins(context: McpContext): Promise<McpPlugin[]> 
   });
   if (result.exitCode !== 0) throw new Error();
   const plugins: unknown = JSON.parse(result.stdout.toString('utf8'));
-  return mcpPluginsFromRecords(context, plugins);
+  return mcpPluginsFromRecords(
+    context,
+    context.agent === 'claude' ? await claudePluginRecords(context, plugins) : plugins,
+  );
 }
 export async function mcpPluginsFromRecords(context: McpContext, plugins: unknown): Promise<McpPlugin[]> {
   if (!Array.isArray(plugins) || plugins.length > 512) throw new Error();
@@ -53,7 +73,7 @@ async function pluginEntries(context: McpContext, item: unknown): Promise<McpPlu
     root = plugin.installPath ?? plugin.path,
     owner = plugin.id ?? plugin.name;
   if (typeof root !== 'string' || !path.isAbsolute(root) || typeof owner !== 'string') return [];
-  const file = path.join(root, context.agent === 'claude' ? '.mcp.json' : 'mcp_config.json');
+  const file = path.join(root, context.agent === 'antigravity' ? 'mcp_config.json' : '.mcp.json');
   const config = await readSkillConfig(file, 'managed');
   const servers = object(config.data.mcpServers ?? config.data);
   if (context.agent === 'claude') Object.assign(servers, await claudeManifestServers(root));

@@ -218,9 +218,7 @@ export function createNativeMcpService(deps: Deps = {}) {
         if (agent === 'antigravity')
           warnings.push('此版本没有可靠的独立运行状态或无头 OAuth 接口；请在原生 MCP 面板检查连接与授权。');
         if (agent === 'codex')
-          warnings.push(
-            '离线列表只读取原生配置文件；插件内的 MCP 由所属插件管理，不通过可能访问市场的 plugin list 自动发现。',
-          );
+          warnings.push('离线列表读取原生配置及已核实安装缓存；插件内的 MCP 由所属插件管理，不自动访问市场。');
         return {
           agent,
           entries,

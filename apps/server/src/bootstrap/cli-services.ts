@@ -52,6 +52,8 @@ import { createNativeMcpService } from '../native-management/mcp-service';
 import { McpRuntimeRegistry } from '../native-management/mcp-runtime';
 import { createMcpControlService } from '../native-management/mcp-control-service';
 import { registerNativeMcpRoutes } from '../http/native-mcp.routes';
+import { createNativePluginService } from '../native-management/plugin-service';
+import { registerNativePluginRoutes } from '../http/native-plugins.routes';
 
 import type { WorkspaceActivity } from '../workspaces/activity';
 import type { WorkspaceStore } from '../workspaces/store';
@@ -119,6 +121,12 @@ export function createCliServices({
     environment: (agent) => launchEnvironment.resolve(agent),
     access: managementAccess,
     onChanged: nativeChanged,
+  });
+  const nativePlugins = createNativePluginService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+    getProject: (id) => store.get(id),
   });
   const mcpControls = createMcpControlService({
     service: nativeMcp,
@@ -206,7 +214,7 @@ export function createCliServices({
     disposeInstallations: () => installations.dispose(),
     disposeSessionManagement: () => {
       mcpControls.oauth.dispose();
-      return antigravityManagement.dispose();
+      return Promise.all([nativePlugins.dispose(), antigravityManagement.dispose()]).then(() => undefined);
     },
     registerRoutes(a: FastifyInstance) {
       registerCliInstallationRoutes(a, { service: installations });
@@ -224,6 +232,7 @@ export function createCliServices({
       registerNativeResourceRoutes(a, { service: nativeResources, store });
       registerNativeManagementRoutes(a, { service: nativeManagement, store });
       registerNativeMcpRoutes(a, { service: nativeMcp, controls: mcpControls, store });
+      registerNativePluginRoutes(a, { service: nativePlugins, store });
       registerModelSettingsRoutes(
         a,
         createModelSettingsService({ resources: nativeResources, environment: launchEnvironment }),
