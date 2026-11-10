@@ -82,7 +82,7 @@ AGY ACP 初始握手已经在隔离目录真实验证：`protocolVersion=1`、`l
 | P04 | 图片、附件与历史展示 | P01、P02 | 待做 | — |
 | P05 | 队列与各 CLI 原生引导 | P03、P04 | 待做 | — |
 | P06 | 子代理历史与运行状态 | P02、P03 | 待做 | — |
-| P07 | Skills、规则/Hooks/代理定义管理 | P01 | 进行中 | 与P02无共享实现文件，保持总并发2 |
+| P07 | Skills、规则/Hooks/代理定义管理 | P01 | 已完成 | 初审4项修复及仅Key事务复核通过；定向54项，独立复核18项；真实隔离验证通过 |
 | P08 | MCP 持久配置与运行管理 | P03、P07 | 待做 | — |
 | P09 | 三 CLI 原生插件管理 | P07、P08 | 待做 | — |
 | P10 | 专用原生命令与能力遗漏复核 | P02–P09 | 待做 | — |
@@ -190,14 +190,18 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 
 接口：`NativeManagementContext={agent, projectId?}`；`NativeSkillEntry` 包含稳定来源 ID、原生名称、scope、origin、状态与可执行 actions。`readSkills(context)`、`changeSkill(context,{id,revision,action,value?})` 仅修改枚举过的资源。共享 action 返回状态，不强制三者拥有相同动作。
 
-- [ ] 核心回归先行：同名技能跨用户/项目/插件、托管只读、符号链接/路径越界、revision冲突、无禁用能力的技能。
-- [ ] Claude 使用原生 `skillOverrides` 的 on/name-only/user-invocable-only/off，保留作用域和默认继承；插件技能通过所属插件管理。
-- [ ] Codex 使用已核对的 skills/config/write，按原生 path/name身份；保存后重新读目录确认启停结果。
-- [ ] AGY 仅对原生清单可控制的技能提供 include/exclude；CLI私有与Shared目录不显示虚假禁用开关，保留编辑/来源说明。
-- [ ] 复用既有规则/技能创建和编辑，增加原生自定义代理与Hooks入口；本地技能导入只接受用户选定目录内普通文件，限制大小/层数，不运行安装脚本。删除只作用于用户拥有的目标并二次确认，插件/系统目录不能当独立技能删除。
-- [ ] 创建、导入、编辑、启停后刷新原生能力；运行中写操作互斥，失败保留用户草稿。
-- [ ] 成功或部分写入后同时重载或失效受影响的闲置原生实例，下一轮不能复用旧工具集合；后台任务活动视为忙。P08/P09沿用这一规则，不能只刷新页面目录。
-- [ ] 验证管理服务、资源边界、各CLI配置、组件与能力失效；更新 native-configuration/界面；提交 `feat(skills): 按原生作用域管理技能与定制资源`。
+- [x] 核心回归先行：同名技能跨用户/项目/插件、托管只读、符号链接/路径越界、revision冲突、无禁用能力的技能。
+- [x] Claude 使用原生 `skillOverrides` 的 on/name-only/user-invocable-only/off，保留作用域和默认继承；插件技能通过所属插件管理。
+- [x] Codex 使用已核对的 skills/config/write，按原生 path/name身份；保存后重新读目录确认启停结果。
+- [x] AGY 仅对原生清单可控制的技能提供 include/exclude；CLI私有与Shared目录不显示虚假禁用开关，保留编辑/来源说明。
+- [x] 复用既有规则/技能创建和编辑，增加原生自定义代理与Hooks入口；本地技能导入只接受用户选定目录内普通文件，限制大小/层数，不运行安装脚本。删除只作用于用户拥有的目标并二次确认，插件/系统目录不能当独立技能删除。
+- [x] 创建、导入、编辑、启停后刷新原生能力；运行中写操作互斥，失败保留用户草稿。
+- [x] 成功或部分写入后同时重载或失效受影响的闲置原生实例，下一轮不能复用旧工具集合；通过会话级 withIdleAgent 判断忙碌，P06 的后台任务租约继续接入同一判断。P08/P09沿用这一规则，不能只刷新页面目录。
+- [x] 验证管理服务、资源边界、各CLI配置、组件与能力失效；更新 native-configuration/界面；实现、验证与独立复核完成；阶段提交 `feat(skills): 按原生作用域管理技能与定制资源`。
+
+已核实边界：结构化状态写入只对 Claude 2.1.317、Codex 0.166.0、AGY 1.5.3 开放；未核实版本保留自有文件管理。Claude 内建技能缺可靠离线清单，继续使用原生 /skills；AGY 复杂继承/路径过滤与同名名称排除转原文入口，不伪造路径级开关。原文入口、完整本地目录导入和确认删除已实现。
+
+2026-11-11 审阅修复：Claude Skills 目录中的 @skills-dir 插件根与原文入口统一只读；AGY 清单选择器独立使用目录身份，保存后由原生目录确认；刷新区分未编辑状态与带原 revision 的真实草稿。模型表单的整个连接/原生文件/回滚事务进入一次维护租约，包括仅改 AGY Key，忙碌保留 409。定向回归及同版本真实隔离验证已通过；独立复核关闭全部问题。保留初审未通过事实。
 
 ## P08：MCP 配置与运行状态
 
@@ -269,7 +273,7 @@ P01同时在 server `agents/contracts.ts` 定义可选会话级 `RuntimeControl`
 | P04 | `apps/server/tests/chat/attachments.test.ts apps/server/tests/http/chat-attachments.routes.test.ts apps/server/tests/agents/claude apps/server/tests/agents/codex apps/server/tests/agents/antigravity/acp.test.ts apps/web/tests/features/chat/attachments.test.tsx` |
 | P05 | `apps/server/tests/chat/followup-queue.test.ts apps/server/tests/chat/turn-manager.test.ts apps/server/tests/http/ws-recovery.test.ts apps/server/tests/agents/claude apps/server/tests/agents/codex apps/server/tests/agents/antigravity/acp.test.ts apps/web/tests/features/chat/followups.test.tsx` |
 | P06 | `apps/server/tests/sessions apps/server/tests/agents/claude/subagents.test.ts apps/server/tests/agents/codex/subagents.test.ts apps/server/tests/agents/antigravity/subagents.test.ts apps/web/tests/features/sessions/subagents.test.tsx` |
-| P07 | `apps/server/tests/native-management/skills.test.ts apps/server/tests/settings/native-resources.test.ts apps/web/tests/features/settings/native-skills.test.tsx` |
+| P07 | `apps/server/tests/settings/native-management.test.ts apps/server/tests/settings/native-resources.test.ts apps/server/tests/settings/model-settings-access.test.ts apps/web/tests/features/settings/native-skills.test.tsx` |
 | P08 | `apps/server/tests/native-management/mcp.test.ts apps/server/tests/http/native-management.routes.test.ts apps/web/tests/features/settings/native-mcp.test.tsx` |
 | P09 | `apps/server/tests/native-management/plugins.test.ts apps/server/tests/http/native-management.routes.test.ts apps/web/tests/features/settings/native-plugins.test.tsx` |
 | P10 | `apps/server/tests/agents/claude/native-actions.test.ts apps/server/tests/agents/codex/native-actions.test.ts apps/server/tests/agents/antigravity/acp.test.ts apps/web/tests/features/chat/native-actions.test.tsx` |

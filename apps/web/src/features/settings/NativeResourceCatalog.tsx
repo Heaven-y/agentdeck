@@ -40,10 +40,10 @@ function ResourceRoot({ root, create }: { root: NativeResourceRoot; create(): vo
           className={buttonClass('outline')}
           disabled={!root.editable}
           onClick={create}
-          aria-label={`在${root.label}中新建${root.kind === 'skills' ? ' Skill' : '规则'}`}
+          aria-label={`在${root.label}中新建${rootKindLabel(root)}`}
         >
           <FilePlus2 aria-hidden className="size-4" />
-          新建{root.kind === 'skills' ? ' Skill' : '规则'}
+          新建{rootKindLabel(root)}
         </button>
       </div>
       <p className="break-all font-mono text-xs text-muted-foreground">{root.displayPath}</p>
@@ -51,6 +51,8 @@ function ResourceRoot({ root, create }: { root: NativeResourceRoot; create(): vo
     </li>
   );
 }
+const rootKindLabel = (root: NativeResourceRoot) =>
+  root.kind === 'skills' ? ' Skill' : root.kind === 'agents' ? '代理定义' : '规则';
 
 export function NativeResourceCatalog({
   catalog,

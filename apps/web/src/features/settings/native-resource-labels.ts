@@ -12,6 +12,7 @@ export const nativeScopeNames: Record<NativeResourceScope, string> = {
   project: '当前项目',
   local: '个人项目',
   directory: '目录',
+  managed: '管理员',
 };
 export const nativeKindNames: Record<NativeResourceKind, string> = {
   settings: '配置',
@@ -20,6 +21,7 @@ export const nativeKindNames: Record<NativeResourceKind, string> = {
   mcp: 'MCP',
   plugins: '原生插件',
   hooks: 'Hooks',
+  agents: '代理定义',
 };
 export function nativeSettingsError(error: unknown) {
   return error instanceof ApiError ? error.message : '无法访问本机设置，请稍后重试。';

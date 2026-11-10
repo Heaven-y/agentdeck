@@ -5,12 +5,31 @@ import {
   type Builder,
   type ResourceContext,
 } from '../../common/configuration/resources';
+import path from 'node:path';
 export function claudePlan(context: ResourceContext, output: Builder) {
   const user = userBase(context, '.claude', context.env.CLAUDE_CONFIG_DIR);
   output.file(user, 'settings.json', 'settings', 'Claude 用户设置，含权限、环境和原生插件选择；保留未知字段。');
   output.file(user, 'CLAUDE.md', 'rules');
   output.scan(user, 'rules', 'rules', true);
   output.scan(user, 'skills', 'skills', true);
+  output.scan({ ...user, readOnly: true }, 'skills/synced', 'skills');
+  const managedDirectory =
+    process.platform === 'win32'
+      ? path.join(context.env.ProgramFiles || 'C:\\Program Files', 'ClaudeCode')
+      : process.platform === 'darwin'
+        ? '/Library/Application Support/ClaudeCode'
+        : '/etc/claude-code';
+  const managed: Base = {
+    directory: managedDirectory,
+    displayPath: managedDirectory,
+    scope: 'managed',
+    readOnly: true,
+  };
+  output.scan(managed, '.claude/skills', 'skills');
+  output.scan(managed, '.claude/agents', 'agents');
+  output.file(managed, 'managed-settings.json', 'settings', '管理员下发的原生策略，仅显示原文，不覆盖托管配置。');
+  output.scan(user, 'agents', 'agents', true);
+  output.file(user, 'settings.json', 'hooks', 'Claude Hooks 位于此原生设置的 hooks 字段；保存不执行命令。');
   const project = projectBase(context);
   if (project) {
     const local: Base = { ...project, scope: 'local' };
@@ -27,6 +46,9 @@ export function claudePlan(context: ResourceContext, output: Builder) {
     output.file(project, '.mcp.json', 'mcp', '项目 MCP 配置；是否启动或批准服务器仍由 Claude 决定。');
     output.scan(project, '.claude/rules', 'rules', true);
     output.scan(project, '.claude/skills', 'skills', true);
+    output.scan(project, '.claude/agents', 'agents', true);
+    output.file(project, '.claude/settings.json', 'hooks', '项目 Hooks 原文入口；执行、权限与加载由 Claude 决定。');
+    output.file(local, '.claude/settings.local.json', 'hooks', '个人项目 Hooks 原文入口。');
   }
   output.plan.guidance.push(
     {

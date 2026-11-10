@@ -1,6 +1,7 @@
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
 import type { FastifyInstance } from 'fastify';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
 import { createAgentProbes, createLocalRunner } from '../agents/common/probe';
 import { createCliInstallationBackend } from '../cli-installation';
@@ -44,6 +45,9 @@ import { createModelSettingsService } from '../settings/model-settings';
 import { createNativeConfigService } from '../settings/native-config';
 import { createNativeResourcesService } from '../settings/native-resources';
 import { createSessionToolsService } from '../settings/session-tools';
+import { createNativeManagementAccess } from '../native-management/access';
+import { createNativeManagementService } from '../native-management/service';
+import { registerNativeManagementRoutes } from '../http/native-management.routes';
 
 import type { WorkspaceActivity } from '../workspaces/activity';
 import type { WorkspaceStore } from '../workspaces/store';
@@ -87,7 +91,25 @@ export function createCliServices({
     },
     { configDir: configDir },
   );
-  const nativeResources = createNativeResourcesService({ onSaved: (agent) => capabilities.invalidate(agent) });
+  const managementAccess = createNativeManagementAccess({
+    withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
+    native: nativeActivity,
+    workspace: activity,
+  });
+  const nativeChanged = async (agent: AgentKind) => {
+    await capabilities.invalidate(agent);
+    sessions.invalidate(agent);
+    await runners[agent].restart();
+  };
+  const nativeResources = createNativeResourcesService({
+    onSaved: nativeChanged,
+    withWrite: (...args) => managementAccess.write(...args),
+  });
+  const nativeManagement = createNativeManagementService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+  });
   const antigravityManagement = createAntigravitySessionManagement({
     environment: () => launchEnvironment.resolve('antigravity'),
   });
@@ -172,10 +194,16 @@ export function createCliServices({
       registerSessionRoutes(a, { store, sessions, activity });
       registerCapabilityRoutes(a, { store, capabilities, sessions });
       registerModelCatalogRoutes(a, { store, capabilities });
+      const legacyConfig = createNativeConfigService({ onSaved: nativeChanged });
       registerAgentConfigRoutes(a, {
-        service: createNativeConfigService({ onSaved: (agent) => capabilities.invalidate(agent) }),
+        service: {
+          ...legacyConfig,
+          save: (agent, input) => managementAccess.write(agent, undefined, () => legacyConfig.save(agent, input)),
+        },
       });
-      registerNativeResourceRoutes(a, { service: nativeResources, store, activity });
+      // 项目与 CLI 写租约已在服务内取得，避免 HTTP 包装重复取锁。
+      registerNativeResourceRoutes(a, { service: nativeResources, store });
+      registerNativeManagementRoutes(a, { service: nativeManagement, store });
       registerModelSettingsRoutes(
         a,
         createModelSettingsService({ resources: nativeResources, environment: launchEnvironment }),

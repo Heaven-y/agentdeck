@@ -98,8 +98,11 @@ export function createNativeConfigService(deps: Deps = {}) {
           const previous = await readConfigFile(location.file);
           if (input.revision !== previous.revision) throw new NativeConfigError('revision_conflict');
           const directory = await inspectDirectory(location.directory, true);
-          await writeConfigFile(location.file, data, previous, directory!);
-          await deps.onSaved?.(agent);
+          try {
+            await writeConfigFile(location.file, data, previous, directory!);
+          } finally {
+            await deps.onSaved?.(agent);
+          }
           return {
             agent,
             displayPath: location.displayPath,

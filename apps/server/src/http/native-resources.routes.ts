@@ -4,6 +4,7 @@ import { NativeResourceError, resourceError } from '../agents/common/configurati
 import { MAX_CONFIG_BYTES } from '../platform/files/safe-file';
 import type { NativeResourcesService } from '../settings/native-resources';
 import { WorkspaceBusyError, type WorkspaceActivity } from '../workspaces/activity';
+import { SessionError } from '../agents/errors';
 import type { WorkspaceStore } from '../workspaces/store';
 
 export type NativeResourceRoutesDeps = {
@@ -32,6 +33,8 @@ async function respond(reply: FastifyReply, operation: () => Promise<unknown>) {
   try {
     return await operation();
   } catch (error) {
+    if (error instanceof SessionError)
+      return reply.code(error.status).send({ code: error.code, message: error.message });
     if (error instanceof WorkspaceBusyError)
       return reply.code(409).send({ code: 'project_busy', message: error.message });
     const failure = resourceError(error);

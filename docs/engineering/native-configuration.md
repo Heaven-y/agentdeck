@@ -20,7 +20,29 @@ Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环�
 
 用户配置根尊重 Claude 的 CLAUDE_CONFIG_DIR 和 Codex 的 CODEX_HOME；Codex 共享 Skills 的用户目录仍是 ~/.agents/skills。项目与子目录按真实来源标注，列表不会把工作台当前选择解释成原生最终生效顺序。
 
-原生插件不同于工作台插件。配置页显示原生路径、作用域和相应命令说明，不直接改写安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。
+原生插件不同于工作台插件。配置页显示原生路径、作用域和相应命令说明，不直接改写安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。完整插件生命周期与 MCP 服务管理仍按原生能力补齐计划分阶段接入。
+
+## Skills 与定制资源管理
+
+“原生配置与扩展”按 Skills、MCP、原生插件、规则 / Hooks / 代理定义分类，保留全部原文入口。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；同名资源分别显示，客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
+
+| CLI | 技能状态与写入 | 保留边界 |
+|---|---|---|
+| Claude | skillOverrides 支持 on、name-only、user-invocable-only、off，另有“默认继承”删除所选层覆盖；用户、项目、个人项目设置分别选择 | 原生按技能名生效，同名来源共享设置；插件技能只读并转所属插件管理。同步与托管技能不直接删除；托管策略仍可覆盖本机设置 |
+| Codex | skills/list 原生路径身份，skills/config/write 仅写所选绝对 SKILL.md 路径；之后 forceReload 重读同 cwd 并核对 effectiveEnabled | 开关写入 Codex 原生用户配置，不伪造项目启停层；插件、管理员、内置及未验证外部来源只读。项目可信状态不因保存而改变 |
+| Antigravity | 普通用户 config/skills 与项目 .agents/skills 可使用各自 skills.json 顶层 exclude；选择器取真实目录名，展示名独立保留，写后重新读取原生目录确认 | 私有 antigravity-cli/skills 和 Shared skills 不受清单排除控制，提供自有文件编辑与确认删除。复杂 entries/inherits/路径过滤以及目录名冲突保留原文，避免把目录名称排除伪装为单一路径开关 |
+
+Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取发现，不刷新市场、不执行插件。原生插件根身份保留到技能来源；个人或项目 Skills 目录中的 `@skills-dir` 插件，其根 SKILL.md 与原文入口同样只读，不作为普通自有技能独立启停或删除。离线资源扫描也检查 `.claude-plugin/plugin.json` 标记，避免原生目录暂不可读时误开放写入。没有可靠离线来源的 Claude 内建技能不编造目录或开关，仍由原生 `/skills` 管理；这与完整管理自有本地技能的范围分开。未知版本或原生目录读取失败时显示“未核实”，不把失败当作未安装或完整支持。
+
+自有 Skills 仍可新建与编辑 SKILL.md；“导入本地技能目录”由浏览器选择整个目录，将普通文件及二进制资料一并导入既有资源根，不接受服务器任意源路径。上限为 128 文件、6 层、每文件 1 MiB、合计 8 MiB，SKILL.md 另限 256 KiB 与有效 UTF-8；不运行安装脚本。暂存目录组装后一次更名，已有目录不覆盖。删除需明确确认整个目录，revision 覆盖支持文件；插件、托管、同步及链接来源不提供删除动作。
+
+Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 settings 层，代理定义来自 agents 目录；Codex 的 hooks.json、config.toml agents 声明及 agents/*.toml 保留来源和信任说明；Antigravity 的 hooks.json、agents.json 与 agents 下原文保持原生作用域。Markdown 代理正文只验证编码和大小，真实语义与执行仍由 CLI 负责，不自建运行器。
+
+写操作依次取得 CLI 空闲租约、原生进程维护锁、项目空闲租约，再进入文件事务。普通原生目录读取与 CLI 安装互斥；同一操作内部不重复取锁。资源保存、创建、导入、删除及启停成功或可能部分写入的失败都会失效能力与会话缓存，并回收对应 CLI 的闲置运行实例，下轮重新读取资源；活动回合不被管理操作强制打断。后台任务的长期占用由会话级运行控制统一接入这一空闲判断。未编辑的设置随刷新同步；真实草稿按所选范围保留值和开始编辑时的 revision，外部更新后不会自动改绑新 revision，可明确放弃草稿并采用最新设置。正文仍由原文编辑器单独保护。
+
+模型表单把连接环境保存、原生文件提交、冲突回滚和最终失效放在同一个用户配置维护租约内；内部使用已持有租约的窄写入口，避免重复加锁。Antigravity 仅改 API Key 而原生 JSON 不变时同样遵守此边界。忙碌保存返回安全的 409 agent_busy，不能误报为磁盘读写故障。
+
+技能目录接口为 `GET /api/native-management/:agent/skills`，写操作使用 `POST .../change` 与 `POST .../import`，均继承本机会话鉴权、Origin 检查与 no-store；请求只接受服务器返回的资源 ID、revision、限定动作与实际作用域。
 
 ## 模型与服务连接
 
@@ -58,7 +80,7 @@ Codex 的自动压缩计数口径 `model_auto_compact_token_limit_scope` 和较�
 
 `GET /api/native-resources/:agent?projectId=...` 只返回已知文件与有界目录的元数据。显式打开使用 `POST /api/native-resources/:agent/:resourceId/open`，此时可能返回文件中的敏感字段；正文只在编辑器局部状态保存，不进入公共查询缓存或浏览器持久存储。
 
-文件保存使用同一资源路径的 PUT，请求携带原文和 revision。接口按真实文件格式检查 JSON/TOML；Markdown 和 Starlark 文本只检查有效 UTF-8 与大小，后者的语义交给原生 CLI。固定资源根内可以创建规则文件或 SKILL.md，不接受任意文件路径。
+文件保存使用同一资源路径的 PUT，请求携带原文和 revision。接口按真实文件格式检查 JSON/TOML；Markdown 和 Starlark 文本只检查有效 UTF-8 与大小，后者的语义交给原生 CLI。固定资源根内可以创建规则、代理定义文件或 SKILL.md，不接受任意文件路径。
 
 正文上限 256 KiB；目录扫描总预算 4096 项、深度上限 6 层。拒绝符号链接、路径越界和已被外部修改的文件；读取失败和不存在分别显示。兼容的两文件配置接口与新接口共用路径写入队列，防止并发覆盖。
 

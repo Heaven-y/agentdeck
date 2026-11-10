@@ -12,8 +12,10 @@ function agyCustomizations(base: Base, output: Builder) {
   output.file(base, 'rules.json', 'rules', '原生规则发现清单；继承、排除和外部路径由 CLI 解析。');
   output.file(base, 'skills.json', 'skills', '原生 Skills 发现清单；继承、排除和外部路径由 CLI 解析。');
   output.file(base, 'plugins.json', 'plugins', '原生插件发现清单；这里不执行安装或启停。');
+  output.file(base, 'agents.json', 'agents', '原生代理发现清单；继承与外部路径由 CLI 解析。');
   output.scan(base, 'rules', 'rules', true);
   output.scan(base, 'skills', 'skills', true);
+  output.scan(base, 'agents', 'agents', true);
 }
 
 export function antigravityPlan(context: ResourceContext, output: Builder) {
