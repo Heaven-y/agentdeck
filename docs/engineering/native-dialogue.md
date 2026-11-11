@@ -57,13 +57,21 @@ WebSocket 通过恢复握手将页签与后端稳定连接身份关联，短暂�
 
 Claude 的 `AskUserQuestion` 支持单选、多选和自由输入，提交交回 `updatedInput.answers`，取消映射为原生拒绝。`onElicitation` 支持表单与链接。专用 `onUserDialog` 只声明真正已实现的种类；目前列表为空，不代答未知 dialogKind。SDK 明确规定未知种类应留给原生超时处理，不能把取消响应冒充用户关闭。
 
-Codex 的 `item/tool/requestUserInput` 按原生问题 ID 回答并核对线程、轮次和 itemId；原生撤销后关闭卡片。0.166.0 的阻塞问题仅在计划模式触发，取消使用经隔离验证的空 answers。默认模式的异步提问是 `agentMessage(delivery=async, questions)` 消息，回答属于追加消息，不假装成同一个 RPC。计划模式入口与异步卡片投递分别跟踪在 P10、P05，不能因回调已实现而宣布这些入口已交付。
+Codex 的 `item/tool/requestUserInput` 按原生问题 ID 回答并核对线程、轮次和 itemId；原生撤销后关闭卡片。0.166.0 的阻塞问题仅在计划模式触发，取消使用经隔离验证的空 answers。默认模式的异步提问是 `agentMessage(delivery=async, questions)` 消息，网页按原生 session/message ID 去重，实时和历史共用非阻塞卡片；回答经过服务端核题后作为追加输入，不假装成同一个 RPC。结束后仍可答，后台归属、队列快照和已答历史保持一致；本页关闭不向原生伪造答案。P05 前端已实现并验证，待独立审阅；计划模式入口由 P10 独立跟踪。
 
 AGY ACP 仅在安装了工作台交互处理器时声明 elicitation 能力；会话创建前的请求必须关联本实例在途操作，已有会话请求核对原生身份。表单提交/拒绝/取消分别返回 accept/decline/cancel，关闭实例取消等待；headless 没有此交互通道。
 
 标准表单支持字符串、数值、布尔、单选与不重复多选，保留原生必填、范围和格式约束；未知组合、正则或嵌套对象明确拒绝。单次最多四题、每题二十选项，表单最多二十字段，答复最多 16 KiB。秘密字段以密码框填写，只直接交回原生，不写入宿主历史、缓存或 WebSocket 恢复数据。
 
 授权链接只接受 http/https，用户主动打开。提交卡片只表示已确认此步骤；Claude 的 elicitation_complete 与 ACP 的 elicitation/complete 按运行实例、服务/原生授权 ID 确认完成。没有完成通知时不声称授权成功。Codex MCP OAuth 连接状态与无回合管理操作的验收继续由 P08 承接。
+
+### 待发列表与本轮引导
+
+运行中输入默认进入宿主队列，只有最新 `FollowupSnapshot.canSteer`、未暂停及本轮模型/强度/权限一致时提供显式引导。网页不以静态能力开启引导，也不在未知投递后切路径重试。queued/failed 排队项可按 revision 编辑；unknown 只能核对历史后处理，移除仅删除列表记录。继续为用户显式动作，重连不自动恢复调度。
+
+`followup.state` 与恢复握手的 `connection.followups` 共用快照处理。追加回执按 clientMessageId 绑定本页草稿，迟到回执不清不同的新输入；自动 `turn.started.input` 使用独立 clientTurnId 重建前台或后台轮次，不能将其与 followupClientMessageId 等同。引导确认单独按消息 ID 去重，保持原会话归属。
+
+本页保留队列文字、技能和 File；256 MiB 页面预算包含所有会话草稿、队列和恢复备份，同一 File 引用只计一次。可信首次 session 绑定只提升已排队文件的 scope，普通草稿仍遵守附件身份变更重传规则。受理后释放队列 File，已开始轮次的附件备份保留至结果；后端身份失效则清旧资产引用并保留原文件，不自动重发。恢复草稿保存当前输入，不覆盖既有 P04 附件备份；刷新后缺少原文件或技能详情时明确要求重新选择。
 
 ## 4. 接口与实现选择
 
@@ -79,9 +87,9 @@ AGY ACP 仅在安装了工作台交互处理器时声明 elicitation 能力；�
 
 模型的 `inputModalities` 只保留原生明确报告的值，不从模型名猜测；`featuresForModel` 进一步关闭未声明的图片输入，并移除不受支持的原生文档直读模式。文本上下文和文件引用与原生文档内容块分别标明，不能把引用路径描述成模型已直接读取文件。P01 只建立安全契约，各新增交互由后续阶段完成后逐项启用。
 
-会话级 `RuntimeControl` 契约独立于 `TurnHandle`，包含运行实例和原生会话身份、任务快照、逐任务停止及资源失效。当前仅定义可选接口，尚无后台任务停止实现；不能由已有停止整轮能力推断可以停止后台任务。后续任务须按实例归属核实控制对象，资源失效不得中断活动任务。
+会话级 `RuntimeControl` 独立于 `TurnHandle`，包含运行实例和原生会话身份、任务快照、逐任务停止及资源失效。Claude 与 Codex 已接入当前实例可核实的后台任务状态、租约和停止；AGY 仅支持整轮取消，不能据此推断可单独停止子任务。停止控制必须绑定原运行实例，资源失效不得中断活动任务。
 
-日常浏览按来源分页读取摘要，再按项目路径确定归属；“其他目录”使用 `GET /api/sessions/page` 的 `scope=unassigned` 查询，零项目也能使用。旧 `GET /api/sessions?agent=...` 保留为全量无归属摘要的兼容入口。共享在途读取不缓存正文，取消一个查询不终止其他订阅者。
+日常浏览先按每个 CLI 的全局目录分页读取摘要，再依据可靠的工作目录归属项目；工作区标题数量是当前已加载结果的投影（另可能含尚未落盘的本页会话），不是原生 CLI 总数。服务端的分页按钮加载后续页，不会因展开单个项目而枚举更多数据。“其他目录”使用 `GET /api/sessions/page` 的 `scope=unassigned` 查询，零项目也能使用。Claude 当前不请求 worktree 会话；Codex 限定已支持的来源并默认排除归档。各原生界面还可能显示这些范围外的记录。旧 `GET /api/sessions?agent=...` 保留为全量无归属摘要的兼容入口。共享在途读取不缓存正文，取消一个查询不终止其他订阅者。
 
 读取、续接、管理及分叉都复核原生目录。会话位于项目子目录时使用原生 cwd 执行，项目根只用于归属；多目录摘要无法唯一归属时拒绝操作。启动环境解析后重新核对实例容量，原生配置写入与项目换目录通过活动租约互斥。
 
@@ -107,7 +115,15 @@ Antigravity 命令及内建技能使用禁止外部请求的临时 Gemini 配置
 
 Claude 上下文沿用 summary 查询，回合用量取原生结果；计时在结果到达时截止，排除之后的上下文查询。Codex 总量仅在基线连续时计算回合增量，恢复但缺基线时不补造首轮用量。Antigravity 先保留已知步骤统计，不将不确定的 result 累计值当单轮结果。历史只展示能够读到的原生数据，旧会话缺少计时时不能还原精确生成速度。
 
-Claude 子代理历史通过 SDK `listSubagents` 与 `getSubagentMessages` 按需读取。会话路由追加 `/subagents`，无查询时列出原生 ID，带 `agentId` 与可选 `cursor` 时返回该子代理一页消息。目标页长 100 条，末尾同一 API 回复的多块内容整体留到下一页；单次回复超过页长时扩读，完整回复最多 1,000 块，超限明确失败，不静默截断。游标按实际返回的原生消息数量推进。先复核父会话的唯一项目归属，再要求子代理 ID 存在于原生目录，拒绝路径形式标识。嵌套子代理保留 parent_agent_id；独立视图解除父引用过滤但移除分叉点，不把其正文、统计或详情选中状态并入父会话。关闭视图释放查询缓存，打开时重新读取原生记录。
+三种 CLI 的会话路由均追加 `/subagents`：无查询时列出一级原生 ID 和摘要，`parentAgentId` 进入已核实的下一层，`agentId` 与可选 `cursor` 读取该层子代理历史。根会话身份始终固定；网页不能用任意子 ID 绕过原生父子链、唯一项目和目录核验。发现最多 128 个节点、10 层与 30 秒，Codex/AGY 轨迹累计最多 32 MiB；循环、异常分页和超限明确失败。摘要只使用可核实的名称、角色和状态，缺失值保持未知。
+
+Claude 继续使用 SDK `listSubagents` 与 `getSubagentMessages`；先读取首条消息的 `parent_agent_id`，父代理必须在同一根目录的原生枚举中。一级 parent 为 null，背景 Agent 的 task_id 与 SDK 子 ID 已在隔离记录中核对。历史目标页长 100 条，同一 API 回复整体留到下一页；超过页长时有界扩读至最多 1,000 块。单次子历史或媒体读取从入口共用 30 秒期限，包含枚举、摘要、正文及媒体复核；不接受最后一次迟到的成功。SDK 文件 API 不支持取消时，宿主有界结束等待并消费迟到拒绝，不能假称已取消 SDK 内部 IO。SDK 历史不提供当前任务状态，不能由末条回复猜测后台任务已结束。
+
+Codex 从父历史 `subAgentActivity.agentThreadId` 发现子线程，同时要求 `parentThreadId` 与 `source.subAgent.thread_spawn.parent_thread_id` 匹配已验证父节点，depth 逐层递增；普通 thread/list 不能作为子线程目录。先核验元数据，再用原生 thread/turns/list 的 full/升序分页读取，内部 review、compact 与未知 source 别名不作为可浏览子代理。父 app-server 退出后的独立读取已通过隔离验证。
+
+AGY 从原生 `invokeSubagent.subagents` 与 `results[].conversationId` 取得描述和身份，再交叉核实唯一 workspaceUris、parentConversationId、rootConversationId、nestingDepth；读取通过独立只读轨迹接口承接活动快照，分页仍有步骤、字节和时间限制。删除、分叉等管理操作继续要求空闲且非子代理，不放宽现有保护。
+
+独立视图保留自身正文、工具和已保存的用量，移除父会话分叉位置；媒体定位保持根会话与子代理 ID，并在读取时重新核实父子链。正式 reader 明确判定不存在或归属不匹配的兄弟节点只从目录淘汰，不阻断已核实的其他节点；根和被选节点仍须通过校验，超时、取消和运行失败继续使读取失败。正文、用量与详情选择不并入父会话。关闭视图释放查询缓存，打开或刷新重新读取原生快照。该入口不提供子代理续聊或停止；会话级后台任务、租约、通知恢复及 stopTask 属于 P06b。
 
 Claude 历史恢复 `assistant.message.usage` 为模型步骤用量，按 API message.id 合并同一次回复的多块记录，统计只放在最后可显示块之后；不把 transcript 完成时间当成生成耗时。SDK 0.3.286 的历史入口不返回完整上下文报告；当前 Codex thread/read 契约没有 tokenUsage；Antigravity 历史已提供上下文估计，但只有单次完整生成的索引、执行身份和用量均一致时才显示生成计时与均速。这些是读取契约边界，界面显示未知值，不用模型名称猜窗口或用时间戳差值补统计。
 
@@ -173,3 +189,9 @@ Codex 已有会话会恢复历史权限，所以用户显式选择“重置权�
 菜单列出已核对协议支持的模式；组织策略、账号/模型可用性与 CLI 版本仍由原生校验，不能把菜单可见当成账号已获权限。原生拒绝时本轮停止并显示错误，不降级策略、不换模式重发。Codex 权限字段拒绝使用固定说明，不泄漏原始 RPC 错误中的路径、配置或凭据。高级自定义 permission profiles、Claude rules 和其他原生细项仍走原生配置，常用预设不覆盖未显式选择的值。
 
 依据：[Claude 权限](https://code.claude.com/docs/en/permissions)、[Agent SDK 权限](https://platform.claude.com/docs/en/agent-sdk/permissions)、[Codex 权限模式](https://learn.chatgpt.com/docs/permission-modes)、[Codex 自动审查](https://learn.chatgpt.com/docs/sandboxing/auto-review)、[app-server](https://learn.chatgpt.com/docs/app-server)。本机 SDK 类型、Claude/agy --help 和 Codex 生成 schema 已核对；这不等于真实模型回合验证。
+
+## 原生后台任务
+
+Claude 和 Codex 的任务状态独立于父回合。后台任务仍活动时，工作区目录更换、会话管理、CLI维护和闲置进程回收保持阻止；停止等待原生确认。网页短暂离线只暂停待发队列，任务快照可恢复，恢复身份永久失效则关闭本页拥有的原生实例。
+
+Claude使用原生全量后台集合及stopTask，Codex先验证子线程的cwd、双parent与depth，再按当前子turn中断；两者只控制本宿主实例确知任务。后台子代理工具批准绑定原创建页面，通过session级请求回答，不能结束或污染父回合。Claude原生禁用子代理AskUserQuestion，Codex默认子代理未开放异步提问；不伪造问题支持。AGY只读子历史与整轮停止保持，尚无独立子任务停止证据。

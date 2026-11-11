@@ -13,6 +13,7 @@ import { StatisticsLine } from './StatisticsLine';
 import { ActivityCard } from './ActivityCard';
 import { SessionReferenceText, sessionMarkdownComponents, sessionMarkdownUrl } from './SessionReferenceText';
 import { sessionRemarkPlugins } from './session-reference-markdown';
+import { AsyncQuestionCard } from './AsyncQuestionCard';
 
 function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant' }> }) {
   return (
@@ -26,6 +27,9 @@ function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant
       >
         {item.text}
       </Streamdown>
+      {item.responseModel && (
+        <p className="mt-2 text-xs leading-5 break-all text-muted-foreground">响应模型：{item.responseModel}</p>
+      )}
     </div>
   );
 }
@@ -43,6 +47,8 @@ export const MessageItem = memo(function MessageItem({
   onExpandedChange,
 }: { item: ChatItem } & ExpandedProps) {
   switch (item.kind) {
+    case 'async-question':
+      return <AsyncQuestionCard item={item} />;
     case 'user':
       return (
         <div className="conversation-user">

@@ -18,6 +18,7 @@ import {
 } from './trajectory-model';
 import { PermissionCard } from './PermissionCard';
 import { InteractionCard } from './InteractionCard';
+import { AsyncQuestionCard } from './AsyncQuestionCard';
 import { buttonClass } from '../../ui/styles';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { TrajectoryContext } from './TrajectoryContext';
@@ -89,6 +90,11 @@ function StepRow({
       {item.kind === 'interaction' && !item.resolved && (
         <div className="px-4 pb-3">
           <InteractionCard item={item} />
+        </div>
+      )}
+      {item.kind === 'async-question' && (
+        <div className="px-4 pb-3">
+          <AsyncQuestionCard item={item} />
         </div>
       )}
     </div>

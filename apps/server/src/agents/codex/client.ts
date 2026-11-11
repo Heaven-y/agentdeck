@@ -19,11 +19,12 @@ type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; 
 type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 
 function requestFailure(error: unknown): CodexError {
+  if (record(error).code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true);
   const message = text(record(error).message);
   // 只识别权限字段并返回固定说明，不把服务端错误中的配置值或路径透给网页。
   if (/approvals?[ _]?(reviewer|policy)|auto_review|guardian_subagent|sandbox|permission.?profile/i.test(message))
-    return new CodexError('Codex 未接受所选权限模式，请检查当前版本和原生权限策略。');
-  return new CodexError('Codex 请求失败，请检查本机配置、登录状态或会话是否仍存在。');
+    return new CodexError('Codex 未接受所选权限模式，请检查当前版本和原生权限策略。', true);
+  return new CodexError('Codex 请求失败，请检查本机配置、登录状态或会话是否仍存在。', true);
 }
 
 /** app-server 的 stdio 仅接受逐行 JSON-RPC；stderr 持续排空而不泄露诊断原文。 */
@@ -41,11 +42,13 @@ export class CodexClient {
   private closing?: Promise<void>;
   private resolveClosed!: () => void;
   private readonly timeoutMs: number;
+  private readonly experimentalApi: boolean;
   private readonly signal?: AbortSignal;
   private readonly onAbort = () => this.terminate(cancelled());
 
   private constructor(command: string, args: string[], options: ClientOptions) {
     this.timeoutMs = options.timeoutMs ?? RPC_TIMEOUT_MS;
+    this.experimentalApi = options.experimentalApi === true;
     this.signal = options.signal;
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -79,7 +82,7 @@ export class CodexClient {
   async initialize(): Promise<void> {
     await this.request('initialize', {
       clientInfo: { name: 'agentdeck', title: 'AgentDeck', version: '0.1.0' },
-      capabilities: { experimentalApi: false, requestAttestation: false },
+      capabilities: { experimentalApi: this.experimentalApi, requestAttestation: false },
     });
     this.notify('initialized', {});
   }

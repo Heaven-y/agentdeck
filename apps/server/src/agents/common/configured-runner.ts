@@ -21,7 +21,8 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
   function retain(entry: Entry) {
     clearTimeout(entry.timer);
     entry.timer = setTimeout(() => {
-      void drop(entry).catch(() => undefined);
+      if (entry.native.hasBackground?.() || entry.native.runtimeControl?.(entry.key)?.taskActivity) retain(entry);
+      else void drop(entry).catch(() => undefined);
     }, deps.idleMs ?? 300_000);
     entry.timer.unref();
   }
@@ -29,7 +30,7 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
     const key = input.sessionId ? keyOf(input) : randomUUID();
     const existing = entries.get(key);
     if (existing && existing.permission === permissionOf(input)) return existing;
-    if (existing) await drop(existing);
+    await replaceIdle(existing);
     if (entries.size >= 32) throw new Error();
     const env = await deps.environment();
     // 环境解析期间其他会话可能先占满实例；分配前须再次核对上限。
@@ -37,6 +38,10 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
     const entry = { key, permission: permissionOf(input), native: deps.create(env) };
     entries.set(key, entry);
     return entry;
+  }
+  async function replaceIdle(existing?: Entry): Promise<void> {
+    if (existing?.native.hasBackground?.()) throw new Error('原生后台任务仍在运行，请先完成或停止');
+    if (existing) await drop(existing);
   }
   const runner = ((input: AgentTurnInput): TurnHandle => {
     let cancelled = false;
@@ -78,6 +83,10 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
     }
     const pending = start();
     const handle: TurnHandle = {
+      canSteer: () => nativeHandle?.canSteer?.() ?? false,
+      steer: (input) =>
+        nativeHandle?.steer?.(input) ??
+        Promise.resolve({ status: 'rejected', message: '当前运行通道不支持引导，输入已保留。' }),
       interrupt: async () => {
         cancelled = true;
         await nativeHandle?.interrupt();
@@ -89,7 +98,7 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
     return handle;
   }) as TurnRunner & { restart(): Promise<void> };
   runner.restart = async () => {
-    if (preparing || restarting || disposed) throw new Error('CLI 正忙');
+    if (preparing || restarting || disposed || runner.hasBackground?.()) throw new Error('CLI 正忙');
     restarting = true;
     try {
       await Promise.all([...entries.values()].map(drop));
@@ -97,6 +106,8 @@ export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Pr
       restarting = false;
     }
   };
+  runner.hasBackground = () => [...entries.values()].some((entry) => entry.native.hasBackground?.());
+  runner.runtimeControl = (id) => [...entries.values()].map((entry) => entry.native.runtimeControl?.(id)).find(Boolean);
   runner.dispose = async () => {
     disposed = true;
     // 中断可能要等真实进程 close；清理必须同时到达原生 dispose 的有界退出逻辑。

@@ -7,6 +7,9 @@ import { conversationById, conversationViews, updateConversation } from './conve
 import { refreshSessionLists } from '../sessions/session-queries';
 import { createChatRecovery, endedConversation as ended } from './chat-recovery';
 import { preserveAttachmentInput } from './attachment-actions';
+import { applyFollowupSnapshot, followupDelivered, followupError, startFollowupTurn } from './followup-events';
+import { asyncQuestionError } from './async-question-actions';
+import { bindRuntimeTaskSender, runtimeTaskMessage, runtimeTaskRecovery } from './runtime-tasks-store';
 
 type SetState = (patch: Partial<ChatState>) => void;
 type Msg<T extends ServerMessage['type']> = Extract<ServerMessage, { type: T }>;
@@ -17,6 +20,7 @@ export function createChatEvents(
   send: ChatSocket['send'],
   interrupts: Set<string>,
 ) {
+  bindRuntimeTaskSender(send);
   const recovery = createChatRecovery(get, set, interrupts);
   const delayedInterrupts = new Map<string, string>();
   function change(view: ConversationView, patch: Partial<ConversationView>) {
@@ -30,13 +34,27 @@ export function createChatEvents(
   }
   function started(msg: Msg<'turn.started'>) {
     recovery.restore(msg.clientTurnId);
+    if (msg.input) startFollowupTurn(get, set, msg);
     if (interrupts.has(msg.clientTurnId)) {
       if (send({ type: 'chat.interrupt', turnId: msg.turnId })) interrupts.delete(msg.clientTurnId);
       else delayedInterrupts.set(msg.clientTurnId, msg.turnId);
     }
-    const view = conversationViews(get()).find((entry) => entry.pendingClientTurnId === msg.clientTurnId);
+    const view = conversationViews(get()).find(
+      (entry) => entry.pendingClientTurnId === msg.clientTurnId || entry.turnId === msg.turnId,
+    );
     if (!view || view.workspaceId !== msg.workspaceId || view.agent !== msg.agent) return;
-    change(view, { turnId: msg.turnId, pendingClientTurnId: undefined });
+    change(view, { turnId: msg.turnId, pendingClientTurnId: undefined, queueId: msg.queueId ?? view.queueId });
+    if (msg.queueId && !get().followups[msg.queueId])
+      applyFollowupSnapshot(get, set, {
+        queueId: msg.queueId,
+        workspaceId: msg.workspaceId,
+        agent: msg.agent,
+        conversationId: view.conversationId,
+        sessionId: view.sessionId,
+        revision: 0,
+        paused: false,
+        items: [],
+      });
   }
   function reported(view: ConversationView, event: AgentEvent) {
     if (event.type !== 'session' || !view.workspaceId) return {};
@@ -117,9 +135,32 @@ export function createChatEvents(
     if (!view?.pendingAttachmentInput) return;
     change(view, { banner: msg.message, ...preserveAttachmentInput(view) });
   }
+  function followupMessage(msg: ServerMessage) {
+    switch (msg.type) {
+      case 'question.error':
+        asyncQuestionError(get, set, msg);
+        return true;
+      case 'followup.state':
+        applyFollowupSnapshot(get, set, msg.snapshot);
+        return true;
+      case 'followup.delivered':
+        followupDelivered(get, set, msg);
+        return true;
+      case 'followup.error':
+        followupError(get, set, msg);
+        return true;
+      default:
+        return false;
+    }
+  }
   return {
-    onRecovery: recovery.onRecovery,
+    onRecovery(notice: Parameters<typeof recovery.onRecovery>[0]) {
+      runtimeTaskRecovery(notice);
+      recovery.onRecovery(notice);
+    },
     onMessage(msg: ServerMessage) {
+      runtimeTaskMessage(msg);
+      if (followupMessage(msg)) return;
       switch (msg.type) {
         case 'input.rejected':
           return rejectedInput(msg);

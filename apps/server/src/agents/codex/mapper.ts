@@ -2,6 +2,7 @@ import { NativeSessionIdSchema, type AgentEvent, type TokenUsage } from '@agentd
 import { CodexCompaction } from './compaction';
 import { mediaReference } from '../common/native-media';
 import { codexToolMedia } from './media';
+import { codexAsyncQuestion } from './async-questions';
 import { list, record, text, type RecordValue } from './types';
 import { codexItemDuration, CodexTurnUsage, nonnegativeInteger, type CodexUsageBreakdown } from './observability';
 import { codexToolCompleted, codexToolFailed, codexToolInput, codexToolOutput, isCodexTool } from './tool-items';
@@ -165,13 +166,22 @@ export class CodexEventMapper {
   private mapText(item: RecordValue, history: boolean): AgentEvent[] {
     const id = text(item.id);
     if (item.type === 'userMessage') return history ? this.userMessage(item) : [];
-    if (item.type === 'agentMessage' && !this.streamed.has(`text:${id}`)) {
-      return [{ type: 'text', delta: text(item.text) }];
+    if (item.type === 'agentMessage') {
+      return this.agentMessage(item);
     }
     if (item.type !== 'reasoning' || this.streamed.has(`reasoning:${id}`)) return [];
     const summary = list(item.summary).map(text).join('\n');
     const content = summary || list(item.content).map(text).join('\n');
     return content ? [{ type: 'reasoning', delta: content }] : [];
+  }
+  private agentMessage(item: RecordValue): AgentEvent[] {
+    const question = codexAsyncQuestion(item, this.options.sessionId);
+    return [
+      ...(!this.streamed.has(`text:${text(item.id)}`) && text(item.text)
+        ? [{ type: 'text' as const, delta: text(item.text) }]
+        : []),
+      ...(question ? [{ type: 'async_question' as const, question }] : []),
+    ];
   }
 
   private userMessage(item: RecordValue): AgentEvent[] {

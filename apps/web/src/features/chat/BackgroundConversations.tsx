@@ -35,7 +35,11 @@ export function BackgroundConversations({
       conversationViews(state).filter(
         (view) =>
           (view.conversationId !== state.conversationId || !state.conversationVisible) &&
-          (conversationBusy(view) || view.unread || !!view.draft || (!view.sessionId && conversationHasDraft(view))),
+          (conversationBusy(view) ||
+            !!view.queueId ||
+            view.unread ||
+            !!view.draft ||
+            (!view.sessionId && conversationHasDraft(view))),
       ),
     ),
   );

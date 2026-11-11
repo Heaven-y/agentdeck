@@ -59,10 +59,20 @@ function budget(view: ConversationView, files: File[], state: ChatState): string
     return '附件不能是空文件，每个文件最多5 MiB。';
   if (all.reduce((bytes, file) => bytes + file.size, 0) > ATTACHMENT_LIMITS.messageBytes)
     return '每条消息附件总计最多20 MiB。';
-  const retained = conversationViews(state)
-    .flatMap((view) => [...view.draftAttachments, ...(view.pendingAttachmentInput?.attachments ?? [])])
-    .reduce((bytes, item) => bytes + item.file.size, 0);
-  if (retained + files.reduce((bytes, file) => bytes + file.size, 0) > ATTACHMENT_LIMITS.cacheBytes)
+  const retained = new Set(
+    [
+      ...conversationViews(state).flatMap((view) => [
+        ...view.draftAttachments,
+        ...(view.pendingAttachmentInput?.attachments ?? []),
+        ...view.draftBackups.flatMap((backup) => backup.attachments),
+      ]),
+      ...Object.values(state.followups).flatMap((queue) =>
+        Object.values(queue.drafts).flatMap((draft) => draft.attachments),
+      ),
+    ].map((item) => item.file),
+  );
+  for (const file of files) retained.add(file);
+  if ([...retained].reduce((bytes, file) => bytes + file.size, 0) > ATTACHMENT_LIMITS.cacheBytes)
     return '未发送附件已达到页面容量上限，请先移除一些附件。';
 }
 export function createAttachmentActions(get: () => ChatState, set: SetState, identity: () => ChatIdentity | undefined) {
@@ -92,8 +102,27 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
         pendingAttachmentInput: current.pendingAttachmentInput
           ? { ...current.pendingAttachmentInput, attachments: current.pendingAttachmentInput.attachments.map(clear) }
           : undefined,
+        draftBackups: current.draftBackups.map((backup) => ({ ...backup, attachments: backup.attachments.map(clear) })),
       }));
     }
+    set({
+      followups: Object.fromEntries(
+        Object.entries(get().followups).map(([id, queue]) => [
+          id,
+          {
+            ...queue,
+            invalid: true,
+            error: '连接身份已变化，请核对历史后恢复草稿，不会自动重发。',
+            drafts: Object.fromEntries(
+              Object.entries(queue.drafts).map(([key, draft]) => [
+                key,
+                { ...draft, attachments: draft.attachments.map(clear) },
+              ]),
+            ),
+          },
+        ]),
+      ),
+    });
   }
   function syncAttachmentScopes() {
     for (const view of conversationViews(get())) {
@@ -102,23 +131,41 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
       const pendingAttachmentInput = saved
         ? { ...saved, attachments: saved.attachments.map((item) => attachmentForScope(item, view)) }
         : undefined;
+      const draftBackups = view.draftBackups.map((backup) => ({
+        ...backup,
+        attachments: backup.attachments.map((item) => attachmentForScope(item, view)),
+      }));
       const draftChanged = draftAttachments.some((item, index) => item !== view.draftAttachments[index]);
       const savedChanged = saved?.attachments.some(
         (item, index) => item !== pendingAttachmentInput?.attachments[index],
       );
-      if (draftChanged || savedChanged)
-        update(view.conversationId, () => ({ draftAttachments, pendingAttachmentInput }));
+      if (
+        draftChanged ||
+        savedChanged ||
+        draftBackups.some((backup, index) =>
+          backup.attachments.some((item, position) => item !== view.draftBackups[index]?.attachments[position]),
+        )
+      )
+        update(view.conversationId, () => ({ draftAttachments, pendingAttachmentInput, draftBackups }));
     }
   }
   function syncAttachmentIdentity() {
     syncAttachmentScopes();
     const owner = identity();
     if (!owner) return;
-    const stale = conversationViews(get()).some((view) =>
-      [...view.draftAttachments, ...(view.pendingAttachmentInput?.attachments ?? [])].some(
-        (item) => item.asset && (!item.assetOwner || !sameOwner(item.assetOwner, owner)),
-      ),
-    );
+    const stale =
+      conversationViews(get()).some((view) =>
+        [
+          ...view.draftAttachments,
+          ...(view.pendingAttachmentInput?.attachments ?? []),
+          ...view.draftBackups.flatMap((backup) => backup.attachments),
+        ].some((item) => item.asset && (!item.assetOwner || !sameOwner(item.assetOwner, owner))),
+      ) ||
+      Object.values(get().followups).some((queue) =>
+        Object.values(queue.drafts).some((draft) =>
+          draft.attachments.some((item) => item.asset && (!item.assetOwner || !sameOwner(item.assetOwner, owner))),
+        ),
+      );
     if ((knownOwner && !sameOwner(knownOwner, owner)) || stale) invalidateAttachmentIdentity();
     knownOwner = { ...owner };
   }

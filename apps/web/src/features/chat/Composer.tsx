@@ -10,27 +10,32 @@ import { SessionReferencePreview } from './SessionReferencePreview';
 import { ComposerSurface } from './ComposerSurface';
 import { AttachmentDropzone, ComposerAttachmentPicker, ComposerAttachments } from './ComposerAttachments';
 import { attachmentBlocked } from './attachment-actions';
+import { steerAvailable, pendingFollowups, viewQueue } from './followup-state';
 
-function ComposerActions({ disabled }: { disabled: boolean }) {
+function SubmitActions({ disabled }: { disabled: boolean }) {
   const running = useChat((s) => s.running);
   const stopping = useChat((s) => s.interruptRequested);
-  const loading = useChat((s) => s.loadingHistory);
-  const historyError = useChat((s) => s.historyError);
-  const managing = useChat(managementPending);
   const interrupt = useChat((s) => s.interrupt);
-  const hint = loading
-    ? '正在读取历史，请稍候…'
-    : historyError
-      ? '请先重新读取历史'
-      : managing
-        ? '正在管理当前会话，请稍候…'
-        : undefined;
+  const canSteer = useChat(steerAvailable);
+  const steer = useChat((state) => state.sendFollowup);
+  const draft = useChat((state) => state.draft);
+  const queued = useChat((state) => !viewQueue(state)?.invalid && pendingFollowups(viewQueue(state)).length > 0);
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {hint && (
-        <p role="status" className="max-w-36 text-xs leading-5 text-muted-foreground">
-          {hint}
-        </p>
+      {running && canSteer && (
+        <button
+          type="button"
+          className="composer-followup"
+          disabled={disabled}
+          onClick={() => steer(draft.trim(), 'steer')}
+        >
+          引导本轮
+        </button>
+      )}
+      {running && (
+        <button type="submit" aria-label="排队发送" title="排队发送" className="composer-followup" disabled={disabled}>
+          排队发送
+        </button>
       )}
       {running ? (
         <button
@@ -45,11 +50,40 @@ function ComposerActions({ disabled }: { disabled: boolean }) {
           <span className="sr-only">{stopping ? '正在停止…' : '停止'}</span>
         </button>
       ) : (
-        <button type="submit" aria-label="发送" title="发送" className="composer-submit" disabled={disabled}>
+        <button
+          type="submit"
+          aria-label={queued ? '排队发送' : '发送'}
+          title={queued ? '排队发送' : '发送'}
+          className="composer-submit"
+          disabled={disabled}
+        >
           <ArrowUp aria-hidden className="size-5" />
         </button>
       )}
     </div>
+  );
+}
+
+function ComposerActions({ disabled }: { disabled: boolean }) {
+  const loading = useChat((s) => s.loadingHistory);
+  const error = useChat((s) => s.historyError);
+  const managing = useChat(managementPending);
+  const hint = loading
+    ? '正在读取历史，请稍候…'
+    : error
+      ? '请先重新读取历史'
+      : managing
+        ? '正在管理当前会话，请稍候…'
+        : undefined;
+  return (
+    <>
+      {hint && (
+        <p role="status" className="max-w-36 text-xs leading-5 text-muted-foreground">
+          {hint}
+        </p>
+      )}
+      <SubmitActions disabled={disabled} />
+    </>
   );
 }
 
@@ -59,7 +93,7 @@ function placeholder(connected: boolean, hint?: string): string {
 const emptyInput = (text: string, selection: AgentCapability | undefined) => !text.trim() && !selection;
 const anyBlocked = (conditions: unknown[]) => conditions.some(Boolean);
 
-/** 输入框：Enter 发送、Shift+Enter 换行（输入法组字时不发送）；运行中按钮变为"停止" */
+/** 运行中仍可编辑；Enter默认排队，引导需即时原生证据且独立点击。 */
 export function Composer() {
   const id = useId();
   const text = useChat((s) => s.draft);
@@ -74,9 +108,10 @@ export function Composer() {
   const permissionPending = useChat((s) => s.permissionLoading || s.permissionSaving);
   const sessionId = useChat((s) => s.sessionId);
   const managing = useChat(managementPending);
+  const queued = useChat((state) => !viewQueue(state)?.invalid && pendingFollowups(viewQueue(state)).length > 0);
   const send = useChat((s) => s.send);
   const restriction = selectionRestriction(selection, sessionId, text);
-  const busy = anyBlocked([running, loading, managing, permissionPending]);
+  const busy = anyBlocked([loading, managing, permissionPending]);
   const empty = emptyInput(text, selection) && !attachments.length;
   const blocked = anyBlocked([
     !connected,
@@ -110,6 +145,11 @@ export function Composer() {
             busy={busy}
             placeholder={placeholder(connected, selection?.argumentHint)}
           />
+          {(running || queued) && (
+            <p className="px-4 text-xs leading-5 text-muted-foreground">
+              继续输入会排队为下一轮；引导本轮仅在原生运行时支持时可用。
+            </p>
+          )}
           {restriction && <p className="px-4 text-xs leading-5 text-warning">{restriction}</p>}
           <SessionReferencePreview text={text} />
           <div role="group" aria-label="消息选项" className="composer-toolbar">

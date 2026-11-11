@@ -2,6 +2,11 @@ import type { SessionRef } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from './chat-state';
 
 const fields = [
+  'queueId',
+  'runningInput',
+  'collaborationMode',
+  'draftBackups',
+  'receivedInputs',
   'conversationId',
   'workspaceId',
   'agent',
@@ -46,8 +51,10 @@ export const conversationHasDraft = (view: ConversationView) =>
     view.draft ||
     view.draftAttachments.length ||
     view.pendingAttachmentInput ||
+    view.draftBackups.length ||
     view.selectedCapability ||
     view.permission ||
+    view.collaborationMode ||
     Object.values(view.modelOverrides).some(Boolean) ||
     Object.values(view.reasoningEfforts).some(Boolean)
   );
@@ -78,7 +85,8 @@ export function retainConversation(state: ChatState): ChatState['background'] {
       !state.items.length &&
       !conversationHasDraft(state) &&
       !conversationBusy(state) &&
-      !state.tabIds.includes(state.conversationId))
+      !state.tabIds.includes(state.conversationId) &&
+      !state.queueId)
   )
     return state.background;
   const snapshot = Object.fromEntries(fields.map((field) => [field, state[field]])) as ConversationView;
@@ -92,6 +100,10 @@ function canReload(view: ConversationView) {
   if (!view.sessionId || !view.items.length || conversationBusy(view)) return false;
   if (
     [
+      view.queueId,
+      view.draftAttachments.length,
+      view.pendingAttachmentInput,
+      view.draftBackups.length,
       view.unread,
       view.loadingHistory,
       view.permissionSaving,

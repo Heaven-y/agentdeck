@@ -45,7 +45,13 @@ export const trajectoryRoles: Record<TrajectoryRole, string> = {
 export function trajectoryRole(item: TrajectoryItem): TrajectoryRole {
   if (item.kind === 'compaction') return 'context';
   if (item.kind === 'user') return 'user';
-  if (item.kind === 'tool' || item.kind === 'permission' || item.kind === 'interaction') return 'tool';
+  if (
+    item.kind === 'tool' ||
+    item.kind === 'permission' ||
+    item.kind === 'interaction' ||
+    item.kind === 'async-question'
+  )
+    return 'tool';
   return 'assistant';
 }
 
@@ -127,6 +133,7 @@ export function trajectoryCategory(item: TrajectoryItem): string {
       reasoning: '思考',
       permission: '审批',
       interaction: '提问',
+      'async-question': '补充问题',
       error: '错误',
       compaction: '压缩',
       statistics: '统计',
@@ -147,8 +154,6 @@ export function trajectorySummary(item: TrajectoryItem): string {
       return item.name;
     case 'permission':
       return `${shortToolName(item.toolName)} ${toolPrimaryArgument(item.input) ?? ''}`.trim();
-    case 'interaction':
-      return item.interaction.title;
     case 'error':
       return item.message;
     case 'compaction':
@@ -156,8 +161,14 @@ export function trajectorySummary(item: TrajectoryItem): string {
     case 'statistics':
       return statisticsSummary(item);
     default:
-      return item.text;
+      return messageSummary(item);
   }
+}
+function messageSummary(
+  item: Extract<TrajectoryItem, { kind: 'async-question' | 'interaction' | 'user' | 'assistant' | 'reasoning' }>,
+) {
+  if (item.kind === 'async-question') return item.question.spec.title;
+  return item.kind === 'interaction' ? item.interaction.title : item.text;
 }
 
 function statisticsSummary(item: Extract<TrajectoryItem, { kind: 'statistics' }>) {
@@ -172,6 +183,7 @@ function compactionSummary(item: Extract<TrajectoryItem, { kind: 'compaction' }>
 }
 
 export function trajectoryStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
+  if (item.kind === 'async-question') return questionStatus(item.status);
   if (item.kind === 'activity')
     return {
       label: activityStatus(item),
@@ -185,6 +197,12 @@ export function trajectoryStatus(item: TrajectoryItem): { label: string; tone: s
       : { label: '完成', tone: 'text-success' };
   }
   return otherStatus(item);
+}
+function questionStatus(status: Extract<TrajectoryItem, { kind: 'async-question' }>['status']) {
+  return {
+    label: status === 'open' ? '等待回答' : status === 'accepted' ? '已回答' : '答复待发',
+    tone: 'text-muted-foreground',
+  };
 }
 
 function otherStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {

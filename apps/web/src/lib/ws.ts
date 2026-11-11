@@ -118,12 +118,18 @@ export function connectChat(handlers: Handlers): ChatSocket {
     handlers.onRecovery?.(message);
     handlers.onStatus('open');
   }
+  function receiveSnapshot(message: Extract<RecoveryNotice, { type: 'connection.snapshot' }>) {
+    if (rebuild) handlers.onRecovery?.(message);
+  }
   function received(message: RecoveryServerMessage) {
     if (!accepting) return;
     switch (message.type) {
-      case 'connection.snapshot':
-        if (rebuild) handlers.onRecovery?.(message);
+      case 'connection.followups':
+      case 'connection.tasks':
+        handlers.onRecovery?.(message);
         return;
+      case 'connection.snapshot':
+        return receiveSnapshot(message);
       case 'connection.event':
         return receiveEvent(message);
       case 'connection.ready':

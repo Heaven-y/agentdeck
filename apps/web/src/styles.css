@@ -1,9 +1,14 @@
 @import '@fontsource/jetbrains-mono/400.css';
 @import 'tailwindcss';
+
 @import 'streamdown/styles.css';
 
 /* streamdown 组件里的类名需要被 Tailwind 扫描到（路径相对本文件，指向仓库根目录的 node_modules） */
 @source '../../../node_modules/streamdown/dist/*.js';
+
+.composer-followup {
+  @apply inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40;
+}
 
 /* 参考 DSH 本机主题的中性层级；品牌操作与状态颜色分别定义。 */
 @theme {

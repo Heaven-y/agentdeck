@@ -5,6 +5,8 @@ import type {
   ResumeRequest,
   ServerMessage,
   RecoveryTurn,
+  FollowupSnapshot,
+  RuntimeTasksState,
 } from '@agentdeck/shared/conversation';
 import type { Socket, TurnManager } from './turn-manager';
 
@@ -35,7 +37,9 @@ type Owner = {
   floor: number;
   bytes: number;
   turns: Map<string, SavedTurn>;
-  interactions: Map<string, { completedAt?: number }>;
+  interactions: Map<string, { completedAt?: number; awaitingCompletion?: boolean }>;
+  followups: Map<string, { snapshot: FollowupSnapshot; bytes: number }>;
+  tasks: Map<string, { state: RuntimeTasksState; bytes: number }>;
   events: SavedEvent[];
 };
 const messages: Record<RecoveryFailureCode, string> = {
@@ -69,7 +73,7 @@ export class ResumeHub {
   private limits: ResumeLimits;
 
   constructor(
-    private turns: Pick<TurnManager, 'handle' | 'socketClosed'>,
+    private turns: Pick<TurnManager, 'handle' | 'socketClosed'> & Partial<Pick<TurnManager, 'socketOffline'>>,
     limits: Partial<ResumeLimits> = {},
   ) {
     this.limits = { ...DEFAULT_LIMITS, ...limits };
@@ -87,6 +91,10 @@ export class ResumeHub {
       return this.reject(peer, 'cache_expired');
     }
     this.replacePeer(owner, peer, request.instanceId);
+    this.replay(owner, peer, request);
+    return owner.socket;
+  }
+  private replay(owner: Owner, peer: ResumePeer, request: ResumeRequest): void {
     if (request.rebuild)
       this.notify(peer, {
         type: 'connection.snapshot',
@@ -95,12 +103,18 @@ export class ResumeHub {
     for (const event of owner.events) {
       if (request.rebuild || event.sequence > request.afterSequence) peer.send(event.data);
     }
+    if (owner.followups.size)
+      this.notify(peer, {
+        type: 'connection.followups',
+        snapshots: [...owner.followups.values()].map((value) => value.snapshot),
+      });
+    if (owner.tasks.size)
+      this.notify(peer, { type: 'connection.tasks', states: [...owner.tasks.values()].map((value) => value.state) });
     this.notify(peer, {
       type: 'connection.ready',
       sequence: owner.sequence,
       acceptedClientTurnIds: [...owner.turns.keys()],
     });
-    return owner.socket;
   }
 
   private replacePeer(owner: Owner, peer: ResumePeer, instanceId?: string): void {
@@ -126,12 +140,7 @@ export class ResumeHub {
     const owner = [...this.owners.values()].find((entry) => entry.socket === socket);
     if (!owner || owner.peer !== peer) return;
     if (message.type === 'chat.send') {
-      // 重复发送标识只接收一次，恢复从不重新执行用户输入。
-      if (owner.turns.has(message.clientTurnId)) return;
-      this.prune();
-      const saved = { message, sentAt: Date.now(), bytes: sizeOf(JSON.stringify(message)) };
-      if (!this.reserve(owner, saved.bytes)) return;
-      owner.turns.set(message.clientTurnId, saved);
+      if (!this.rememberInput(owner, message)) return;
     }
     await this.turns.handle(socket, message);
   }
@@ -141,6 +150,7 @@ export class ResumeHub {
     if (!owner || owner.peer !== peer) return;
     owner.peer = undefined;
     owner.offlineAt = Date.now();
+    this.turns.socketOffline?.(owner.socket);
   }
   /** HTTP附件请求必须来自仍拥有此恢复连接的页面，不以客户端会话ID授权。 */
   identity(token: string, instanceId: string): Socket | undefined {
@@ -157,12 +167,18 @@ export class ResumeHub {
   private createOwner(token: string): Owner {
     const owner: Owner = {
       token,
-      socket: { send: (message) => this.publish(owner, message), isOpen: () => this.owners.has(token) },
+      socket: {
+        send: (message) => this.publish(owner, message),
+        isOpen: () => this.owners.has(token),
+        rememberInput: (message) => this.rememberInput(owner, message),
+      },
       sequence: 0,
       floor: 0,
       bytes: 0,
       turns: new Map(),
       interactions: new Map(),
+      followups: new Map(),
+      tasks: new Map(),
       events: [],
     };
     this.owners.set(token, owner);
@@ -171,6 +187,14 @@ export class ResumeHub {
 
   private publish(owner: Owner, message: ServerMessage): void {
     if (this.owners.get(owner.token) !== owner) return;
+    if (message.type === 'followup.state') {
+      this.saveFollowups(owner, message.snapshot);
+      return;
+    }
+    if (message.type === 'tasks.state') {
+      this.saveTasks(owner, message.state);
+      return;
+    }
     const clientTurnId = recordTurn(owner, message);
     const interactionId = recordInteraction(owner, message);
     const sequence = owner.sequence + 1;
@@ -180,6 +204,37 @@ export class ResumeHub {
     owner.sequence = sequence;
     owner.events.push({ sequence, data, bytes, clientTurnId, interactionId });
     if (owner.peer?.isOpen()) owner.peer.send(data);
+  }
+  private rememberInput(owner: Owner, message: Extract<ClientMessage, { type: 'chat.send' }>): boolean {
+    if (this.owners.get(owner.token) !== owner || owner.turns.has(message.clientTurnId)) return false;
+    this.prune();
+    if (this.owners.get(owner.token) !== owner) return false;
+    const saved = { message, sentAt: Date.now(), bytes: sizeOf(JSON.stringify(message)) };
+    if (!this.reserve(owner, saved.bytes)) return false;
+    owner.turns.set(message.clientTurnId, saved);
+    return true;
+  }
+  private saveFollowups(owner: Owner, snapshot: FollowupSnapshot): void {
+    const bytes = sizeOf(JSON.stringify(snapshot));
+    const delta = bytes - (owner.followups.get(snapshot.queueId)?.bytes ?? 0);
+    if (delta > 0 && !this.reserve(owner, delta)) return;
+    if (delta < 0) {
+      owner.bytes += delta;
+      this.totalBytes += delta;
+    }
+    owner.followups.set(snapshot.queueId, { snapshot, bytes });
+    if (owner.peer?.isOpen()) this.notify(owner.peer, { type: 'connection.followups', snapshots: [snapshot] });
+  }
+  private saveTasks(owner: Owner, state: RuntimeTasksState): void {
+    const bytes = sizeOf(JSON.stringify(state));
+    const delta = bytes - (owner.tasks.get(state.runtimeId)?.bytes ?? 0);
+    if (delta > 0 && !this.reserve(owner, delta)) return;
+    if (delta < 0) {
+      owner.bytes += delta;
+      this.totalBytes += delta;
+    }
+    owner.tasks.set(state.runtimeId, { state, bytes });
+    if (owner.peer?.isOpen()) this.notify(owner.peer, { type: 'connection.tasks', states: [state] });
   }
 
   private reserve(owner: Owner, bytes: number): boolean {
@@ -245,10 +300,14 @@ function recordInteraction(owner: Owner, message: ServerMessage): string | undef
   if (message.type !== 'interaction.event') return;
   const event = message.event;
   if (event.type === 'interaction_request') {
-    owner.interactions.set(event.interaction.id, {});
+    owner.interactions.set(event.interaction.id, { awaitingCompletion: event.interaction.kind === 'url' });
     return event.interaction.id;
   }
-  owner.interactions.set(event.id, { completedAt: Date.now() });
+  const previous = owner.interactions.get(event.id);
+  owner.interactions.set(
+    event.id,
+    event.resolution === 'submitted' && previous?.awaitingCompletion ? previous : { completedAt: Date.now() },
+  );
   return event.id;
 }
 function expiredEvent(event: SavedEvent, turns: Set<string>, interactions: Set<string>): boolean {

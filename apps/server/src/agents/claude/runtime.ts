@@ -8,7 +8,9 @@ import { claudeInput, markEmbedded } from '../common/attachment-input';
 import { claudeMcpControl } from './mcp-control';
 import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
-import type { AgentTurnInput, TurnHandle } from '../contracts';
+import { taskActive } from '@agentdeck/shared/conversation';
+import type { AgentTurnInput, TurnHandle, RuntimeControl } from '../contracts';
+import { ClaudeTasks } from './tasks';
 import { claudeInvocationText } from './capabilities';
 import { claudeEffort } from './effort';
 import { ClaudeCompactionTracker } from './compaction';
@@ -55,6 +57,14 @@ class ClaudeTurn {
   private readonly compaction: ClaudeCompactionTracker;
   private fallback?: NodeJS.Timeout;
   private sentAt?: number;
+  private accepted = false;
+  acknowledge(message: unknown): void {
+    if (this.accepted || !this.input.clientMessageId || !message || typeof message !== 'object') return;
+    const ids = inputAcknowledgements(message as Record<string, unknown>);
+    if (!ids.includes(this.input.clientMessageId)) return;
+    this.accepted = true;
+    this.input.onInputAccepted?.();
+  }
 
   markSent(): void {
     this.sentAt = performance.now();
@@ -141,9 +151,76 @@ export class ClaudeRuntime {
   /** 原生进程创建失败的原因；构造不抛错，改在轮次里按错误收尾。 */
   private launchError?: Error;
   sessionId?: string;
+  private readonly taskListeners = new Set<() => void>();
+  private readonly taskOwners = new Map<string, AgentTurnInput>();
+  readonly tasks = new ClaudeTasks({
+    sessionId: () => this.sessionId,
+    stop: async (id) => {
+      if (!this.query?.stopTask) throw new Error('当前SDK不支持停止任务');
+      await this.query.stopTask(id);
+    },
+    changed: () => {
+      const live = new Set(
+        this.tasks
+          .snapshot()
+          .filter((task) => task.kind === 'local_agent' && taskActive(task))
+          .map((task) => task.id),
+      );
+      for (const id of this.taskOwners.keys()) if (!live.has(id)) this.taskOwners.delete(id);
+      for (const id of live)
+        if (!this.taskOwners.has(id))
+          this.taskOwners.set(id, {
+            ...this.interactionInput,
+            text: '',
+            attachments: undefined,
+            attachmentsStored: undefined,
+          });
+      for (const listener of this.taskListeners) listener();
+    },
+    released: (id) => this.taskOwners.delete(id),
+    capacity: () =>
+      this.interactionInput.emit({
+        type: 'error',
+        message: 'Claude 后台任务已达 128 条跟踪上限，新任务未登记，请核对原生任务状态。',
+      }),
+  });
+  runtimeControl(): RuntimeControl | undefined {
+    if (!this.sessionId) return;
+    const alive = () => this.alive,
+      tasks = this.tasks;
+    return {
+      instanceId: this.instanceId,
+      sessionId: this.sessionId,
+      get alive() {
+        return alive();
+      },
+      tasks: () => this.tasks.snapshot(),
+      get taskActivity() {
+        return tasks.active;
+      },
+      get taskWarning() {
+        return tasks.warning;
+      },
+      stopTask: (id) => this.tasks.stopTask(id),
+      close: () => this.close(),
+      subscribe: (listener) => {
+        this.taskListeners.add(listener);
+        return () => this.taskListeners.delete(listener);
+      },
+      invalidateResources: async () => {
+        if (this.current?.active || this.tasks.active) throw new Error('原生实例仍有活动任务');
+        await this.close();
+      },
+    };
+  }
+  private registerTasks(): void {
+    const control = this.runtimeControl();
+    if (control) this.interactionInput.registerRuntime?.(control);
+  }
 
   constructor(input: ClaudeTurnInput) {
     this.interactionInput = input;
+    this.registerTasks();
     this.elicitations = new ClaudeElicitationOwner(this.instanceId, () => ({
       input: this.interactionInput,
       sessionId: this.sessionId,
@@ -156,8 +233,11 @@ export class ClaudeRuntime {
       ...(input.env ? { env: input.env } : {}),
       settingSources: ['user', 'project', 'local'],
       systemPrompt: { type: 'preset', preset: 'claude_code' },
-      canUseTool: (toolName: string, toolInput: Record<string, unknown>, opts: { signal: AbortSignal }) =>
-        this.permission(toolName, toolInput, opts),
+      canUseTool: (
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        opts: { signal: AbortSignal; agentID?: string },
+      ) => this.permission(toolName, toolInput, opts),
       onElicitation: (
         request: Parameters<NonNullable<Options['onElicitation']>>[0],
         context: Parameters<NonNullable<Options['onElicitation']>>[1],
@@ -168,6 +248,7 @@ export class ClaudeRuntime {
         }),
       supportedDialogKinds: [],
       includePartialMessages: true,
+      enableFileCheckpointing: true,
       ...(input.sessionId ? { resume: input.sessionId } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(effort ? { effort } : {}),
@@ -200,6 +281,7 @@ export class ClaudeRuntime {
   run(input: AgentTurnInput): TurnHandle {
     if (this.current?.active) throw new Error('Claude 运行时正在处理另一轮对话');
     this.interactionInput = input;
+    this.registerTasks();
     const turn = new ClaudeTurn(input);
     this.mapper.beginTurn();
     this.current = turn;
@@ -210,11 +292,14 @@ export class ClaudeRuntime {
       interrupt: () => this.interrupt(turn),
       done: turn.done.then(() => {
         if (this.current === turn) this.current = undefined;
+        if (this.interactionInput === input)
+          this.interactionInput = { ...input, text: '', attachments: undefined, attachmentsStored: undefined };
       }),
     };
   }
 
   close(): Promise<void> {
+    this.broken = true;
     this.closing ??= this.shutdown();
     return this.closing;
   }
@@ -230,6 +315,7 @@ export class ClaudeRuntime {
       // 进程已退出时关闭是幂等的。
     }
     this.current?.fail();
+    this.tasks.close();
     await this.consumer.catch(() => undefined);
   }
 
@@ -246,20 +332,26 @@ export class ClaudeRuntime {
       this.releaseMcp?.();
       this.lifetime.abort();
       this.elicitations.close();
+      this.tasks.close();
     }
   }
 
   /** 单条原生消息的分发：轮次结束消息单独收尾，其余按事件映射后投递。 */
   private async dispatch(message: unknown): Promise<void> {
-    const turn = this.current;
+    const turn = this.current?.active ? this.current : undefined;
+    turn?.acknowledge(message);
+    this.tasks.observe(message);
     if (this.elicitations.complete(message)) return;
-    if (turn?.active && isResult(message)) {
+    if (turn && isResult(message)) {
       await this.finishTurn(turn, message);
       return;
     }
     for (const event of this.mapper.map(message)) {
-      if (event.type === 'session') this.sessionId = event.sessionId;
-      if (turn?.active) turn.deliver(event);
+      if (event.type === 'session') {
+        this.sessionId = event.sessionId;
+        this.registerTasks();
+      }
+      turn?.deliver(event);
     }
   }
 
@@ -292,7 +384,7 @@ export class ClaudeRuntime {
       // 中断已经生效时不再投递正文，避免取消后仍向原生进程发送用户消息。
       if (!turn.active || turn.cancelled) return;
       turn.markSent();
-      this.stream.send(claudeInput(text, turn.input.attachments));
+      this.stream.send(claudeInput(text, turn.input.attachments), turn.input.clientMessageId);
     } catch (error) {
       if (turn.active) turn.fail(error instanceof Error ? error.message : 'Claude 本轮运行失败');
     }
@@ -319,8 +411,9 @@ export class ClaudeRuntime {
   private async permission(
     toolName: string,
     toolInput: Record<string, unknown>,
-    opts: { signal: AbortSignal },
+    opts: { signal: AbortSignal; agentID?: string },
   ): Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }> {
+    if (opts.agentID) return this.childPermission(toolName, toolInput, opts.agentID, opts.signal);
     const turn = this.current;
     if (!turn?.active) return { behavior: 'deny', message: '本轮已结束' };
     if (toolName === 'AskUserQuestion')
@@ -336,6 +429,44 @@ export class ClaudeRuntime {
       ? { behavior: 'allow', updatedInput: toolInput }
       : { behavior: 'deny', message: answer.message ?? '用户拒绝' };
   }
+  private async childPermission(toolName: string, toolInput: Record<string, unknown>, id: string, signal: AbortSignal) {
+    const input = this.taskOwners.get(id);
+    if (!input || !this.tasks.ownsAgent(id) || !this.sessionId)
+      return { behavior: 'deny' as const, message: '子代理归属尚未核实或任务已结束。' };
+    const answer = await input.requestInteraction?.(
+      {
+        runtimeId: this.instanceId,
+        scope: { kind: 'session', id: this.sessionId },
+        spec: {
+          kind: 'form',
+          title: `子代理请求执行 ${toolName}`.slice(0, 4000),
+          source: `Claude · 子代理 ${id}`,
+          blocking: true,
+          fields: [
+            {
+              id: 'allow',
+              type: 'choice',
+              multiple: false,
+              required: true,
+              label: childActionDescription(toolInput),
+              options: [
+                { value: 'deny', label: '拒绝' },
+                { value: 'allow', label: '允许本次' },
+              ],
+            },
+          ],
+        },
+      },
+      { signal: AbortSignal.any([signal, this.lifetime.signal]) },
+    );
+    return answer?.action === 'submit' && answer.values.allow === 'allow' && this.tasks.ownsAgent(id)
+      ? { behavior: 'allow' as const, updatedInput: toolInput }
+      : { behavior: 'deny' as const, message: '用户未允许此子代理操作。' };
+  }
+}
+function childActionDescription(input: Record<string, unknown>): string {
+  const description = input.command ?? input.file_path ?? input.description;
+  return typeof description === 'string' ? description.slice(0, 2000) : '是否允许此子代理执行本次工具调用？';
 }
 
 /** 等待网页答复；超时或被中断时拒绝 */
@@ -358,4 +489,10 @@ function waitAnswer(
     signal.addEventListener('abort', onAbort, { once: true });
     pending.then(finish, () => finish({ allow: false, message: '确认请求失败' }));
   });
+}
+
+function inputAcknowledgements(value: Record<string, unknown>): unknown[] {
+  if (value.parent_tool_use_id || value.parent_agent_id) return [];
+  if (!['stream_event', 'assistant', 'result'].includes(String(value.type))) return [];
+  return Array.isArray(value.user_message_uuids) ? value.user_message_uuids : [value.user_message_uuid];
 }

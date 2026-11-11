@@ -5,6 +5,9 @@ import { conversationBusy, conversationById, conversationViews, updateConversati
 import { reduceChat, type ChatItem } from './chat-reducer';
 import { openedTab } from './conversation-tabs';
 import { preserveAttachmentInput } from './attachment-actions';
+import { applyFollowupSnapshot, invalidateFollowups } from './followup-events';
+import { inputItem } from './followup-state';
+import { invalidateAsyncQuestions } from './async-question-actions';
 
 type SetState = (patch: Partial<ChatState>) => void;
 export const endedConversation = {
@@ -16,6 +19,7 @@ export const endedConversation = {
 
 function recoveredOptions(message: RecoveryTurn['message'], previous?: ConversationView) {
   return {
+    collaborationMode: message.collaborationMode,
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES, ...previous?.modelOverrides, [message.agent]: message.model ?? '' },
     reasoningEfforts: {
       ...DEFAULT_REASONING_EFFORTS,
@@ -37,7 +41,8 @@ function recoveredView(turn: RecoveryTurn, previous?: ConversationView): Convers
     agent: message.agent,
     sessionId: message.sessionId ?? previous?.sessionId,
     permission: message.permission,
-    items: reduceChat(previous?.items ?? [], { type: 'user_message', text: recoveredText(message) }),
+    items: inputItem(previous?.items ?? [], { ...message, text: recoveredText(message) }, message.clientTurnId),
+    runningInput: message,
     running: true,
     loadingHistory: false,
     permissionLoading: false,
@@ -105,6 +110,9 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
     },
     onRecovery(notice: RecoveryNotice) {
       switch (notice.type) {
+        case 'connection.followups':
+          for (const snapshot of notice.snapshots) applyFollowupSnapshot(get, set, snapshot);
+          return;
         case 'connection.snapshot':
           saved.clear();
           for (const turn of notice.turns) saved.set(turn.message.clientTurnId, turn);
@@ -112,6 +120,8 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
         case 'connection.ready':
           return ready(notice);
         case 'connection.rejected':
+          invalidateAsyncQuestions(get, set);
+          invalidateFollowups(get, set);
           get().invalidateAttachmentIdentity();
           interrupts.clear();
           saved.clear();

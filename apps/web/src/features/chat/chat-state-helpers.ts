@@ -36,11 +36,13 @@ export function historyParameters(current: ChatState, session: SessionRef) {
       modelOverrides: current.modelOverrides,
       reasoningEfforts: current.reasoningEfforts,
       permission: current.permission,
+      collaborationMode: current.collaborationMode,
     };
   return {
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES },
     reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
     permission: undefined,
+    collaborationMode: undefined,
   };
 }
 
@@ -67,6 +69,11 @@ export function reportedModel(model?: string): string | undefined {
 }
 
 export const emptyConversation = {
+  collaborationMode: undefined,
+  queueId: undefined,
+  runningInput: undefined,
+  draftBackups: [],
+  receivedInputs: [],
   title: undefined,
   draft: '',
   draftAttachments: [] as DraftAttachment[],

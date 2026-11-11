@@ -116,6 +116,124 @@ async function started(client: AcpConnection) {
 }
 
 describe('AGY ACP 对话与兼容路径', () => {
+  it('已有会话专用命令等待迟到的真实目录，压缩完成有状态，不重放历史或转入headless', async () => {
+    const f = setup({
+      input: { sessionId: 'native-1', text: '', invocation: { kind: 'acp-command', name: 'compact' } },
+    });
+    const handle = f.run();
+    await vi.waitFor(() =>
+      expect(f.client.request).toHaveBeenCalledWith('session/resume', expect.anything(), expect.anything()),
+    );
+    expect(vi.mocked(f.client.request).mock.calls.some(([method]) => method === 'session/prompt')).toBe(false);
+    f.update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact' }] });
+    await started(f.client);
+    expect(f.client.request).toHaveBeenCalledWith(
+      'session/prompt',
+      { sessionId: 'native-1', prompt: [{ type: 'text', text: '/compact' }] },
+      expect.anything(),
+    );
+    expect(handle.canSteer?.()).toBe(false);
+    f.finish();
+    await handle.done;
+    expect(f.events.filter((event) => event.type === 'compaction')).toEqual([
+      { type: 'compaction', state: { status: 'running', trigger: 'manual' } },
+      { type: 'compaction', state: { status: 'completed', trigger: 'manual' } },
+    ]);
+    expect(f.headless).not.toHaveBeenCalled();
+  });
+  it('ACP专用命令不能降级为兼容模式提示词，等待目录时取消不发送', async () => {
+    const f = setup({
+      input: {
+        text: '',
+        permission: { agent: 'antigravity', mode: 'auto' },
+        invocation: { kind: 'acp-command', name: 'compact' },
+      },
+    });
+    await f.run().done;
+    expect(f.headless).not.toHaveBeenCalled();
+    expect(f.events.at(-1)).toMatchObject({ isError: true });
+    const pending = setup({ input: { text: '', invocation: { kind: 'acp-command', name: 'compact' } } });
+    const handle = pending.run();
+    await vi.waitFor(() =>
+      expect(pending.client.request).toHaveBeenCalledWith('session/new', expect.anything(), expect.anything()),
+    );
+    await handle.interrupt();
+    expect(vi.mocked(pending.client.request).mock.calls.some(([method]) => method === 'session/prompt')).toBe(false);
+  });
+  it('原生prompt完成后等待图片保存期间已不可再引导，避免另起隐藏prompt', async () => {
+    let release!: () => void;
+    const stored = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const f = setup({
+      input: {
+        attachments: [
+          {
+            id: 'image',
+            revision: 'a'.repeat(64),
+            name: 'fixture.png',
+            kind: 'image',
+            mimeType: 'image/png',
+            size: 1,
+            data: Buffer.from('x'),
+            path: path.join(cwd, 'fixture.png'),
+          },
+        ],
+        attachmentsStored: stored,
+      },
+    });
+    const handle = f.run();
+    await started(f.client);
+    f.finish();
+    await vi.waitFor(() => expect(stored).toHaveBeenCalledOnce());
+    try {
+      expect(handle.canSteer?.()).toBe(false);
+      expect((await handle.steer!({ clientMessageId: 'late', text: 'late' })).status).toBe('rejected');
+    } finally {
+      release();
+      await handle.done;
+    }
+  });
+  it('多次引导转移完成门，旧prompt提前end_turn不能结束新请求；取消最新请求才结束', async () => {
+    const f = setup({ input: { clientMessageId: 'initial' } });
+    const native = vi.mocked(f.client.request).getMockImplementation()!;
+    const prompts: Array<{ resolve(value: AcpRecord): void }> = [];
+    vi.mocked(f.client.request).mockImplementation(async (method, params, options) => {
+      if (method !== 'session/prompt') return native(method, params, options);
+      prompts.at(-1)?.resolve({ stopReason: 'end_turn' });
+      return new Promise((resolve) => {
+        prompts.push({ resolve });
+      });
+    });
+    vi.mocked(f.client.notify).mockImplementation((method) => {
+      if (method === 'session/cancel') prompts.at(-1)?.resolve({ stopReason: 'cancelled' });
+    });
+    const handle = f.run();
+    await started(f.client);
+    for (const text of ['guide-one', 'guide-two']) {
+      const count = prompts.length;
+      let accepted = 0;
+      const pending = handle.steer!({
+        clientMessageId: text,
+        text,
+        onAccepted: () => {
+          accepted++;
+        },
+      });
+      await vi.waitFor(() => expect(prompts).toHaveLength(count + 1));
+      f.update({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text } });
+      expect((await pending).status).toBe('accepted');
+      expect(accepted).toBe(1);
+      expect(f.events.some((event) => event.type === 'turn_end')).toBe(false);
+    }
+    await handle.interrupt();
+    await handle.done;
+    expect(f.events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
+    expect((await handle.steer!({ clientMessageId: 'late', text: 'late' })).status).toBe('rejected');
+  });
   it('使用真实客户端身份和API Key方式，验证选择后才投递；回合使用ACP结果独立统计', async () => {
     const f = setup();
     const handle = f.run();

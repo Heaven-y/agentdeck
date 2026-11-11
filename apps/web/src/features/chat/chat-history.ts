@@ -118,6 +118,9 @@ function attachmentDraft(current: ChatState, same: boolean) {
         draftAttachments: current.draftAttachments,
         attachmentsBusy: current.attachmentsBusy,
         pendingAttachmentInput: current.pendingAttachmentInput,
+        draftBackups: current.draftBackups,
+        queueId: current.queueId,
+        receivedInputs: current.receivedInputs,
       }
     : { draftAttachments: [], attachmentsBusy: false, pendingAttachmentInput: undefined };
 }

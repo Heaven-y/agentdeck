@@ -12,8 +12,10 @@ import { SessionError } from '../errors';
 import { imageSource, mediaMissing } from '../common/native-media';
 import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
 import { codexToolImage } from './media';
+import { readCodexSubagentMedia } from './subagents';
 import { CodexClient } from './client';
 import { CodexEventMapper, codexForkPoint } from './mapper';
+import { markAnsweredQuestions } from './async-questions';
 import { cancelled, CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from './types';
 
 const MAX_SESSIONS = 100_000;
@@ -95,7 +97,7 @@ export async function readCodexSession(
     return {
       session: summary(thread),
       cwd: text(thread.cwd),
-      events: completeTurns(thread).flatMap((turn) => mapper.history(turn)),
+      events: markAnsweredQuestions(completeTurns(thread).flatMap((turn) => mapper.history(turn))),
     };
   });
 }
@@ -105,7 +107,7 @@ export async function readCodexMedia(
   locator: NativeMediaLocator,
   options: CodexRuntimeOptions = {},
 ) {
-  if (locator.subagentId) throw mediaMissing();
+  if (locator.subagentId) return readCodexSubagentMedia(id, dir, locator, options);
   return withClient(dir, options, async (client) => {
     const thread = await checkedThread(client, id, dir, true);
     const item = completeTurns(thread)

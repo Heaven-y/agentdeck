@@ -6,10 +6,24 @@ import {
   type UserInteraction,
   type InteractionResolution,
   type MessageAttachment,
+  type AsyncQuestion,
+  type AsyncQuestionState,
+  type InteractionAnswer,
 } from '@agentdeck/shared/conversation';
 import { finiteCount, type ChatStatistics } from './chat-metrics';
 
 export type ChatItem =
+  | {
+      kind: 'async-question';
+      id: string;
+      question: AsyncQuestion;
+      status: AsyncQuestionState['status'];
+      responding?: boolean;
+      error?: string;
+      dismissed?: boolean;
+      answer?: InteractionAnswer;
+      recovery?: { id: string; checking?: boolean };
+    }
   | {
       kind: 'interaction';
       id: string;
@@ -25,8 +39,8 @@ export type ChatItem =
     })
   | { kind: 'fork-point'; id: string; pointId: string }
   | { kind: 'compaction'; id: string; state: CompactionState; incomplete?: boolean }
-  | { kind: 'user'; id: string; text: string; attachments?: MessageAttachment[] }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean }
+  | { kind: 'user'; id: string; text: string; attachments?: MessageAttachment[]; clientMessageId?: string }
+  | { kind: 'assistant'; id: string; text: string; streaming: boolean; responseModel?: string }
   | { kind: 'reasoning'; id: string; text: string }
   | {
       kind: 'tool';
@@ -57,17 +71,38 @@ export type ChatItem =
 /** 条目只会追加，用位置生成 id 即可保证唯一且稳定（用作 React key） */
 const nextId = (items: ChatItem[], kind: string) => `${kind}-${items.length}`;
 
+function canAppendAssistant(
+  item: ChatItem | undefined,
+  responseModel?: string,
+): item is Extract<ChatItem, { kind: 'assistant' }> {
+  return item?.kind === 'assistant' && item.streaming && item.responseModel === responseModel;
+}
+
+function canAppendReasoning(item: ChatItem | undefined): item is Extract<ChatItem, { kind: 'reasoning' }> {
+  return item?.kind === 'reasoning';
+}
+
 /** 最后一个条目是同类时拼接文本，否则追加新条目 */
-function appendText(items: ChatItem[], kind: 'assistant' | 'reasoning', delta: string): ChatItem[] {
+function appendText(
+  items: ChatItem[],
+  kind: 'assistant' | 'reasoning',
+  delta: string,
+  responseModel?: string,
+): ChatItem[] {
   const last = items.at(-1);
-  if (last?.kind === 'assistant' && kind === 'assistant' && last.streaming) {
+  if (kind === 'assistant' && canAppendAssistant(last, responseModel)) {
     return [...items.slice(0, -1), { ...last, text: last.text + delta }];
   }
-  if (last?.kind === 'reasoning' && kind === 'reasoning') {
+  if (kind === 'reasoning' && canAppendReasoning(last)) {
     return [...items.slice(0, -1), { ...last, text: last.text + delta }];
   }
   const id = nextId(items, kind);
-  return [...items, kind === 'assistant' ? { kind, id, text: delta, streaming: true } : { kind, id, text: delta }];
+  return [
+    ...items,
+    kind === 'assistant'
+      ? { kind, id, text: delta, streaming: true, ...(responseModel ? { responseModel } : {}) }
+      : { kind, id, text: delta },
+  ];
 }
 
 /**
@@ -87,7 +122,7 @@ export function reduceChat(items: ChatItem[], e: AgentEvent): ChatItem[] {
     case 'user_message':
       return [...items, userItem(items, e)];
     case 'text':
-      return appendText(items, 'assistant', e.delta);
+      return appendText(items, 'assistant', e.delta, e.responseModel);
     case 'reasoning':
       return appendText(items, 'reasoning', e.delta);
     case 'tool_call':
@@ -102,6 +137,24 @@ export function reduceChat(items: ChatItem[], e: AgentEvent): ChatItem[] {
     default:
       return reduceLifecycle(items, e);
   }
+}
+function asyncQuestion(items: ChatItem[], event: Extract<AgentEvent, { type: 'async_question' }>): ChatItem[] {
+  const id = `question:${event.question.sessionId}:${event.question.messageId}`;
+  const existing = items.find((item) => item.kind === 'async-question' && item.id === id);
+  if (existing?.kind === 'async-question')
+    return items.map((item) =>
+      item === existing
+        ? {
+            ...existing,
+            question: event.question,
+            ...(event.answered ? { status: 'accepted' as const, responding: false } : {}),
+          }
+        : item,
+    );
+  return [
+    ...items,
+    { kind: 'async-question', id, question: event.question, status: event.answered ? 'accepted' : 'open' },
+  ];
 }
 
 function updateActivity(items: ChatItem[], event: Extract<AgentEvent, { type: 'activity' }>): ChatItem[] {
@@ -249,6 +302,8 @@ function updateCompaction(items: ChatItem[], state: CompactionState): ChatItem[]
 
 function reduceLifecycle(items: ChatItem[], e: AgentEvent): ChatItem[] {
   switch (e.type) {
+    case 'async_question':
+      return asyncQuestion(items, e);
     case 'input_attachments': {
       const index = items.findLastIndex((item) => item.kind === 'user');
       return items.map((item, position) =>

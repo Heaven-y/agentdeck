@@ -89,7 +89,7 @@ it('短断线保留并行回合和审批，重连只补游标之后的事件且�
     const permission = f.runs[0]!.input.requestPermission({ requestId: 'approval', toolName: 'command', input: {} });
     f.runs[0]!.input.emit({ type: 'permission_request', requestId: 'approval', toolName: 'command', input: {} });
     await vi.waitFor(() => expect(a.received.filter((m) => m.type === 'connection.event')).toHaveLength(3));
-    const cursor = a.received.at(-1)!.sequence;
+    const cursor = a.received.findLast((message) => message.type === 'connection.event')!.sequence;
     const turnId = a.received.find((m) => m.message?.type === 'turn.started')!.message!.turnId;
     a.ws.close();
     await once(a.ws, 'close');

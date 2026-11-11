@@ -63,7 +63,34 @@ export function AttachmentDropzone({ children, disabled }: { children: ReactNode
     </div>
   );
 }
-export function ComposerAttachments() {
+function DraftBackups() {
+  const backups = useChat((state) => state.draftBackups);
+  const restore = useChat((state) => state.restoreDraftBackup),
+    discard = useChat((state) => state.discardDraftBackup);
+  if (!backups.length) return null;
+  return (
+    <details className="space-y-2 px-3 pt-3 text-xs" aria-label="保留的草稿">
+      <summary className="cursor-pointer text-muted-foreground">保留的草稿 · {backups.length} 条</summary>
+      <ul className="max-h-36 space-y-2 overflow-y-auto">
+        {backups.map((backup) => (
+          <li key={backup.id} className="space-y-1 rounded-lg border border-border p-2">
+            <p className="line-clamp-2 break-words">
+              {backup.text || '附件草稿'}
+              {backup.attachments.length ? ` · ${backup.attachments.length} 个文件` : ''}
+            </p>
+            <button type="button" className={buttonClass('ghost')} onClick={() => restore(backup.id)}>
+              恢复草稿
+            </button>
+            <button type="button" className={buttonClass('ghost')} onClick={() => discard(backup.id)}>
+              放弃此草稿
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+function DraftAttachments() {
   const items = useChat((s) => s.draftAttachments),
     busy = useChat((s) => s.attachmentsBusy),
     remove = useChat((s) => s.removeAttachment),
@@ -126,5 +153,13 @@ export function ComposerAttachments() {
         </button>
       )}
     </div>
+  );
+}
+export function ComposerAttachments() {
+  return (
+    <>
+      <DraftBackups />
+      <DraftAttachments />
+    </>
   );
 }

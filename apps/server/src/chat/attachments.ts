@@ -19,6 +19,11 @@ export type AttachmentLease = {
   stored(ids: string[]): Promise<void>;
   release(): void;
 };
+export type AttachmentHold = {
+  assets: ChatAttachment[];
+  bind(sessionId: string): Promise<void>;
+  release(): void;
+};
 type Options = { maxBytes?: number; now?: () => number };
 const publicAsset = ({ id, revision, name, mimeType, size, kind }: Asset): ChatAttachment => ({
   id,
@@ -150,14 +155,35 @@ export class AttachmentStore {
       );
       // 在调用原生前固定文件。未确认原生自持久化的输入即使失败也不自动删除。
       for (const asset of assets) await this.update(asset, { state: 'pinned' });
-      for (const asset of assets) this.active.set(asset.id, (this.active.get(asset.id) ?? 0) + 1);
-      return this.lease(assets, files);
+      return {
+        ...this.holdAssets(assets),
+        files,
+        stored: (ids) =>
+          this.serial(async () => {
+            for (const asset of assets) if (ids.includes(asset.id)) await this.update(asset, { state: 'embedded' });
+          }),
+      };
     });
   }
-  private lease(assets: Asset[], files: PreparedAttachment[]): AttachmentLease {
+  hold(owner: object, scope: AttachmentScope, refs: AttachmentRef[]): Promise<AttachmentHold> {
+    return this.serial(async () => {
+      await this.load();
+      if (
+        !refs.length ||
+        refs.length > ATTACHMENT_LIMITS.count ||
+        new Set(refs.map((ref) => ref.id)).size !== refs.length
+      )
+        throw attachmentError('每条消息最多8个不同附件。');
+      const assets = refs.map((ref) => this.selected(owner, scope, ref));
+      validateMessage(assets);
+      return this.holdAssets(assets);
+    });
+  }
+  private holdAssets(assets: Asset[]): AttachmentHold {
+    for (const asset of assets) this.active.set(asset.id, (this.active.get(asset.id) ?? 0) + 1);
     let released = false;
     return {
-      files,
+      assets: assets.map(publicAsset),
       bind: (sessionId) =>
         this.serial(async () => {
           NativeSessionIdSchema.parse(sessionId);
@@ -169,10 +195,6 @@ export class AttachmentStore {
             sessionId,
           );
           for (const asset of assets) asset.scope = { ...asset.scope, sessionId };
-        }),
-      stored: (ids) =>
-        this.serial(async () => {
-          for (const asset of assets) if (ids.includes(asset.id)) await this.update(asset, { state: 'embedded' });
         }),
       release: () => {
         if (released) return;

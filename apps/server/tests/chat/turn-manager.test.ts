@@ -18,8 +18,10 @@ const ws: Workspace = {
 
 function fakeSocket() {
   const sent: ServerMessage[] = [];
-  const socket: Socket = { send: (m) => sent.push(m), isOpen: () => true };
-  return { socket, sent };
+  const followups: ServerMessage[] = [];
+  // 本文件断言轮次/审批事件顺序；独立队列快照由followup与恢复测试覆盖。
+  const socket: Socket = { send: (m) => (m.type === 'followup.state' ? followups : sent).push(m), isOpen: () => true };
+  return { socket, sent, followups };
 }
 
 function fakeRunTurn() {
@@ -307,7 +309,13 @@ describe('TurnManager', () => {
     const { socket, sent } = fakeSocket();
     await turns.handle(socket, send());
     const turnId = (sent[0] as { turnId: string }).turnId;
-    expect(sent[0]).toEqual({ type: 'turn.started', turnId, clientTurnId: 'c1', workspaceId: 'w1', agent: 'claude' });
+    expect(sent[0]).toMatchObject({
+      type: 'turn.started',
+      turnId,
+      clientTurnId: 'c1',
+      workspaceId: 'w1',
+      agent: 'claude',
+    });
     const ev: AgentEvent = { type: 'text', delta: '你好' };
     fake.turns[0]!.input.emit(ev);
     fake.turns[0]!.finish();

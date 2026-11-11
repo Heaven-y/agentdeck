@@ -1,10 +1,12 @@
-import type { AgentTurnInput, TurnHandle, TurnRunner } from '../../contracts';
+import type { AgentTurnInput, TurnHandle, TurnRunner, NativeSteerInput, NativeInputResult } from '../../contracts';
 import { readAntigravityModelSettings, type AntigravityModelSettings } from '../model-catalog';
 import { antigravityInvocationText } from '../commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
 import { AcpInteractions } from './interactions';
-import { acpInput, fileReference, markEmbedded } from '../../common/attachment-input';
+import { fileReference } from '../../common/attachment-input';
+import { AcpPrompts, firstAcpInput } from './prompts';
+import { AcpCommands } from './commands';
 import { AntigravityAcpMapper, acpTurnUsage } from './mapper';
 import { configureSession, needsHeadless } from './selection';
 import { AcpError, cancelled, object, list, protocolFailure, type AcpConnection, type AcpRecord } from './types';
@@ -30,6 +32,28 @@ class AcpTurn {
   private ended = false;
   private failed?: AcpError;
   private fallback?: TurnHandle;
+  private prompts?: AcpPrompts;
+  private readonly commands = new AcpCommands();
+  private compacting = false;
+  canSteer(): boolean {
+    return (
+      this.input.invocation?.kind !== 'acp-command' &&
+      !!this.prompts?.accepting &&
+      this.sent &&
+      !this.ended &&
+      !this.controller.signal.aborted &&
+      !this.failed
+    );
+  }
+  async steer(input: NativeSteerInput): Promise<NativeInputResult> {
+    if (!this.canSteer()) return { status: 'rejected', message: '本轮已结束或当前通道不支持引导，输入已保留。' };
+    try {
+      this.validateAttachments(input.attachments);
+      return await this.prompts!.send(input).receipt;
+    } catch {
+      return { status: 'rejected', message: '当前原生通道不能受理此引导，输入已保留。' };
+    }
+  }
 
   constructor(
     private readonly input: AgentTurnInput,
@@ -98,17 +122,22 @@ class AcpTurn {
   }
 
   private notification(method: string, params: AcpRecord): void {
+    if (method === 'session/update') this.commands.update(params);
     if (method === 'elicitation/complete') {
       this.interactions?.complete(params);
       return;
     }
-    if (this.ended || !this.sent || method !== 'session/update') return;
+    if (method === 'session/update') this.sessionUpdate(params);
+  }
+  private sessionUpdate(params: AcpRecord): void {
+    if (this.ended || !this.sent) return;
     if (params.sessionId !== this.nativeId) {
       this.failed = protocolFailure();
       void this.interrupt();
       return;
     }
     try {
+      this.prompts?.echo(object(params.update));
       for (const event of this.mapper.update(object(params.update))) this.input.emit(event);
     } catch {
       this.failed = protocolFailure();
@@ -117,6 +146,8 @@ class AcpTurn {
   }
 
   private async useHeadless(): Promise<void> {
+    if (this.input.invocation?.kind === 'acp-command')
+      throw new AcpError('selection', '所选模型或权限使用兼容通道，不能执行ACP专用命令。');
     if (this.input.attachments?.some((file) => file.kind === 'image'))
       throw new AcpError('selection', '当前 Antigravity 兼容运行路径不支持图片，请保留附件并选择可用的 ACP 模型。');
     await this.client?.close();
@@ -134,10 +165,16 @@ class AcpTurn {
       const model = await this.selectRuntime();
       if (model !== undefined) await this.prompt(model);
     } catch (error) {
+      if (this.compacting)
+        this.input.emit({
+          type: 'compaction',
+          state: { status: this.controller.signal.aborted ? 'cancelled' : 'failed', trigger: 'manual' },
+        });
       this.input.emit({ type: 'error', message: this.errorMessage(error) });
       this.input.emit({ type: 'turn_end', isError: true });
     } finally {
       this.ended = true;
+      this.prompts?.close();
       this.interactions?.close();
       this.permissions?.cancel();
       await this.client?.close();
@@ -169,22 +206,28 @@ class AcpTurn {
       await this.useHeadless();
     }
   }
-  private validateAttachments(): void {
-    if (this.input.attachments?.some((file) => file.kind === 'image') && this.promptCapabilities?.image !== true)
+  private validateAttachments(attachments = this.input.attachments): void {
+    if (attachments?.some((file) => file.kind === 'image') && this.promptCapabilities?.image !== true)
       throw new AcpError('selection', '当前 Antigravity 运行通道没有确认图片输入支持。');
-    if (
-      this.input.attachments?.some((file) => file.kind === 'text') &&
-      this.promptCapabilities?.embeddedContext !== true
-    )
+    if (attachments?.some((file) => file.kind === 'text') && this.promptCapabilities?.embeddedContext !== true)
       throw new AcpError('selection', '当前 Antigravity 运行通道没有确认文件上下文支持。');
   }
-  private async prompt(model: string): Promise<void> {
-    this.validateAttachments();
+  private async invocationText(): Promise<string> {
+    if (this.input.invocation?.kind === 'acp-command')
+      await this.commands.ready(this.nativeId!, this.controller.signal);
     const invoke =
       this.options.invocationText ??
       ((input: AgentTurnInput, signal: AbortSignal) =>
         antigravityInvocationText(input, { env: this.options.env, signal }));
-    const inputText = this.input.invocation ? await invoke(this.input, this.controller.signal) : this.input.text;
+    return this.input.invocation?.kind === 'acp-command'
+      ? this.commands.input(this.nativeId!, this.input.invocation.name, this.input.text)
+      : this.input.invocation
+        ? await invoke(this.input, this.controller.signal)
+        : this.input.text;
+  }
+  private async prompt(model: string): Promise<void> {
+    this.validateAttachments();
+    const inputText = await this.invocationText();
     this.controller.signal.throwIfAborted();
     this.input.emit({
       type: 'session',
@@ -194,16 +237,22 @@ class AcpTurn {
       agent: 'antigravity',
     });
     this.sent = true;
+    this.compacting = this.input.invocation?.kind === 'acp-command' && this.input.invocation.name === 'compact';
+    if (this.compacting) this.input.emit({ type: 'compaction', state: { status: 'running', trigger: 'manual' } });
     const started = performance.now();
-    const result = await this.client!.request(
-      'session/prompt',
-      { sessionId: this.nativeId!, prompt: acpInput(inputText, this.input.attachments) },
-      { timeoutMs: 0 },
-    );
+    this.prompts = new AcpPrompts(this.client!, this.nativeId!);
+    this.prompts.send(firstAcpInput(this.input, inputText));
+    const result = await this.prompts.completion();
+    await this.finishPrompt(result, started);
+  }
+  private async finishPrompt(result: AcpRecord, started: number): Promise<void> {
     if (this.failed) throw this.failed;
     if (this.controller.signal.aborted || result.stopReason === 'cancelled') throw cancelled();
     const isError = result.stopReason !== 'end_turn';
-    if (!isError) await markEmbedded(this.input, ['image']);
+    if (!isError) await this.prompts!.stored();
+    if (this.compacting)
+      this.input.emit({ type: 'compaction', state: { status: isError ? 'failed' : 'completed', trigger: 'manual' } });
+    this.compacting = false;
     if (isError)
       this.input.emit({ type: 'error', message: 'Antigravity 未完整完成本轮，请检查原生停止原因或调整本轮请求。' });
     this.input.emit({
@@ -245,7 +294,12 @@ export function createAntigravityAcpRunner(options: Options): TurnRunner {
     if (disposed) throw new AcpError('unavailable', 'Antigravity 运行器已关闭。');
     const turn = new AcpTurn(input, options);
     active.add(turn);
-    return { interrupt: () => turn.interrupt(), done: turn.done.finally(() => active.delete(turn)) };
+    return {
+      interrupt: () => turn.interrupt(),
+      done: turn.done.finally(() => active.delete(turn)),
+      canSteer: () => turn.canSteer(),
+      steer: (input) => turn.steer(input),
+    };
   }) as TurnRunner;
   runner.dispose = async () => {
     disposed = true;

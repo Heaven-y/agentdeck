@@ -174,7 +174,7 @@ it('单页缓存超限立即停止其回合，不泄露给其他身份，释放�
 });
 
 it('总预算和连接数量有界，耗尽时只拒绝新占用，不中断其他页签', async () => {
-  const f = setup({ owners: 2, ownerBytes: 5000, totalBytes: 1300 });
+  const f = setup({ owners: 2, ownerBytes: 5000, totalBytes: 2500 });
   try {
     const a = peer();
     const b = peer();
@@ -187,6 +187,213 @@ it('总预算和连接数量有界，耗尽时只拒绝新占用，不中断其�
     await f.hub.handle(b.value, second, send('other'));
     expect(b.messages.at(-1)).toMatchObject({ code: 'capacity' });
     expect(f.runs[0]!.interrupted).toBe(false);
+  } finally {
+    await f.dispose();
+  }
+});
+
+it('待发列表独立于旧回合TTL恢复，离线暂停后显式继续，自动派发输入刷新不重发', async () => {
+  const f = setup({ completedMs: 100, offlineMs: 1000 });
+  try {
+    const token = randomUUID(),
+      a = peer();
+    const socket = f.hub.attach(a.value, request(token, { create: true }))!;
+    await f.hub.handle(a.value, socket, { ...send(), conversationId: 'draft' });
+    f.runs[0]!.input.emit({ type: 'session', sessionId: 'native', model: 'fixture', cwd: process.cwd() });
+    await vi.advanceTimersByTimeAsync(0);
+    const queueId = f.turns.followups.snapshots(socket)[0]!.queueId;
+    const clientMessageId = randomUUID();
+    await f.hub.handle(a.value, socket, {
+      type: 'chat.followup',
+      queueId,
+      clientMessageId,
+      mode: 'queue',
+      content: { text: 'queued' },
+    });
+    f.hub.detach(a.value, socket);
+    f.runs[0]!.input.emit({ type: 'turn_end', isError: false });
+    f.runs[0]!.finish();
+    await vi.advanceTimersByTimeAsync(101);
+    expect(f.runs).toHaveLength(1);
+    const b = peer();
+    f.hub.attach(b.value, request(token, { rebuild: true }));
+    expect(b.messages[0]).toEqual({ type: 'connection.snapshot', turns: [] });
+    expect(b.messages.find((message) => message.type === 'connection.followups')).toMatchObject({
+      snapshots: [{ paused: true, sessionId: 'native', items: [{ clientMessageId, status: 'queued' }] }],
+    });
+    await f.hub.handle(b.value, socket, { type: 'followup.resume', queueId });
+    expect(f.runs).toHaveLength(2);
+    f.hub.detach(b.value, socket);
+    const c = peer();
+    f.hub.attach(c.value, request(token, { rebuild: true }));
+    expect(c.messages[0]).toMatchObject({
+      type: 'connection.snapshot',
+      turns: [{ message: { text: 'queued', sessionId: 'native' } }],
+    });
+    const snapshot = c.messages[0]!;
+    if (snapshot.type !== 'connection.snapshot') throw new Error('缺少恢复输入');
+    const attemptedId = snapshot.turns[0]!.message.clientTurnId;
+    expect(attemptedId).not.toBe(clientMessageId);
+    await f.hub.handle(c.value, socket, { ...send(attemptedId), text: 'queued' });
+    expect(f.runs).toHaveLength(2);
+  } finally {
+    await f.dispose();
+  }
+});
+
+it('URL已提交但原生尚未确认完成时，不按已完成交互TTL丢弃授权状态', async () => {
+  const f = setup({ completedMs: 100, offlineMs: 1000 });
+  try {
+    const token = randomUUID(),
+      a = peer();
+    const socket = f.hub.attach(a.value, request(token, { create: true }))!;
+    await f.hub.handle(a.value, socket, send());
+    const answer = f.runs[0]!.input.requestInteraction!({
+      runtimeId: 'runtime',
+      completionId: 'authorization',
+      scope: { kind: 'session', id: 'native' },
+      spec: { kind: 'url', title: '本机合成授权', blocking: false, url: 'https://example.com/authorize' },
+    });
+    const sent = a.messages.find(
+      (message) => message.type === 'connection.event' && message.message.type === 'interaction.event',
+    );
+    if (
+      sent?.type !== 'connection.event' ||
+      sent.message.type !== 'interaction.event' ||
+      sent.message.event.type !== 'interaction_request'
+    )
+      throw new Error('缺少授权');
+    const id = sent.message.event.interaction.id;
+    await f.hub.handle(a.value, socket, { type: 'interaction.respond', id, answer: { action: 'submit', values: {} } });
+    await answer;
+    f.runs[0]!.finish();
+    await vi.advanceTimersByTimeAsync(101);
+    f.hub.detach(a.value, socket);
+    const b = peer();
+    f.hub.attach(b.value, request(token, { rebuild: true }));
+    expect(
+      b.messages.some(
+        (message) =>
+          message.type === 'connection.event' &&
+          message.message.type === 'interaction.event' &&
+          message.message.event.type === 'interaction_request',
+      ),
+    ).toBe(true);
+    f.runs[0]!.input.completeInteraction!('runtime', 'authorization');
+    await vi.advanceTimersByTimeAsync(101);
+    f.hub.detach(b.value, socket);
+    const c = peer();
+    f.hub.attach(c.value, request(token, { rebuild: true }));
+    expect(
+      c.messages.some((message) => message.type === 'connection.event' && message.message.type === 'interaction.event'),
+    ).toBe(false);
+  } finally {
+    await f.dispose();
+  }
+});
+
+it('排队准备被拒绝后，显式编辑重试使用新轮次送达ID，不被旧恢复回执吞掉', async () => {
+  let available = true;
+  const runs: Array<{ input: AgentTurnInput; finish(): void }> = [];
+  const turns = new TurnManager({
+    getWorkspace: async () => (available ? { id: 'demo', name: 'demo', dir: process.cwd() } : undefined),
+    sessions: { assertBelongs: async () => {} },
+    runners: {
+      claude: (input) => {
+        let resolve!: () => void;
+        const done = new Promise<void>((r) => {
+          resolve = r;
+        });
+        runs.push({
+          input,
+          finish: () => {
+            input.emit({ type: 'turn_end', isError: false });
+            resolve();
+          },
+        });
+        return { done, interrupt: async () => resolve() };
+      },
+    },
+  });
+  const hub = new ResumeHub(turns),
+    a = peer();
+  try {
+    const socket = hub.attach(a.value, request(randomUUID(), { create: true }))!;
+    await hub.handle(a.value, socket, { ...send(), sessionId: 'native' });
+    const queueId = turns.followups.snapshots(socket)[0]!.queueId,
+      clientMessageId = randomUUID();
+    await hub.handle(a.value, socket, {
+      type: 'chat.followup',
+      queueId,
+      clientMessageId,
+      mode: 'queue',
+      content: { text: 'queued' },
+    });
+    available = false;
+    runs[0]!.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    const failed = turns.followups.snapshots(socket)[0]!.items[0]!;
+    expect(failed.status).toBe('failed');
+    available = true;
+    await hub.handle(a.value, socket, {
+      type: 'followup.edit',
+      queueId,
+      clientMessageId,
+      revision: failed.revision,
+      content: { text: 'edited' },
+    });
+    await hub.handle(a.value, socket, { type: 'followup.resume', queueId });
+    expect(runs).toHaveLength(2);
+    expect(runs[1]!.input.text).toBe('edited');
+    runs[1]!.finish();
+  } finally {
+    hub.dispose();
+    await turns.dispose();
+  }
+});
+it('父回合记录过期后后台任务快照独立恢复，当前实例任务可停止', async () => {
+  const f = setup({ completedMs: 100, offlineMs: 1000 });
+  try {
+    const token = randomUUID(),
+      a = peer(),
+      socket = f.hub.attach(a.value, request(token, { create: true }))!;
+    await f.hub.handle(a.value, socket, send());
+    let tasks = [{ id: 'background', sessionId: 'native', status: 'running' as const, canStop: true }];
+    let changed = () => {};
+    const runtimeId = randomUUID(),
+      stop = vi.fn(async () => {
+        tasks = [];
+        changed();
+      });
+    f.runs[0]!.input.registerRuntime!({
+      instanceId: runtimeId,
+      sessionId: 'native',
+      tasks: () => tasks,
+      stopTask: stop,
+      invalidateResources: async () => {},
+      subscribe: (listener) => {
+        changed = listener;
+        return () => {};
+      },
+    });
+    f.runs[0]!.finish();
+    await vi.advanceTimersByTimeAsync(101);
+    f.hub.detach(a.value, socket);
+    const b = peer();
+    f.hub.attach(b.value, request(token, { rebuild: true }));
+    expect(b.messages.find((message) => message.type === 'connection.tasks')).toMatchObject({
+      states: [{ runtimeId, sessionId: 'native', tasks: [{ id: 'background' }] }],
+    });
+    await f.hub.handle(b.value, socket, {
+      type: 'task.stop',
+      workspaceId: 'demo',
+      agent: 'claude',
+      sessionId: 'native',
+      runtimeId,
+      taskId: 'background',
+    });
+    expect(stop).toHaveBeenCalledOnce();
+    expect(f.turns.tasks.busy('claude')).toBe(false);
   } finally {
     await f.dispose();
   }

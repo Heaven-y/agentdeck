@@ -29,6 +29,16 @@ const sameOwner = (left: InteractionOwner, right: InteractionOwner) =>
 /** 交互拥有者可以是回合、会话或管理操作；秘密答案只交回等待方，不加入恢复事件。 */
 export class InteractionHub {
   private readonly pending = new Map<string, Pending>();
+  blocks(channel: object, turnId: string, sessionId?: string): boolean {
+    return [...this.pending.values()].some(
+      (pending) =>
+        pending.context.channel === channel &&
+        pending.interaction.blocking &&
+        !pending.answered &&
+        ((pending.context.owner.kind === 'turn' && pending.context.owner.id === turnId) ||
+          (pending.context.owner.kind === 'session' && pending.context.owner.id === sessionId)),
+    );
+  }
   request(
     context: InteractionContext,
     spec: InteractionSpec,
