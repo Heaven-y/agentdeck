@@ -32,6 +32,7 @@ import {
   mutateCodexSession,
   readCodexSession,
   readCodexMedia,
+  readCodexSubagents,
 } from '../agents/codex';
 import { withCapabilityDirectory } from '../agents/common/capability-directory';
 import { createConfiguredRunner } from '../agents/common/configured-runner';
@@ -61,6 +62,11 @@ import { createMcpControlService } from '../native-management/mcp-control-servic
 import { registerNativeMcpRoutes } from '../http/native-mcp.routes';
 import { createNativePluginService } from '../native-management/plugin-service';
 import { registerNativePluginRoutes } from '../http/native-plugins.routes';
+import { registerNativeActionRoutes } from '../http/native-actions.routes';
+import { createNativeActionsService } from '../sessions/native-actions';
+import { createClaudeRewindBackend } from '../agents/claude/native-actions';
+import { createCodexHistoryBackend } from '../agents/codex/history-actions';
+import { SessionError } from '../agents/errors';
 
 import type { WorkspaceActivity } from '../workspaces/activity';
 import type { WorkspaceStore } from '../workspaces/store';
@@ -165,6 +171,7 @@ export function createCliServices({
           page: (dir, input, signal, archived) => pageCodexSessions(dir, input, { signal, archived }),
           read: (id, dir, signal) => readCodexSession(id, dir, { signal }),
           media: (id, dir, locator, signal) => readCodexMedia(id, dir, locator, { signal }),
+          subagents: (id, dir, query, signal) => readCodexSubagents(id, dir, query, { signal }),
           assertBelongs: (id, dir, signal) => assertCodexSession(id, dir, { signal }),
           mutate: (id, dir, input) => mutateCodexSession(id, dir, input),
           fork: (id, dir, input) => forkCodexSession(id, dir, input),
@@ -223,6 +230,32 @@ export function createCliServices({
     },
   });
 
+  const nativeActions = createNativeActionsService({
+    withSession: (scope, operation) =>
+      turns.withIdleAgent(scope.agent, async () => {
+        const release = acquireWorkspace(scope.workspaceId);
+        try {
+          const workspace = await store.get(scope.workspaceId);
+          if (!workspace) throw new SessionError(404, 'workspace_missing', '工作区不存在');
+          const native = await sessions.assertBelongs(workspace, scope.agent, scope.sessionId);
+          return await nativeActivity.exclusive(scope.agent, () => operation(native ?? workspace));
+        } finally {
+          release();
+        }
+      }),
+    open: async (scope, workspace) => {
+      const env = await launchEnvironment.resolve(scope.agent);
+      return scope.agent === 'claude'
+        ? createClaudeRewindBackend(scope.sessionId, workspace.dir, env)
+        : createCodexHistoryBackend(scope.sessionId, workspace.dir, { env });
+    },
+    changed: async (agent) => {
+      sessions.invalidate(agent);
+      await runners[agent].restart();
+      await capabilities.invalidate(agent);
+    },
+  });
+
   return {
     turns,
     registerAttachments(app: FastifyInstance, recovery: ResumeHub) {
@@ -242,6 +275,7 @@ export function createCliServices({
       return Promise.all([nativePlugins.dispose(), antigravityManagement.dispose()]).then(() => undefined);
     },
     registerRoutes(a: FastifyInstance) {
+      registerNativeActionRoutes(a, nativeActions);
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });
       registerCapabilityRoutes(a, { store, capabilities, sessions });

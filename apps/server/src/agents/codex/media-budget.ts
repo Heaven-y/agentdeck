@@ -10,6 +10,7 @@ export function mediaInput(method: unknown, params: RecordValue): boolean {
 export function mediaHistory(method: string, params: RecordValue): boolean {
   return (
     (method === 'thread/read' && params.includeTurns === true) ||
+    (method === 'thread/turns/list' && params.itemsView === 'full') ||
     (method === 'thread/resume' && params.excludeTurns !== true)
   );
 }
@@ -18,9 +19,9 @@ export function mediaNotification(message: RecordValue): boolean {
   return mediaItem(record(record(message.params).item));
 }
 export function mediaResponse(message: RecordValue): boolean {
-  return list(record(record(message.result).thread).turns).some((turn) =>
-    list(record(turn).items).some((item) => mediaItem(record(item))),
-  );
+  const result = record(message.result);
+  const turns = [...list(record(result.thread).turns), ...list(result.data)];
+  return turns.some((turn) => list(record(turn).items).some((item) => mediaItem(record(item))));
 }
 function mediaItem(item: RecordValue): boolean {
   const content =

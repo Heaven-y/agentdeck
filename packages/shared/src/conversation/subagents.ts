@@ -10,6 +10,7 @@ export const SubagentIdSchema = z
 export const SubagentQuerySchema = z
   .object({
     agentId: SubagentIdSchema.optional(),
+    parentAgentId: SubagentIdSchema.optional(),
     cursor: z
       .string()
       .regex(/^\d{1,8}$/)
@@ -18,10 +19,19 @@ export const SubagentQuerySchema = z
   .strict()
   .refine((query) => query.agentId !== undefined || query.cursor === undefined);
 export type SubagentQuery = z.infer<typeof SubagentQuerySchema>;
+export type SubagentSummary = {
+  agentId: string;
+  parentSessionId: string;
+  parentAgentId?: string;
+  name?: string;
+  role?: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+};
 export type SubagentHistory = {
   agentId: string;
   events: AgentEvent[];
   parentAgentId?: string;
+  summary?: SubagentSummary;
   nextCursor?: string;
 };
-export type SubagentRead = { agentIds: string[] } | SubagentHistory;
+export type SubagentRead = { agentIds: string[]; summaries?: SubagentSummary[] } | SubagentHistory;

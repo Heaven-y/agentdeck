@@ -7,7 +7,7 @@ import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import { SessionError } from '../errors';
 import { sameSessionDirectory } from '../common/session-scope';
 import { nativeSessionDirectory } from '../common/session-ownership';
-import type { AntigravitySessionManagement } from './session-management-types';
+import type { AntigravitySessionManagement, SubagentTrajectoryIdentity } from './session-management-types';
 import { startManagementBackend } from './management-process';
 import { completeTrajectory } from './trajectory-read';
 import {
@@ -54,7 +54,58 @@ async function assertDirectory(metadata: ManagementRecord, dir: string) {
   if (!(await sameSessionDirectory(directory, dir))) throw missing();
 }
 
-type RunOptions = { recoverDelete?: boolean; full?: boolean; signal?: AbortSignal };
+type RunOptions = {
+  recoverDelete?: boolean;
+  full?: boolean;
+  signal?: AbortSignal;
+  readOnly?: boolean;
+  child?: SubagentTrajectoryIdentity;
+};
+function assertReadIdentity(metadata: ManagementRecord, rootId: string, child?: SubagentTrajectoryIdentity) {
+  if (child) {
+    if (
+      metadata.parentConversationId !== child.parentId ||
+      metadata.rootConversationId !== rootId ||
+      metadata.nestingDepth !== child.depth
+    )
+      throw missing();
+    return;
+  }
+  if (
+    metadata.parentConversationId ||
+    Number(metadata.nestingDepth ?? 0) !== 0 ||
+    (metadata.rootConversationId && metadata.rootConversationId !== rootId)
+  )
+    throw missing();
+}
+function assertReadChild(rootId: string, child?: SubagentTrajectoryIdentity) {
+  if (
+    child &&
+    (child.rootId !== rootId ||
+      child.id === rootId ||
+      !Number.isSafeInteger(child.depth) ||
+      child.depth < 1 ||
+      child.depth > 10)
+  )
+    throw missing();
+}
+async function checkedReadOnly(backend: ManagementBackend, rootId: string, dir: string, options: RunOptions) {
+  const child = options.child;
+  const id = child?.id ?? rootId;
+  assertId(id);
+  assertReadChild(rootId, child);
+  const response = await backend.request('GetCascadeTrajectory', {
+    cascadeId: id,
+    trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
+  });
+  const trajectory = object(response.trajectory);
+  const metadata = object(trajectory.metadata);
+  if (trajectory.cascadeId !== id) throw missing();
+  await assertDirectory(metadata, dir);
+  assertReadIdentity(metadata, rootId, child);
+  options.signal?.throwIfAborted();
+  return { trajectory: await completeTrajectory(backend, response, options.signal), status: text(response.status) };
+}
 async function checked(backend: ManagementBackend, id: string, dir: string, options: RunOptions = {}) {
   const result = await backend.request('GetCascadeTrajectory', {
     cascadeId: id,
@@ -144,6 +195,7 @@ export function createAntigravitySessionManagement(
         env: (await options.environment?.()) ?? options.env ?? process.env,
       }));
   async function checkOrRecover(backend: ManagementBackend, id: string, dir: string, runOptions: RunOptions) {
+    if (runOptions.readOnly) return checkedReadOnly(backend, id, dir, runOptions);
     try {
       return await checked(backend, id, dir, runOptions);
     } catch (error) {
@@ -152,6 +204,10 @@ export function createAntigravitySessionManagement(
       return {};
     }
   }
+  function assertActive(signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (controller.signal.aborted) throw managementFailure();
+  }
   async function run<T>(
     id: string,
     dir: string,
@@ -159,8 +215,7 @@ export function createAntigravitySessionManagement(
     runOptions: RunOptions = {},
   ) {
     assertId(id);
-    runOptions.signal?.throwIfAborted();
-    if (controller.signal.aborted) throw managementFailure();
+    assertActive(runOptions.signal);
     if (!path.isAbsolute(dir)) throw missing();
     // 本次读取预算必须覆盖后端初始化，不能等启动完成后才传入取消信号。
     const signal = runOptions.signal ? AbortSignal.any([controller.signal, runOptions.signal]) : controller.signal;
@@ -176,9 +231,9 @@ export function createAntigravitySessionManagement(
     const abort = () => void backend.close().catch(() => undefined);
     runOptions.signal?.addEventListener('abort', abort, { once: true });
     try {
-      runOptions.signal?.throwIfAborted();
-      if (controller.signal.aborted) throw managementFailure();
+      assertActive(runOptions.signal);
       const trajectory = await checkOrRecover(backend, id, dir, runOptions);
+      runOptions.signal?.throwIfAborted();
       return await action(backend, trajectory);
     } finally {
       runOptions.signal?.removeEventListener('abort', abort);
@@ -187,6 +242,12 @@ export function createAntigravitySessionManagement(
     }
   }
   return {
+    readSubagentTrajectory: (id, dir, child, signal) =>
+      run(id, dir, (_backend, result) => Promise.resolve(result as { trajectory: ManagementRecord; status?: string }), {
+        readOnly: true,
+        child,
+        signal,
+      }),
     readTrajectory: (id, dir, signal) =>
       run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { full: true, signal }),
     async dispose() {

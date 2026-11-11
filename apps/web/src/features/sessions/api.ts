@@ -65,13 +65,18 @@ export const sessionsApi = {
       `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}`,
       { signal, cache: 'no-store' },
     ),
-  subagents: (workspaceId: string, sessionId: string, query: SubagentQuery, signal?: AbortSignal) => {
+  subagents: (
+    workspaceId: string,
+    sessionId: string,
+    query: SubagentQuery,
+    options: { signal?: AbortSignal; agent?: AgentKind } = {},
+  ) => {
     const values = Object.fromEntries(
       Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
     );
     return request<SubagentRead>(
-      `/api/projects/${encodeURIComponent(workspaceId)}/sessions/claude/${encodeURIComponent(sessionId)}/subagents?${new URLSearchParams(values)}`,
-      { signal, cache: 'no-store' },
+      `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${options.agent ?? 'claude'}/${encodeURIComponent(sessionId)}/subagents?${new URLSearchParams(values)}`,
+      { signal: options.signal, cache: 'no-store' },
     );
   },
   archivedSessions: (agent: AgentKind, signal?: AbortSignal) =>

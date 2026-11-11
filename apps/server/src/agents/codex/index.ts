@@ -10,3 +10,4 @@ export {
   readCodexMedia,
 } from './sessions';
 export type { CodexRuntimeOptions } from './types';
+export { readCodexSubagents } from './subagents';

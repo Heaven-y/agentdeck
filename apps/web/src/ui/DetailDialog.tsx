@@ -35,6 +35,7 @@ export function DetailDialog({
       aria-labelledby={id}
       onCancel={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         close();
       }}
       className="m-auto max-h-[calc(100dvh-48px)] w-[min(620px,calc(100vw-48px))] overflow-hidden rounded-xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/55"

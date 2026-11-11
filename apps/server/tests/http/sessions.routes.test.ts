@@ -139,7 +139,12 @@ describe('子代理历史路由', () => {
   });
   it('拒绝路径形式的子代理 ID 和没有子代理身份的游标', async () => {
     const { app } = setup();
-    for (const query of ['agentId=..%2Foutside', 'cursor=100', 'agentId=child&cursor=-1']) {
+    for (const query of [
+      'agentId=..%2Foutside',
+      'parentAgentId=..%2Foutside',
+      'cursor=100',
+      'agentId=child&cursor=-1',
+    ]) {
       const response = await app.inject(`/api/projects/w1/sessions/claude/s1/subagents?${query}`);
       expect(response.statusCode).toBe(400);
       expect(response.headers['cache-control']).toBe('no-store');
@@ -149,12 +154,14 @@ describe('子代理历史路由', () => {
     const { app, codex } = setup();
     codex.subagents = vi.fn(async () => ({ agentId: 'child', events: [], nextCursor: '200' }));
     codex.assertBelongs = vi.fn(async () => path.join(ws.dir, 'nested'));
-    const response = await app.inject('/api/projects/w1/sessions/codex/s1/subagents?agentId=child&cursor=100');
+    const response = await app.inject(
+      '/api/projects/w1/sessions/codex/s1/subagents?parentAgentId=nested&agentId=child&cursor=100',
+    );
     expect(response.statusCode).toBe(200);
     expect(codex.subagents).toHaveBeenCalledWith(
       's1',
       path.join(ws.dir, 'nested'),
-      { agentId: 'child', cursor: '100' },
+      { parentAgentId: 'nested', agentId: 'child', cursor: '100' },
       expect.any(AbortSignal),
     );
     const wrongProject = await app.inject('/api/projects/w2/sessions/codex/s1/subagents');
