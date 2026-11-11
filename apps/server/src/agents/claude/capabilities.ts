@@ -196,6 +196,7 @@ export async function claudeInvocationText(
   if (invocation.kind === 'command' && invocation.name === 'context') throw new Error('上下文查询必须使用原生控制接口');
   const commands = usableCommands(await claudeControl(q.supportedCommands(), signal));
   if (invocation.kind === 'command') {
+    if (invocation.name !== 'compact') throw new Error('此专用操作未接入Claude原生命令');
     if (!compactAvailable(commands)) throw new Error('当前工作区的原生压缩不可用，存在缺失或同名命令冲突');
   } else {
     assertSkill(commands, invocation.name);

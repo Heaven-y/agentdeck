@@ -153,6 +153,7 @@ function thinkingBlock(block: Rec): AgentEvent[] {
 }
 /** 长驻运行时每轮重置去重与计时；历史读取使用独立实例。 */
 export class ClaudeEventMapper {
+  private responseModel?: string;
   private replay = new ClaudeReplayFilter();
   /** 已经收到过 text_delta 的消息 id */
   private streamed = new Set<string>();
@@ -170,6 +171,7 @@ export class ClaudeEventMapper {
   ) {}
 
   beginTurn(): void {
+    this.responseModel = undefined;
     this.tools.reset();
     this.streamed.clear();
     this.streamedThinking.clear();
@@ -213,7 +215,13 @@ export class ClaudeEventMapper {
       return events;
     }
     if (msg.type !== 'user') return [];
-    return [...userTexts(msg, this.historySessionId), ...this.toolResults(msg, false)];
+    const inputId = NativeSessionIdSchema.safeParse(msg.uuid);
+    return [
+      ...userTexts(msg, this.historySessionId).map((event) =>
+        event.type === 'user_message' && inputId.success ? { ...event, nativeInputId: inputId.data } : event,
+      ),
+      ...this.toolResults(msg, false),
+    ];
   }
 
   /** SDK 将同一 API 回复拆成多条内容块；统计只放在最后一块之后，保持正文连续。 */
@@ -234,6 +242,7 @@ export class ClaudeEventMapper {
     if (!isRec(event)) return [];
     if (event.type === 'message_start' && isRec(event.message)) {
       this.currentMessageId = str(event.message.id);
+      this.responseModel = responseModel(event.message.model);
       this.lastAssistant = undefined;
       return [];
     }
@@ -241,7 +250,7 @@ export class ClaudeEventMapper {
     const e = deltaEvent(event.delta);
     if (!e) return [];
     this.markStreamed(e.type);
-    return [e];
+    return [withResponseModel(e, this.responseModel)];
   }
 
   private markStreamed(type: AgentEvent['type']): void {
@@ -260,7 +269,9 @@ export class ClaudeEventMapper {
     // 没有流式输出过的消息才输出全文，避免重复
     const includeText = history || !(id ? this.streamed.has(id) : this.anyDelta);
     const includeThinking = history || !(id ? this.streamedThinking.has(id) : this.anyThinkingDelta);
-    const events = blocksOf(msg).flatMap((b) => assistantBlock(b, includeText, includeThinking));
+    const events = blocksOf(msg)
+      .flatMap((b) => assistantBlock(b, includeText, includeThinking))
+      .map((event) => withResponseModel(event, responseModel(inner.model)));
     return history ? events : events.flatMap((event) => this.tools.observe(event));
   }
 
@@ -280,4 +291,12 @@ export class ClaudeEventMapper {
     );
     return live ? events.flatMap((event) => this.tools.observe(event)) : events;
   }
+}
+
+/** 只采信模型消息自身字段；配置默认值、合成占位和累计modelUsage不能代表这条回复。 */
+function responseModel(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[\w][\w./: -]{0,159}$/u.test(value) ? value : undefined;
+}
+function withResponseModel(event: AgentEvent, model?: string): AgentEvent {
+  return event.type === 'text' && model ? { ...event, responseModel: model } : event;
 }

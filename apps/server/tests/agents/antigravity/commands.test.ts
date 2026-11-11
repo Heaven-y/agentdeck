@@ -14,6 +14,7 @@ vi.mock('../../../src/platform/process/executable', () => ({
 }));
 vi.mock('../../../src/platform/process/run', () => ({ runProcess: vi.fn() }));
 vi.mock('../../../src/agents/antigravity/management-process', () => ({ startManagementBackend: vi.fn() }));
+vi.mock('../../../src/agents/antigravity/acp/commands', () => ({ discoverAcpCommands: async () => [] }));
 let root = '';
 let profile = '';
 const close = vi.fn(async () => {});

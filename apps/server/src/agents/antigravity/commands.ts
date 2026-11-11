@@ -8,6 +8,7 @@ import type { AgentTurnInput } from '../contracts';
 import { withAntigravityDiscoveryProfile, type DiscoveryProfile } from './discovery-profile';
 import { startManagementBackend } from './management-process';
 import type { ManagementBackend } from './management-rpc';
+import { discoverAcpCommands } from './acp/commands';
 import {
   antigravityCommandEntries,
   antigravityNativeSkills,
@@ -85,6 +86,7 @@ export async function discoverAntigravityCommands(dir: string, options: Options 
   const home = options.homeDir ?? (process.platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir();
   return withAntigravityDiscoveryProfile({ modelProvider: 'gemini' }, commandEnvironment(env), async (profile) => {
     const commands = antigravityCommandEntries(await localReport(profile, 'help', options.signal));
+    const acp = await discoverAcpCommands(profile, options.signal);
     const builtinSkills = await localReport(profile, 'skills', options.signal);
     const backend = await startManagementBackend({
       cwd: profile.root,
@@ -95,7 +97,11 @@ export async function discoverAntigravityCommands(dir: string, options: Options 
     try {
       const skills = await readSkills(backend, dir, path.join(home, '.gemini'));
       options.signal?.throwIfAborted();
-      return [...commands, ...antigravitySkillEntries(builtinSkills, skills, commands)];
+      return [
+        ...commands.filter((item) => !acp.some((entry) => entry.name === item.name)),
+        ...acp,
+        ...antigravitySkillEntries(builtinSkills, skills, [...commands, ...acp]),
+      ];
     } finally {
       await backend.close();
     }

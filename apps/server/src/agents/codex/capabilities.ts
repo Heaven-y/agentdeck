@@ -11,6 +11,18 @@ const MAX_CATALOG_ITEMS = 10_000;
 function commands(): Entry[] {
   return [
     {
+      id: capabilityId('codex', 'command', 'review'),
+      kind: 'command',
+      name: 'review',
+      description: '使用 Codex 原生审查未提交改动，或按附加说明审查指定目标',
+      argumentHint: '[审查说明；留空审查未提交改动]',
+      source: 'Codex 原生审查',
+      available: true,
+      requiresSession: false,
+      supportsArguments: true,
+      invocation: { kind: 'command', name: 'review' },
+    },
+    {
       id: capabilityId('codex', 'command', 'compact'),
       kind: 'command',
       name: 'compact',
@@ -180,19 +192,30 @@ export async function discoverCodexCapabilities(
   dir: string,
   options: CodexRuntimeOptions & { cliVersion?: string } = {},
 ): Promise<NativeCapabilityCatalog> {
-  const client = await CodexClient.start({ ...options, cwd: dir });
+  const client = await CodexClient.start({ ...options, cwd: dir, experimentalApi: true });
   try {
     await client.initialize();
-    const [skills, models, configured] = await Promise.allSettled([
+    const [skills, models, configured, modes] = await Promise.allSettled([
       skillsCatalog(client, dir),
       modelsCatalog(client),
       configuredModel(client, dir),
+      client.request('collaborationMode/list', {}),
     ]);
     if (options.signal?.aborted) throw cancelled();
     const catalog: NativeCapabilityCatalog = {
       entries: commands(),
       models: [],
       warnings: [],
+      collaborationModes:
+        modes.status === 'fulfilled'
+          ? [
+              ...new Set(
+                list(modes.value.data)
+                  .map((value) => record(value).mode)
+                  .filter((mode): mode is 'default' | 'plan' => mode === 'default' || mode === 'plan'),
+              ),
+            ]
+          : [],
       features: nativeFeaturesFor('codex', {
         runtime: 'codex-app-server',
         handshake: 'confirmed',
