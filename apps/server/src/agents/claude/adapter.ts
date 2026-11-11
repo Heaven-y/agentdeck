@@ -2,6 +2,7 @@
 import type { TurnHandle, TurnRunner } from '../contracts';
 import { ClaudeRuntime, PERMISSION_TIMEOUT_MS, type ClaudeTurnInput } from './runtime';
 import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
+import { SessionError } from '../errors';
 
 export type { PermissionAnswer, TurnHandle } from '../contracts';
 export type { QueryFn } from './query';
@@ -50,10 +51,14 @@ export function createClaudeRunner(
   };
   const schedule = (entry: Entry) => {
     clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => void drop(entry), idleMs);
+    entry.timer = setTimeout(() => {
+      if (entry.runtime.tasks.active) schedule(entry);
+      else void drop(entry);
+    }, idleMs);
     entry.timer.unref?.();
   };
   const runner = ((input: ClaudeTurnInput): TurnHandle => {
+    assertBackgroundChoice(input);
     let entry = runtimes.get(keyOf(input));
     if (entry && !entry.runtime.alive) {
       void drop(entry);
@@ -87,6 +92,19 @@ export function createClaudeRunner(
       }),
     };
   }) as TurnRunner;
+  function assertBackgroundChoice(input: ClaudeTurnInput): void {
+    if (!input.sessionId) return;
+    if (
+      [...runtimes.values()].some(
+        (entry) =>
+          entry.runtime.sessionId === input.sessionId && entry.runtime.tasks.active && entry.key !== keyOf(input),
+      )
+    )
+      throw new SessionError(409, 'runtime_busy', '此会话的后台任务仍在运行，请先完成或停止后再更换运行设置。');
+  }
+  runner.hasBackground = () => [...runtimes.values()].some((entry) => entry.runtime.tasks.active);
+  runner.runtimeControl = (id) =>
+    [...runtimes.values()].find((entry) => entry.runtime.sessionId === id)?.runtime.runtimeControl();
   runner.dispose = async () => {
     const entries = [...runtimes.values()];
     runtimes.clear();
