@@ -30,7 +30,7 @@ function fixture() {
       withIdleSession: (_s, op) => op(),
     },
   );
-  return { service, page, list, rows };
+  return { service, page, list, rows, provider, project };
 }
 
 it('首屏只读一页，后续按需加载；同来源列表复用原生页', async () => {
@@ -45,6 +45,36 @@ it('首屏只读一页，后续按需加载；同来源列表复用原生页', a
   const second = await f.service.page({ agent: 'claude', scope: 'active', cursor: first.nextCursor });
   expect(second.items[0]?.sessionId).toBe('s50');
   expect(f.page).toHaveBeenCalledTimes(2);
+});
+
+it('目录级会话来源按所有登记项目聚合后统一分页', async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 55 }, (_, index) => ({
+    sessionId: `project-${index}`,
+    summary: `项目会话${index}`,
+    lastModified: 1_000 - index,
+    cwd: f.project.dir,
+  }));
+  const listProjects = vi.fn(async (dirs: string[]) => {
+    expect(dirs).toEqual([f.project.dir]);
+    return rows;
+  });
+  f.provider.listProjects = listProjects;
+
+  const first = await f.service.page({ agent: 'claude', scope: 'active' });
+  expect(first.items).toHaveLength(50);
+  expect(first.items[0]?.sessionId).toBe('project-0');
+  expect(first.nextCursor).toBeTruthy();
+  const second = await f.service.page({ agent: 'claude', scope: 'active', cursor: first.nextCursor });
+  expect(second.items.map((item) => item.sessionId)).toEqual([
+    'project-50',
+    'project-51',
+    'project-52',
+    'project-53',
+    'project-54',
+  ]);
+  expect(listProjects).toHaveBeenCalledTimes(2);
+  expect(f.page).not.toHaveBeenCalled();
 });
 
 it('搜索覆盖未加载的旧会话和项目名称，游标不能跨筛选条件复用', async () => {

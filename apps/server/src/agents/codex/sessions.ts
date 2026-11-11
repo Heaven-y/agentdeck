@@ -146,7 +146,6 @@ export async function listCodexSessions(
         limit: 100,
         sortKey: 'updated_at',
         modelProviders: [],
-        sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
         archived,
         cursor,
       });
@@ -175,7 +174,6 @@ export async function pageCodexSessions(
       cursor: page.cursor,
       sortKey: 'updated_at',
       modelProviders: [],
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
       archived: options.archived ?? false,
     });
     if (!Array.isArray(response.data)) throw new CodexError('Codex 未返回有效的会话列表。');

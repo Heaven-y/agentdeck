@@ -57,11 +57,18 @@ export function createSessionPageCache() {
       }
     },
     read(
-      source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string },
+      source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string; scopeKey?: string },
       load: (signal: AbortSignal) => Promise<NativeSessionPage>,
       signal?: AbortSignal,
     ) {
-      const key = JSON.stringify([source.agent, source.archived, source.cursor, source.reader, revision(source.agent)]);
+      const key = JSON.stringify([
+        source.agent,
+        source.archived,
+        source.cursor,
+        source.reader,
+        source.scopeKey,
+        revision(source.agent),
+      ]);
       let entry = entries.get(key);
       if (!entry || entry.read.controller.signal.aborted) entry = create(key, source.agent, load);
       entries.delete(key);

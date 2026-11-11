@@ -19,6 +19,7 @@ import { claudeMediaBlock, imageSource } from '../common/native-media';
 
 export type ClaudeSessionsApi = {
   list(dir: string, page?: NativeSessionPageInput): Promise<SDKSessionInfo[]>;
+  listProject?(dir: string, page?: NativeSessionPageInput): Promise<SDKSessionInfo[]>;
   info(id: string, dir?: string): Promise<SDKSessionInfo | undefined>;
   messages(id: string, dir: string): Promise<unknown[]>;
   rename(id: string, title: string, dir: string): Promise<void>;
@@ -29,6 +30,12 @@ export type ClaudeSessionsApi = {
 const nativeApi: ClaudeSessionsApi = {
   list: (_dir, page) =>
     listSessions({ includeWorktrees: false, ...(page ? { limit: page.limit, offset: Number(page.cursor ?? 0) } : {}) }),
+  listProject: (dir, page) =>
+    listSessions({
+      dir,
+      includeWorktrees: false,
+      ...(page ? { limit: page.limit, offset: Number(page.cursor ?? 0) } : {}),
+    }),
   info: (id, dir) => getSessionInfo(id, dir ? { dir } : undefined),
   messages: (id, dir) => getSessionMessages(id, { dir, includeSystemMessages: true }),
   rename: (id, title, dir) => renameSession(id, title, { dir }),
@@ -145,6 +152,18 @@ export function createClaudeSessions(
         items: await summaries(records, signal),
         nextCursor: records.length === page.limit ? String(Number(page.cursor ?? 0) + page.limit) : undefined,
       };
+    },
+    async listProjects(dirs, signal) {
+      const distinct = new Map<string, Awaited<ReturnType<typeof summaries>>[number]>();
+      for (const dir of dirs) {
+        signal?.throwIfAborted();
+        const rows = await summaries(await (api.listProject ?? api.list)(dir), signal);
+        for (const row of rows) {
+          const previous = distinct.get(row.sessionId);
+          if (!previous || row.lastModified > previous.lastModified) distinct.set(row.sessionId, row);
+        }
+      }
+      return [...distinct.values()].toSorted((left, right) => right.lastModified - left.lastModified);
     },
     async list(dir, signal, archived = false) {
       signal?.throwIfAborted();

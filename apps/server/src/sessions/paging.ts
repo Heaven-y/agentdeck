@@ -118,17 +118,30 @@ function advance(scan: Scan, page: NativeSessionPage, index: number) {
   return next !== undefined;
 }
 
+function projectDirsFor(context: Context): string[] {
+  const { query, projects } = context;
+  if (query.scope !== 'active' && query.scope !== 'archived') return [];
+  return projects.filter((project) => !query.projectId || project.id === query.projectId).map((project) => project.dir);
+}
+
 /** 原生页大小固定，筛选后不够一页时有限向后扫描，再把游标交回页面。 */
 export function createSessionPaging() {
   const cache = createSessionPageCache();
   async function nativePage(
     provider: SessionProvider,
-    source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string },
+    source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string; scopeKey?: string },
+    projectDirs: string[],
     signal?: AbortSignal,
   ) {
     return cache.read(
       source,
       async (abort): Promise<NativeSessionPage> => {
+        if (provider.listProjects && projectDirs.length > 0) {
+          const rows = await provider.listProjects(projectDirs, abort, source.archived);
+          const offset = Number(source.cursor ?? 0);
+          const items = rows.slice(offset, offset + SESSION_PAGE_SIZE);
+          return { items, nextCursor: offset + items.length < rows.length ? String(offset + items.length) : undefined };
+        }
         if (provider.page)
           return provider.page(homedir(), { limit: SESSION_PAGE_SIZE, cursor: source.cursor }, abort, source.archived);
         // 仅旧提供方兼容；三个内置 CLI 均实现原生分页。
@@ -157,7 +170,14 @@ export function createSessionPaging() {
         signal?.throwIfAborted();
         const page = await nativePage(
           provider,
-          { agent: query.agent, archived, cursor: pos.native, reader: query.reader },
+          {
+            agent: query.agent,
+            archived,
+            cursor: pos.native,
+            reader: query.reader,
+            ...(provider.listProjects ? { scopeKey: fingerprint(context) } : {}),
+          },
+          projectDirsFor(context),
           signal,
         );
         if (cache.revision(query.agent) !== pos.revision) throw expired();

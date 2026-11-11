@@ -369,7 +369,7 @@ describe('会话接口', () => {
     const r = await app.inject({ method: 'GET', url: '/api/projects/w1/sessions/claude/s1' });
     expect(r.json().session).toMatchObject({ agent: 'claude', sessionId: 's1' });
     expect(r.json().events).toEqual([
-      { type: 'user_message', text: '你好' },
+      { type: 'user_message', text: '你好', nativeInputId: 'u1' },
       { type: 'text', delta: '在' },
     ]);
     expect(api.messages).toHaveBeenCalledWith('s1', ws.dir);

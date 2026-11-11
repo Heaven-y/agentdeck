@@ -586,10 +586,8 @@ describe('原生会话读取', () => {
     const records = (await messages()).filter((value) => value.method === 'thread/list');
     expect(records).toHaveLength(2);
     expect(records.every((entry) => entry.params?.cwd === undefined)).toBe(true);
-    expect(records[0]?.params).toMatchObject({
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
-      modelProviders: [],
-    });
+    expect(records[0]?.params).toMatchObject({ modelProviders: [] });
+    expect(records[0]?.params).not.toHaveProperty('sourceKinds');
   });
   it('列表复用原生分页模型元数据，不为每条记录读取历史', async () => {
     const { dir, options, messages } = await setup();

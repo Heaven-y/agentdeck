@@ -122,6 +122,8 @@ export type SessionProvider = {
     signal?: AbortSignal,
     archived?: boolean,
   ): Promise<NativeSessionPage>;
+  /** 对只支持目录级会话发现的 CLI，按全部已登记项目聚合元数据。 */
+  listProjects?(dirs: string[], signal?: AbortSignal, archived?: boolean): Promise<NativeSessionRow[]>;
   read(id: string, dir: string, signal?: AbortSignal): Promise<NativeSessionRead>;
   /** 按需读取原生子代理，保持与父会话正文、用量及分叉点分离。 */
   subagents?(id: string, dir: string, query: SubagentQuery, signal?: AbortSignal): Promise<SubagentRead>;
