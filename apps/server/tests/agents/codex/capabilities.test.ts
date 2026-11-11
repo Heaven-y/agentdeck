@@ -78,6 +78,17 @@ async function setup(mode = 'normal') {
 }
 
 describe('Codex 原生能力目录与发送', () => {
+  it('协作模式来自原生协商目录且查询显式开启实验字段，不从CLI名称猜支持', async () => {
+    const f = await setup();
+    const catalog = await discoverCodexCapabilities(f.dir, f.options);
+    expect(catalog.collaborationModes).toEqual(['plan', 'default']);
+    const requests = await f.messages();
+    expect(requests.find((message) => message.method === 'initialize')?.params).toMatchObject({
+      capabilities: { experimentalApi: true },
+    });
+    expect(requests.some((message) => message.method === 'collaborationMode/list')).toBe(true);
+    expect(requests.some((message) => message.method === 'turn/start')).toBe(false);
+  });
   it('保留模型原生明确报告的输入类型，不为未报告类型的配置模型补猜测', async () => {
     const { dir, options } = await setup('model-modalities');
     const catalog = await discoverCodexCapabilities(dir, options);
@@ -161,8 +172,10 @@ describe('Codex 原生能力目录与发送', () => {
       'initialized',
       'config/read',
       'thread/start',
+      'thread/backgroundTerminals/list',
       'skills/list',
       'turn/start',
+      'thread/backgroundTerminals/list',
     ]);
     const start = requests.find((value) => value.method === 'turn/start')?.params;
     expect(start).toEqual({ threadId: 'native-thread', input: [{ type: 'skill', name: 'example', path: skillPath }] });

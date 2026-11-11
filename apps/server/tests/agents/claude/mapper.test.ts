@@ -148,14 +148,14 @@ describe('ClaudeEventMapper.mapHistory', () => {
       },
     ]);
     expect(events).toEqual([
-      { type: 'text', delta: '第一部分' },
-      { type: 'text', delta: '第二部分' },
+      { type: 'text', delta: '第一部分', responseModel: 'native-model' },
+      { type: 'text', delta: '第二部分', responseModel: 'native-model' },
       { type: 'step_usage', id: 'shared-api-id', usage: { source: 'claude', scope: 'step', outputTokens: 20 } },
     ]);
     const invalidFinal = block('末块未带有效用量', { output_tokens: -1 });
     expect(new ClaudeEventMapper().mapHistoryBatch([first, invalidFinal])).toEqual([
-      { type: 'text', delta: '第一部分' },
-      { type: 'text', delta: '末块未带有效用量' },
+      { type: 'text', delta: '第一部分', responseModel: 'native-model' },
+      { type: 'text', delta: '末块未带有效用量', responseModel: 'native-model' },
       {
         type: 'step_usage',
         id: 'shared-api-id',
