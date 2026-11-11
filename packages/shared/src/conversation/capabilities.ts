@@ -39,6 +39,8 @@ export type AgentCapabilities = {
   commandsDiscovered?: boolean;
   /** 旧缓存可省略；缺省不能开启新的原生交互。 */
   features?: NativeInteractionFeatures;
+  /** 只在本进程从原生协商目录取得；旧缓存缺失时不可推断支持。 */
+  collaborationModes?: Array<'default' | 'plan'>;
   entries: AgentCapability[];
   models: AgentModel[];
   warnings: string[];
