@@ -57,7 +57,7 @@
 | 外部编辑器 / IDE | **部分接入**：CLI读取和修改当前项目；用户可另开编辑器，但外部窗口、选区和diff审查不由本工作台管理 | **部分接入**：workspace文件工具和外部原生编辑器并存；未嵌入VS Code/Codex客户端或提供IDE双向选择同步 | **部分接入**：ACP原生设计给IDE客户端使用，AgentDeck展示协议事件；不控制IDE窗口、编辑器选区或其他ACP客户端。E12 |
 | 浏览器 | **部分接入**：原生工具/插件可按CLI配置使用；不读取或接管用户已登录浏览器状态 | **部分接入**：已显示原生web search和工具轨迹；不承接Codex产品的浏览器交互客户端 | **部分接入**：动态ACP `/browser` 由原生代理执行，工作台显示会话事件；不提供独立浏览器录制/窗口控制。E09、E12 |
 | MCP Apps交互界面 | **协议/运行环境待核**：本机SDK类型有条件的tool UI元数据，不等同于AgentDeck已承载外部`ui://`应用 | **协议已声明，工作台未承载**：Codex schema有MCP App资源URI/显示模式字段；当前界面未加载远端UI资源或提供完整隔离执行容器 | **协议/运行环境待核**：本轮未取得并验证ACP中可承载MCP App UI的宿主扩展；MCP服务配置管理不等于嵌入App。E13 |
-| 音频 / 实时语音 | **当前CLI运行路径未核实语音会话协议**：Voice类桌面/扩展体验不视为SDK对话能力 | **待评估**：0.166.0 experimental schema列出`thread/realtime/*`音频/文本方法；没有本机音频设备、权限和事件闭环实测，也无AgentDeck录放界面 | **ACP协议限制**：1.5.3 initialize报告`audio=false`；CLI Voice属于另一种原生交互入口，未映射到工作台。E14 |
+| 音频 / 实时语音 | **不纳入**：用户不需要实时音频；当前CLI运行路径也未核实语音会话协议 | **不纳入**：schema虽列出`thread/realtime/*`方法，本轮不建设录放界面 | **不纳入**：ACP报告`audio=false`，且用户明确不需要此功能 |
 | 远程 / 云会话 | **范围待定**：官方支持Web/Cloud/Remote Control及`--teleport`，是账号和原生远端执行生命周期；当前集成本机CLI会话，不创建云会话或把云数据并入本地历史 | **部分接入**：当前集成本地app-server `stdio://`。官方另有remote TUI/app-server与云端环境，但工作台未把它们接成会话host，也不接受任意远程主机凭据 | **范围待定**：Remote Control使用Antigravity原生远端产品；当前ACP/headless工作在本机目录，不作透明远端代理。E15 |
 | 账号 / 计费 | **本机原生登录**：登录状态由CLI和用户账户决定；AgentDeck不创建/退出订阅账号，不显示账单、权益价格或代扣方式 | **本机原生登录**：协议有account、rate limit与usage读取表面，但本功能分支没有接入通用账号/账单页；原生额度/响应不等同于AgentDeck推算费用 | **本机原生登录**：Google原生登录或API Key按原生方式工作；工作台不镜像个人订阅、信用额度或账单。真实账号OAuth不在隔离合成验收中。E16 |
 | 自动化 / 定时任务 | **原生可执行，工作台未管理**：SDK类型有`session_crons`，官方session CronCreate可运行并在特定resume场景恢复；它依赖Claude进程、空闲时机和原生项目身份。Cloud/Desktop scheduled tasks是另一个宿主。AgentDeck没有跨应用持久调度器或定时任务列表 | **计划外的原生自主目标**：Codex `thread/goal/*`不是cron。active goal会触发连续模型回合；resume active goal也会触发自动回合，当前CodexRuntime尚未确认接管此自动回合。Codex应用Automations不由本机CLI adapter管理 | **未验证生命周期，不开放schedule**：ACP真实目录出现schedule命令名，但当前运行实例如何持续、恢复、取消定时任务尚无可靠寿命证据；P10合成重试曾被goal状态污染，不能作为schedule通过。浏览器/桌面外的排程需原生CLI管理。E10、E17 |
@@ -96,8 +96,10 @@
 
 ## 需要产品选择
 
-1. 是否把需账号登录、远程执行和云端/桌面自动化列入AgentDeck受支持宿主；当前实现保留本机CLI和原生用户登录边界。
-2. 是否接入跨窗口/宿主存活的自动化与定时任务。Claude session Cron依赖CLI生命期，Codex active goal会在resume后自动运行；这要求工作台接收自主回合、审批和中断，并定义应用关闭后的责任，不是增加一个设置表单。
-3. 是否提供音频实时对话和MCP Apps界面承载；它们需额外的麦克风/扬声器权限或隔离UI运行环境。本轮没有可交付的端到端原生证据。
+1. 是否在工作台完整管理 Codex active goal，包括开始/暂停/清除、自主回合、审批、中断、预算与恢复；当前已用 resume 前守卫避免与普通回合并发。
+2. 是否接入跨窗口/应用关闭后仍运行的定时任务。Claude session Cron 依赖 CLI 生命周期，云端/桌面调度又属于其他宿主；需要定义 AgentDeck 关闭后的责任、权限、审批和失败通知。
+3. 是否承载 MCP Apps：MCP 服务除返回工具结果外，还可提供 `ui://` 交互界面资源；AgentDeck 目前没有加载这类远端界面的隔离容器与动作授权桥接。
+
+实时音频对话按用户决定不纳入本轮计划。
 
 这些选择不阻止可独立实施的原生会话能力。Codex 后台终端清单/停止已由同一 RuntimeControl 接入；active goal 检测与续聊守卫也已实现。P11独立审阅未发现新的可确认代码缺陷，P06b修复复核也已关闭；隔离测试覆盖对接线、失联和终态处理。
