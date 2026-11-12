@@ -158,6 +158,8 @@ export class CodexTasks {
   }
   private started(child: Child, turnId: string) {
     if (!turnId || child.completed.has(turnId)) return;
+    // 上一轮终态已释放请求owner；已核验子线程的新轮次需要重新登记。
+    this.options.discovered?.(child.task.id);
     child.turnId = turnId;
     child.task.status = 'running';
     child.task.canStop = true;

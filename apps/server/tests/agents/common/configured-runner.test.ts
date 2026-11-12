@@ -188,3 +188,17 @@ it('权限变化先回收旧实例，切回原生默认也重新启动且保留�
     await runner.dispose?.();
   }
 });
+it('项目根变更但原生 cwd 不变时创建新实例，保留原项目根身份', async () => {
+  const create = vi.fn((): TurnRunner => () => ({ done: Promise.resolve(), interrupt: async () => {} }));
+  const runner = createConfiguredRunner({ environment: async () => ({}), create });
+  const current = input('same-session');
+  try {
+    await runner({ ...current, projectDir: path.dirname(current.workspace.dir) }).done;
+    await runner({ ...current, projectDir: current.workspace.dir }).done;
+    expect(create).toHaveBeenCalledTimes(2);
+    await runner({ ...current, projectDir: current.workspace.dir }).done;
+    expect(create).toHaveBeenCalledTimes(2);
+  } finally {
+    await runner.dispose?.();
+  }
+});

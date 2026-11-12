@@ -29,6 +29,8 @@ export type InteractionRequester = (
 ) => Promise<InteractionAnswer>;
 export type AgentTurnInput = {
   workspace: Workspace;
+  /** 已登记项目根；workspace.dir 在续聊时保留实际原生 cwd。 */
+  projectDir?: string;
   sessionId?: string;
   model?: string;
   reasoningEffort?: string;

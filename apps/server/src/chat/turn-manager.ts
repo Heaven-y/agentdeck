@@ -531,6 +531,7 @@ export class TurnManager {
     const { signal } = turn.controller;
     let ws = await preparing(this.deps.getWorkspace(msg.workspaceId), signal);
     if (!ws) throw new SessionError(404, 'workspace_missing', '工作区不存在');
+    const projectDir = ws.dir;
     if (msg.sessionId) {
       ws = (await preparing(this.deps.sessions.assertBelongs(ws, turn.agent, msg.sessionId, signal), signal)) ?? ws;
       turn.sessionVerified = true;
@@ -548,6 +549,7 @@ export class TurnManager {
     if (!runner) throw new SessionError(503, 'agent_unavailable', '当前 Agent 适配器不可用');
     const input: AgentTurnInput = {
       workspace: ws,
+      projectDir,
       sessionId: msg.sessionId,
       model: msg.model,
       reasoningEffort: msg.reasoningEffort,

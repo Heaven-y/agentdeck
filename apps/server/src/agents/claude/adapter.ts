@@ -36,6 +36,7 @@ export function createClaudeRunner(
   const keyOf = (input: ClaudeTurnInput) =>
     JSON.stringify([
       input.workspace.id,
+      input.projectDir ?? input.workspace.dir,
       input.workspace.dir,
       input.workspace.server,
       input.workspace.remoteDir,

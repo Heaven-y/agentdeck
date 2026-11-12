@@ -1,7 +1,7 @@
 import type { RuntimeTaskSnapshot } from '@agentdeck/shared/conversation';
 import type { RecordValue } from './types';
 import { randomUUID } from 'node:crypto';
-import { record, text } from './types';
+import { CodexError, record, text } from './types';
 
 const PAGE_SIZE = 50;
 const MAX_PAGES = 10;
@@ -97,7 +97,7 @@ export class CodexBackgroundTerminals {
       this.options.changed?.();
       return this.snapshot();
     } catch (error) {
-      if (error instanceof Error && 'nativeRejected' in error && error.nativeRejected === true) {
+      if (error instanceof CodexError && error.methodNotFound) {
         this.supported = false;
         this.readFailed = false;
         this.terminals.clear();

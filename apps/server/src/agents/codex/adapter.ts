@@ -40,6 +40,7 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
   const keyOf = (input: AgentTurnInput) =>
     JSON.stringify([
       input.workspace.id,
+      input.projectDir ?? input.workspace.dir,
       input.workspace.dir,
       input.workspace.server,
       input.workspace.remoteDir,

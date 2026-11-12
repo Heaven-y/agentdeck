@@ -19,7 +19,7 @@ type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; 
 type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 
 function requestFailure(error: unknown): CodexError {
-  if (record(error).code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true);
+  if (record(error).code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
   const message = text(record(error).message);
   // 只识别权限字段并返回固定说明，不把服务端错误中的配置值或路径透给网页。
   if (/approvals?[ _]?(reviewer|policy)|auto_review|guardian_subagent|sandbox|permission.?profile/i.test(message))

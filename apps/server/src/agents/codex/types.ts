@@ -20,6 +20,7 @@ export class CodexError extends Error {
   constructor(
     message: string,
     readonly nativeRejected = false,
+    readonly methodNotFound = false,
   ) {
     super(message);
     this.name = 'CodexError';

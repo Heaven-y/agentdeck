@@ -4,7 +4,8 @@ import type { AgentTurnInput, TurnHandle, TurnRunner } from '../contracts';
 type Entry = { key: string; permission?: string; native: TurnRunner; timer?: NodeJS.Timeout };
 type Deps = { environment(): Promise<NodeJS.ProcessEnv>; create(env: NodeJS.ProcessEnv): TurnRunner; idleMs?: number };
 const permissionOf = (input: AgentTurnInput) => input.permission?.mode;
-const keyOf = (input: AgentTurnInput) => JSON.stringify([input.workspace.id, input.workspace.dir, input.sessionId]);
+const keyOf = (input: AgentTurnInput) =>
+  JSON.stringify([input.workspace.id, input.projectDir ?? input.workspace.dir, input.workspace.dir, input.sessionId]);
 
 /** 每个会话的进程保留启动快照；显式重启只回收空闲实例，不向 CLI 发送任何消息。 */
 export function createConfiguredRunner(deps: Deps): TurnRunner & { restart(): Promise<void> } {

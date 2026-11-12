@@ -8,16 +8,21 @@ import type {
 } from '@agentdeck/shared/settings';
 import { request } from '../../lib/http';
 export type McpCatalog = NativeMcpCatalog & {
-  instances: Array<{ instanceId: string; sessionId?: string }>;
+  instanceId?: string;
+  instances: Array<{ instanceId: string; sessionId?: string; cwd?: string }>;
   operations?: NativeMcpOperation[];
 };
-const url = (context: NativeManagementContext, suffix = '') =>
-  `/api/native-management/${context.agent}/mcp${suffix}${context.projectId ? `?${new URLSearchParams({ projectId: context.projectId })}` : ''}`;
+const url = (context: NativeManagementContext, suffix = '', instanceId?: string) => {
+  const query = new URLSearchParams();
+  if (context.projectId) query.set('projectId', context.projectId);
+  if (instanceId) query.set('instanceId', instanceId);
+  return `/api/native-management/${context.agent}/mcp${suffix}${query.size ? `?${query}` : ''}`;
+};
 const post = <T>(context: NativeManagementContext, suffix: string, input: unknown) =>
   request<T>(url(context, suffix), { method: 'POST', body: JSON.stringify(input), cache: 'no-store' });
 export const nativeMcpApi = {
-  read: (context: NativeManagementContext, signal?: AbortSignal) =>
-    request<McpCatalog>(url(context), { signal, cache: 'no-store' }),
+  read: (context: NativeManagementContext, signal?: AbortSignal, instanceId?: string) =>
+    request<McpCatalog>(url(context, '', instanceId), { signal, cache: 'no-store' }),
   save: (context: NativeManagementContext, input: NativeMcpSaveInput) => post(context, '/save', input),
   change: (context: NativeManagementContext, input: NativeMcpOperateInput) => post(context, '/change', input),
   control: (

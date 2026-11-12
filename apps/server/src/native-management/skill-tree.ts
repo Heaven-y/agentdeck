@@ -6,6 +6,7 @@ import type { NativeSkillImportInput } from '@agentdeck/shared/settings';
 import { NativeResourceError } from '../agents/common/configuration/errors';
 import { assertDirectoryUnchanged, inspectDirectory, MAX_CONFIG_BYTES, decodeUtf8 } from '../platform/files/safe-file';
 import { nativeFileTransaction } from '../platform/files/transactions';
+import { NativeManagementError } from './errors';
 
 export const SKILL_LIMITS = { files: 128, bytes: 8 * 1024 * 1024, fileBytes: 1024 * 1024, depth: 6 } as const;
 const identity = (a: Stats, b: Stats) =>
@@ -181,13 +182,30 @@ export async function deleteSkillTree(directory: string, revision: string) {
     if ((await snapshotSkillTree(directory)).revision !== revision) throw new NativeResourceError('revision_conflict');
     await assertDirectoryUnchanged(parents);
     const quarantine = path.join(path.dirname(directory), `.deleted-${randomUUID()}`);
+    const original = await lstat(directory);
     await rename(directory, quarantine);
-    await assertDirectoryUnchanged(parents);
-    if ((await snapshotSkillTree(quarantine)).revision !== revision) {
-      // 外部进程可能在更名前写入；保留更改并尽可能恢复原目录，绝不删除未经确认的新内容。
-      await absent(directory);
-      await rename(quarantine, directory);
-      throw new NativeResourceError('revision_conflict');
+    try {
+      await assertDirectoryUnchanged(parents);
+      if ((await snapshotSkillTree(quarantine)).revision !== revision)
+        throw new NativeResourceError('revision_conflict');
+    } catch (error) {
+      // 复核抛错也必须恢复；无法安全恢复时保留隔离内容，不覆盖新占用的原位置。
+      try {
+        await assertDirectoryUnchanged(parents);
+        const current = await lstat(quarantine);
+        if (
+          !current.isDirectory() ||
+          current.dev !== original.dev ||
+          current.ino !== original.ino ||
+          current.birthtimeMs !== original.birthtimeMs
+        )
+          throw new NativeResourceError('unsafe_path');
+        await absent(directory);
+        await rename(quarantine, directory);
+      } catch {
+        throw new NativeManagementError('result_unconfirmed');
+      }
+      throw error;
     }
     await rm(quarantine, { recursive: true, force: true });
   });

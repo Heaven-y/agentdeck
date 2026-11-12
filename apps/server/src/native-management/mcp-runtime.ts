@@ -3,6 +3,7 @@ import type { NativeMcpStatus } from '@agentdeck/shared/settings';
 import { NativeManagementError } from './errors';
 import { resourcePathKey } from '../agents/common/configuration/resources';
 import type { NativeManagementProject } from './types';
+import { sessionDirectoryWithin } from '../agents/common/session-scope';
 export type McpControl = {
   status(name: string, cursor?: string): Promise<NativeMcpStatus>;
   reconnect?(name: string): Promise<void>;
@@ -11,6 +12,7 @@ export type McpControl = {
 export type McpRuntime = {
   agent: AgentKind;
   projectId: string;
+  projectDir?: string;
   cwd: string;
   instanceId: string;
   sessionId(): string | undefined;
@@ -20,7 +22,14 @@ export type McpRuntime = {
 export class McpRuntimeRegistry {
   private readonly runtimes = new Map<string, McpRuntime & { lifetime: AbortController; busy: boolean }>();
   register(runtime: McpRuntime): () => void {
-    const current = { ...runtime, cwd: resourcePathKey(runtime.cwd), lifetime: new AbortController(), busy: false };
+    const projectDir = runtime.projectDir ?? runtime.cwd;
+    if (!sessionDirectoryWithin(runtime.cwd, projectDir)) throw new NativeManagementError('native_unavailable');
+    const current = {
+      ...runtime,
+      projectDir: resourcePathKey(projectDir),
+      lifetime: new AbortController(),
+      busy: false,
+    };
     this.runtimes.set(runtime.instanceId, current);
     return () => {
       current.lifetime.abort();
@@ -29,8 +38,8 @@ export class McpRuntimeRegistry {
   }
   list(agent: AgentKind, project: NativeManagementProject) {
     return [...this.runtimes.values()]
-      .filter((r) => r.agent === agent && r.projectId === project.id && r.cwd === resourcePathKey(project.dir))
-      .map((r) => ({ instanceId: r.instanceId, sessionId: r.sessionId() }));
+      .filter((r) => r.agent === agent && r.projectId === project.id && r.projectDir === resourcePathKey(project.dir))
+      .map((r) => ({ instanceId: r.instanceId, sessionId: r.sessionId(), cwd: r.cwd }));
   }
   async use<T>(
     agent: AgentKind,
@@ -43,7 +52,7 @@ export class McpRuntimeRegistry {
       !runtime ||
       runtime.agent !== agent ||
       runtime.projectId !== project.id ||
-      runtime.cwd !== resourcePathKey(project.dir) ||
+      runtime.projectDir !== resourcePathKey(project.dir) ||
       runtime.lifetime.signal.aborted ||
       runtime.busy
     )

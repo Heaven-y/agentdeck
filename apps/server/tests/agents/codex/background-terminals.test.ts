@@ -1,11 +1,87 @@
 import { expect, it, vi } from 'vitest';
 import { CodexBackgroundTerminals } from '../../../src/agents/codex/background-terminals';
+import { CodexError } from '../../../src/agents/codex/types';
+import { RuntimeTasks } from '../../../src/chat/runtime-tasks';
+import { createWorkspaceActivity } from '../../../src/workspaces/activity';
 
 const terminal = (processId: string, itemId = `item-${processId}`) => ({
   processId,
   itemId,
   command: 'secret command',
   cwd: 'secret cwd',
+});
+
+it.each([
+  'Codex 请求失败，请检查本机配置、登录状态或会话是否仍存在。',
+  'Codex 未接受所选权限模式，请检查当前版本和原生权限策略。',
+  'Codex 当前原生版本不支持此实验性接口。',
+])('无method-not-found标记的原生读取拒绝保留终端与租约：%s', async (message) => {
+  let nativeError: Error | undefined,
+    listed = [terminal('p1')],
+    notify = () => {};
+  const tasks = new CodexBackgroundTerminals({
+    threadId: 'thread-a',
+    request: async () => {
+      if (nativeError) throw nativeError;
+      return { data: listed, nextCursor: null };
+    },
+    changed: () => notify(),
+  });
+  await tasks.refresh();
+  const activity = createWorkspaceActivity(),
+    host = new RuntimeTasks({ send: () => {}, acquireWorkspace: (id) => activity.acquire(id) });
+  host.register(
+    { send: vi.fn(), isOpen: () => true },
+    { workspaceId: 'project', agent: 'codex' },
+    {
+      instanceId: 'runtime',
+      sessionId: 'thread-a',
+      tasks: () => tasks.snapshot(),
+      get taskActivity() {
+        return tasks.active;
+      },
+      stopTask: (id) => tasks.stopTask(id),
+      invalidateResources: async () => {},
+      subscribe: (listener) => {
+        notify = listener;
+        return () => {};
+      },
+      close: async () => tasks.close(),
+    },
+  );
+  try {
+    nativeError = new CodexError(message, true);
+    await expect(tasks.refresh()).rejects.toThrow();
+    expect(tasks.available).toBe(true);
+    expect(tasks.snapshot()).toMatchObject([{ id: 'codex-terminal:p1', status: 'running', canStop: true }]);
+    expect(host.busy('codex')).toBe(true);
+    await expect(activity.withIdle('project', async () => {})).rejects.toThrow();
+    nativeError = undefined;
+    listed = [];
+    await tasks.refresh();
+    expect(host.busy('codex')).toBe(false);
+    await activity.withIdle('project', async () => {});
+  } finally {
+    await host.dispose();
+  }
+});
+
+it('仅明确的原生method-not-found分类关闭后台终端能力', async () => {
+  let unsupported = false;
+  const tasks = new CodexBackgroundTerminals({
+    threadId: 'thread-a',
+    request: async () => {
+      if (unsupported) throw new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
+      return { data: [terminal('p1')], nextCursor: null };
+    },
+  });
+  await tasks.refresh();
+  unsupported = true;
+  expect(await tasks.refresh()).toEqual([]);
+  expect(tasks.available).toBe(false);
+  expect(tasks.active).toBe(false);
+  await expect(tasks.refresh()).rejects.toThrow();
+  tasks.close();
 });
 
 it('固定绑定线程并在所有分页完整读取后才公开有限快照', async () => {

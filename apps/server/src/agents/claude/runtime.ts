@@ -259,6 +259,7 @@ export class ClaudeRuntime {
       this.releaseMcp = input.mcpRegistry?.register({
         agent: 'claude',
         projectId: input.workspace.id,
+        projectDir: input.projectDir ?? input.workspace.dir,
         cwd: input.workspace.dir,
         instanceId: this.instanceId,
         sessionId: () => this.sessionId,

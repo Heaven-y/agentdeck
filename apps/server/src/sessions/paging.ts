@@ -26,6 +26,7 @@ const Cursor = z
   })
   .strict();
 type Position = z.infer<typeof Cursor>;
+const SnapshotCursor = z.tuple([z.uuid(), z.number().int().min(0).max(100_000)]);
 type Context = { query: SessionPageQuery; projects: Workspace[]; archives?: Set<string>; actions: SessionCapabilities };
 const expired = () => new SessionError(409, 'session_page_expired', '会话列表已更新，请重新读取。');
 const fingerprint = (context: Context) =>
@@ -133,15 +134,38 @@ export function createSessionPaging() {
     projectDirs: string[],
     signal?: AbortSignal,
   ) {
+    if (provider.listProjects && projectDirs.length > 0) {
+      // 目录来源没有原生游标：一次枚举形成有界缓存快照，后续页不能重新排序。
+      let cursor: z.infer<typeof SnapshotCursor> | undefined;
+      try {
+        if (source.cursor) cursor = SnapshotCursor.parse(JSON.parse(source.cursor));
+      } catch {
+        throw expired();
+      }
+      const snapshot = await cache.read(
+        {
+          ...source,
+          cursor: undefined,
+          scopeKey: `snapshot:${source.scopeKey}`,
+          required: source.cursor !== undefined,
+        },
+        async (abort) => ({ items: await provider.listProjects!(projectDirs, abort, source.archived) }),
+        signal,
+      );
+      if (cursor && cursor[0] !== snapshot.snapshotId) throw expired();
+      const offset = cursor?.[1] ?? 0;
+      const items = snapshot.items.slice(offset, offset + SESSION_PAGE_SIZE);
+      return {
+        items,
+        nextCursor:
+          offset + items.length < snapshot.items.length
+            ? JSON.stringify([snapshot.snapshotId, offset + items.length])
+            : undefined,
+      };
+    }
     return cache.read(
       source,
       async (abort): Promise<NativeSessionPage> => {
-        if (provider.listProjects && projectDirs.length > 0) {
-          const rows = await provider.listProjects(projectDirs, abort, source.archived);
-          const offset = Number(source.cursor ?? 0);
-          const items = rows.slice(offset, offset + SESSION_PAGE_SIZE);
-          return { items, nextCursor: offset + items.length < rows.length ? String(offset + items.length) : undefined };
-        }
         if (provider.page)
           return provider.page(homedir(), { limit: SESSION_PAGE_SIZE, cursor: source.cursor }, abort, source.archived);
         // 仅旧提供方兼容；三个内置 CLI 均实现原生分页。

@@ -44,24 +44,25 @@ function Instances({ catalog, id, setId }: { catalog: McpCatalog; id: string; se
     <label className="block space-y-1 text-sm">
       <span>运行实例</span>
       <select className={inputClass} value={id} onChange={(e) => setId(e.target.value)}>
-        <option value="">单次显式检查</option>
+        <option value="">项目配置与单次检查</option>
         {catalog.instances.map((i) => (
           <option key={i.instanceId} value={i.instanceId}>
-            {i.sessionId ?? '新会话'} · {i.instanceId.slice(0, 8)}
+            {i.sessionId ?? '新会话'} · {i.cwd ? `${i.cwd} · ` : ''}
+            {i.instanceId.slice(0, 8)}
           </option>
         ))}
       </select>
     </label>
   );
 }
-function useCatalog(context: NativeManagementContext, reload: number) {
+function useCatalog(context: NativeManagementContext, reload: number, instanceId: string) {
   const [catalog, setCatalog] = useState<McpCatalog>(),
     [error, setError] = useState('');
   const { agent, projectId } = context;
   useEffect(() => {
     const controller = new AbortController();
     void nativeMcpApi
-      .read({ agent, projectId }, controller.signal)
+      .read({ agent, projectId }, controller.signal, instanceId || undefined)
       .then((value) => {
         if (!controller.signal.aborted) {
           setCatalog(value);
@@ -72,22 +73,23 @@ function useCatalog(context: NativeManagementContext, reload: number) {
         if (!controller.signal.aborted) setError(nativeSettingsError(reason));
       });
     return () => controller.abort();
-  }, [agent, projectId, reload]);
+  }, [agent, projectId, reload, instanceId]);
   return { catalog, error, setError };
 }
 function CatalogBody({
   context,
   catalog,
+  instanceId,
   onChanged,
   setError,
 }: {
   context: NativeManagementContext;
   catalog: McpCatalog;
+  instanceId: string;
   onChanged(): void;
   setError(value: string): void;
 }) {
-  const [busy, setBusy] = useState(false),
-    [instanceId, setInstanceId] = useState('');
+  const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor>();
   async function change(entry: NativeMcpEntry, action: 'delete' | 'enable' | 'disable') {
     if (action === 'delete' && !window.confirm(`删除 ${entry.name} 的${nativeScopeNames[entry.scope]}持久配置？`))
@@ -115,7 +117,6 @@ function CatalogBody({
         </p>
       ))}
       <Sources catalog={catalog} disabled={busy || !!editor} onAdd={(source) => setEditor({ source })} />
-      <Instances catalog={catalog} id={instanceId} setId={setInstanceId} />
       {editor && (
         <NativeMcpEditor
           key={editor.entry?.id ?? editor.source.id}
@@ -156,7 +157,9 @@ export default function NativeMcpPanel({
   reload: number;
   onChanged(): void;
 }) {
-  const { catalog, error, setError } = useCatalog(context, reload);
+  const [instanceId, setInstanceId] = useState('');
+  const { catalog, error, setError } = useCatalog(context, reload, instanceId);
+  const current = catalog && (catalog.instanceId ?? '') === instanceId;
   return (
     <section aria-label="MCP 管理" className="min-w-0 space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -167,8 +170,16 @@ export default function NativeMcpPanel({
           {error}
         </p>
       )}
-      {catalog ? (
-        <CatalogBody context={context} catalog={catalog} onChanged={onChanged} setError={setError} />
+      {catalog && <Instances catalog={catalog} id={instanceId} setId={setInstanceId} />}
+      {current ? (
+        <CatalogBody
+          key={instanceId}
+          context={context}
+          catalog={catalog}
+          instanceId={instanceId}
+          onChanged={onChanged}
+          setError={setError}
+        />
       ) : (
         !error && <p role="status">正在读取 MCP 配置…</p>
       )}

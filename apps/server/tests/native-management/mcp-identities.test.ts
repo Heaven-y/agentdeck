@@ -85,6 +85,92 @@ it('项目ID不变但目录改变后，旧实例不被列出且直接控制与OA
   }
   expect(toggle).not.toHaveBeenCalled();
 });
+it('子目录实例保留项目根身份，配置列表与控制均使用实际 cwd 且拒绝根目录同名配置', async () => {
+  const f = await fixture();
+  const child = { ...f.a, dir: path.join(f.a.dir, 'child') };
+  await mkdir(path.join(child.dir, '.codex'), { recursive: true });
+  await mkdir(path.join(f.a.dir, '.codex'));
+  await writeFile(path.join(f.a.dir, '.codex/config.toml'), '[mcp_servers.scoped]\ncommand = "root-command"\n');
+  await writeFile(path.join(child.dir, '.codex/config.toml'), '[mcp_servers.scoped]\ncommand = "child-command"\n');
+  const toggle = vi.fn(async () => {});
+  f.registry.register({
+    agent: 'codex',
+    projectId: f.a.id,
+    projectDir: f.a.dir,
+    cwd: child.dir,
+    instanceId: 'child-instance',
+    sessionId: () => 'child-session',
+    control: { status: async (name) => ({ ...f.status, name }), toggle },
+  });
+  expect(f.controls.instances('codex', f.a)).toEqual([
+    { instanceId: 'child-instance', sessionId: 'child-session', cwd: child.dir },
+  ]);
+  const catalog = await f.controls.catalog('codex', f.a, 'child-instance');
+  const scoped = catalog.entries.find((entry) => entry.name === 'scoped')!;
+  expect(scoped.config.command).toBe('child-command');
+  expect(catalog.entries.every((entry) => !entry.actions.edit && !entry.actions.delete)).toBe(true);
+  const rootEntry = (await f.service.readMcp('codex', f.a)).entries.find((entry) => entry.name === 'scoped')!;
+  await expect(
+    f.controls.operate('codex', { ...rootEntry, instanceId: 'child-instance', action: 'runtime-disable' }, f.a),
+  ).rejects.toMatchObject({ code: 'native_unavailable' });
+  expect(toggle).not.toHaveBeenCalled();
+  await f.controls.operate('codex', { ...scoped, instanceId: 'child-instance', action: 'runtime-disable' }, f.a);
+  expect(toggle).toHaveBeenCalledExactlyOnceWith('scoped', false);
+  await writeFile(path.join(child.dir, '.codex/config.toml'), '[mcp_servers.demo]\ncommand = "shadow-user-command"\n');
+  const userEntry = (await f.service.readMcp('codex', f.a)).entries.find((entry) => entry.name === 'demo')!;
+  await expect(
+    f.controls.operate('codex', { ...userEntry, instanceId: 'child-instance', action: 'runtime-disable' }, f.a),
+  ).rejects.toMatchObject({ code: 'native_unavailable' });
+  expect(toggle).toHaveBeenCalledTimes(1);
+  await expect(f.controls.catalog('codex', { ...child, id: 'other' }, 'child-instance')).rejects.toMatchObject({
+    code: 'native_unavailable',
+  });
+  // 换到旧根的父目录仍须拒绝，不能仅靠 cwd 前缀接受旧实例。
+  const parent = { ...f.a, dir: f.homeDir };
+  await f.change(parent);
+  expect(f.controls.instances('codex', parent)).toEqual([]);
+  await expect(f.controls.catalog('codex', parent, 'child-instance')).rejects.toMatchObject({
+    code: 'native_unavailable',
+  });
+});
+it('子目录实例授权使用实际目录，错误项目身份及越界 cwd 不能注册或控制', async () => {
+  const f = await fixture();
+  const child = { ...f.a, dir: path.join(f.a.dir, 'child') };
+  await mkdir(path.join(child.dir, '.codex'), { recursive: true });
+  await writeFile(
+    path.join(child.dir, '.codex/config.toml'),
+    '[mcp_servers.remote]\nurl = "https://example.com/child"\n',
+  );
+  const runtime = {
+    agent: 'codex' as const,
+    projectId: f.a.id,
+    projectDir: f.a.dir,
+    cwd: child.dir,
+    instanceId: 'child-instance',
+    sessionId: () => 'child-session',
+    control: { status: async () => f.status },
+  };
+  expect(() => f.registry.register({ ...runtime, cwd: `${f.a.dir}-sibling` })).toThrow();
+  f.registry.register(runtime);
+  const nativeLogin = vi.spyOn(login, 'loginCodexMcp').mockImplementation((_context, _name, session) => {
+    session.authorize('https://example.com/authorize');
+    return new Promise<void>((resolve) => session.signal.addEventListener('abort', () => resolve()));
+  });
+  const entry = (await f.controls.catalog('codex', f.a, runtime.instanceId)).entries.find(
+    (entry) => entry.name === 'remote',
+  )!;
+  const operation = await f.controls.operate(
+    'codex',
+    { ...entry, instanceId: runtime.instanceId, action: 'login' },
+    f.a,
+  );
+  if (!('id' in operation)) throw new Error('缺少授权操作');
+  await vi.waitFor(() => expect(nativeLogin).toHaveBeenCalled());
+  expect(nativeLogin.mock.calls[0]?.[0].project).toEqual(child);
+  await expect(f.change(f.b)).rejects.toThrow();
+  f.controls.oauth.cancel('codex', f.a.id, operation.id);
+  await vi.waitFor(() => expect(f.change(f.b)).resolves.toBeUndefined());
+});
 it('实例控制持有项目活动租约直到完成，换目录先赢时旧上下文被拒绝', async () => {
   const f = await fixture();
   let complete!: () => void;

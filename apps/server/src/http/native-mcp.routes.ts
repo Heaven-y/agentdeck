@@ -10,6 +10,7 @@ import { managementError } from '../native-management/errors';
 import type { WorkspaceStore } from '../workspaces/store';
 const Params = z.object({ agent: z.enum(['claude', 'codex', 'antigravity']) }).strict();
 const Query = z.object({ projectId: z.string().min(1).max(128).optional() }).strict();
+const CatalogQuery = Query.extend({ instanceId: z.uuid().optional() });
 const Control = z
   .object({
     id: z.string().regex(/^[a-f0-9]{64}$/),
@@ -52,20 +53,22 @@ export function registerNativeMcpRoutes(
       void reply.code(e.status).send({ code: e.code, message: e.message });
     },
   };
-  async function context(params: unknown, query: unknown) {
+  async function context(params: unknown, query: unknown, catalog = false) {
     const a = Params.safeParse(params),
-      q = Query.safeParse(query);
+      q = (catalog ? CatalogQuery : Query).safeParse(query);
     if (!a.success || !q.success) throw new NativeResourceError('invalid_request');
     const project = q.data.projectId ? await deps.store.get(q.data.projectId) : undefined;
     if (q.data.projectId && !project) throw new NativeResourceError('project_missing');
-    return { agent: a.data.agent, project };
+    const instanceId = 'instanceId' in q.data && typeof q.data.instanceId === 'string' ? q.data.instanceId : undefined;
+    return { agent: a.data.agent, project, instanceId };
   }
   const base = '/api/native-management/:agent/mcp';
   app.get(base, options, (req, reply) =>
     respond(reply, async () => {
-      const { agent, project } = await context(req.params, req.query);
+      const { agent, project, instanceId } = await context(req.params, req.query, true);
       return {
-        ...(await deps.service.readMcp(agent, project)),
+        ...(await deps.controls.catalog(agent, project, instanceId)),
+        instanceId,
         instances: deps.controls.instances(agent, project),
         operations: deps.controls.oauth.list(agent, project?.id),
       };

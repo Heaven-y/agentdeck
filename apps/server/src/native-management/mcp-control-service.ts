@@ -34,18 +34,15 @@ export function createMcpControlService(deps: {
       release();
     }
   }
-  async function login(
+  function login(
     agent: AgentKind,
     input: Input,
     target: Awaited<ReturnType<NativeMcpService['resolveMcp']>>,
-    project?: NativeManagementProject,
+    scope: { project?: NativeManagementProject; runtimeProject?: NativeManagementProject; lifetime?: AbortSignal },
   ) {
+    const { project, runtimeProject = project, lifetime } = scope;
     if (agent !== 'codex' || target.entry.transport === 'stdio' || target.ambiguous)
       throw new NativeManagementError('unsupported_action');
-    const lifetime =
-      input.instanceId && project
-        ? await deps.registry.use(agent, project, input.instanceId, (_r, signal) => Promise.resolve(signal))
-        : undefined;
     return oauth.start(
       {
         agent,
@@ -57,7 +54,8 @@ export function createMcpControlService(deps: {
         // start 同步进入此回调，在外层短租约释放前接续覆盖整个后台授权生命期。
         withProject(project, () =>
           deps.access.read(agent, async () => {
-            const current = await deps.service.resolveMcp(agent, input.id, input.revision, project);
+            const current = await deps.service.resolveMcp(agent, input.id, input.revision, runtimeProject);
+            if (current.ambiguous) throw new NativeManagementError('unsupported_action');
             return loginCodexMcp(current.context, current.entry.name, session);
           }),
         ),
@@ -67,6 +65,25 @@ export function createMcpControlService(deps: {
   return {
     instances: (agent: AgentKind, project?: NativeManagementProject) =>
       project ? deps.registry.list(agent, project) : [],
+    async catalog(agent: AgentKind, project?: NativeManagementProject, instanceId?: string) {
+      return withProject(project, async () => {
+        if (!instanceId) return deps.service.readMcp(agent, project);
+        if (!project) throw new NativeManagementError('native_unavailable');
+        return deps.registry.use(agent, project, instanceId, async (runtime) => {
+          const catalog = await deps.service.readMcp(agent, { ...project, dir: runtime.cwd });
+          // 实例目录只提供运行控制；持久配置仍从项目配置入口管理。
+          return {
+            ...catalog,
+            entries: catalog.entries.map((entry) => ({
+              ...entry,
+              actions: { edit: false, delete: false, enable: false, disable: false },
+            })),
+            sources: catalog.sources.map((source) => ({ ...source, writable: false })),
+            warnings: [...catalog.warnings, '当前展示所选实例目录的配置；修改持久配置请切回项目配置与单次检查。'],
+          };
+        });
+      });
+    },
     oauth,
     async operate(agent: AgentKind, input: Input, project?: NativeManagementProject) {
       if (input.instanceId && !project) throw new NativeManagementError('native_unavailable');
@@ -74,27 +91,31 @@ export function createMcpControlService(deps: {
     },
   };
   async function operate(agent: AgentKind, input: Input, project?: NativeManagementProject) {
-    const target = await deps.service.resolveMcp(agent, input.id, input.revision, project);
     if (agent === 'antigravity') throw new NativeManagementError('unsupported_action');
-    const name = target.entry.name;
-    if (input.action === 'login') return login(agent, input, target, project);
-    if (!input.instanceId || !project) {
-      if (input.action !== 'check' || target.ambiguous) throw new NativeManagementError('unsupported_action');
-      return deps.access.read(agent, async () => {
-        const current = await deps.service.resolveMcp(agent, input.id, input.revision, project);
-        return checkMcpConnection(current.context, current.entry.name, current.config);
+    if (input.instanceId && project)
+      return deps.registry.use(agent, project, input.instanceId, async ({ control, cwd }, lifetime) => {
+        const runtimeProject = { ...project, dir: cwd };
+        const target = await deps.service.resolveMcp(agent, input.id, input.revision, runtimeProject);
+        // 原生控制仅接受名称；同名来源无法证明对应所选配置时不执行。
+        if (target.ambiguous) throw new NativeManagementError('unsupported_action');
+        const name = target.entry.name;
+        if (input.action === 'login') return login(agent, input, target, { project, runtimeProject, lifetime });
+        if (input.action === 'reconnect') {
+          if (!control.reconnect) throw new NativeManagementError('unsupported_action');
+          await control.reconnect(name);
+        }
+        if (input.action === 'runtime-enable' || input.action === 'runtime-disable') {
+          if (!control.toggle) throw new NativeManagementError('unsupported_action');
+          await control.toggle(name, input.action === 'runtime-enable');
+        }
+        return control.status(name, input.cursor);
       });
-    }
-    return deps.registry.use(agent, project, input.instanceId, async ({ control }) => {
-      if (input.action === 'reconnect') {
-        if (!control.reconnect) throw new NativeManagementError('unsupported_action');
-        await control.reconnect(name);
-      }
-      if (input.action === 'runtime-enable' || input.action === 'runtime-disable') {
-        if (!control.toggle) throw new NativeManagementError('unsupported_action');
-        await control.toggle(name, input.action === 'runtime-enable');
-      }
-      return control.status(name, input.cursor);
+    const target = await deps.service.resolveMcp(agent, input.id, input.revision, project);
+    if (input.action === 'login') return login(agent, input, target, { project });
+    if (input.action !== 'check' || target.ambiguous) throw new NativeManagementError('unsupported_action');
+    return deps.access.read(agent, async () => {
+      const current = await deps.service.resolveMcp(agent, input.id, input.revision, project);
+      return checkMcpConnection(current.context, current.entry.name, current.config);
     });
   }
 }

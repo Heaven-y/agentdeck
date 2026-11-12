@@ -248,6 +248,7 @@ export class CodexRuntime {
       this.releaseMcp = this.options.mcpRegistry?.register({
         agent: 'codex',
         projectId: input.workspace.id,
+        projectDir: input.projectDir ?? input.workspace.dir,
         cwd: input.workspace.dir,
         instanceId: this.mcpInstanceId,
         sessionId: () => this.sessionId,

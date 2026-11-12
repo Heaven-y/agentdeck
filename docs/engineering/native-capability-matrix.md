@@ -1,6 +1,6 @@
 # 三 CLI 原生能力矩阵
 
-核查日期：2026-11-11。证据基线为 Claude Code 2.1.317 / Agent SDK 0.3.286、Codex 0.166.0、Antigravity 1.5.3。本文记录当前功能分支的实现与证据，阶段审阅、提交和最终交付状态见[实施计划](../plans/native-capability-parity.md)；“已接入”不代表 P11 已完成。
+核查日期：2026-11-12。证据基线为 Claude Code 2.1.317 / Agent SDK 0.3.286、Codex 0.166.0、Antigravity 1.5.3。本文记录本轮整合的实现与证据，P11 审阅和范围验收已完成；阶段状态见[实施计划](../plans/native-capability-parity.md)。“已接入”仍受下表的原生版本与验证范围约束。
 
 ## 判定口径
 

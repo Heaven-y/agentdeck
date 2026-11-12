@@ -218,6 +218,7 @@ describe('TurnManager', () => {
       expect.any(AbortSignal),
     );
     expect(fake.turns[0]?.input.workspace).toEqual(native);
+    expect(fake.turns[0]?.input.projectDir).toBe(ws.dir);
     fake.turns[0]!.finish();
     await flush();
     await turns.dispose();

@@ -3,6 +3,88 @@ import { expect, it, vi } from 'vitest';
 import type { AgentTurnInput, NativeInteractionRequest } from '../../../src/agents/contracts';
 import type { InteractionAnswer } from '@agentdeck/shared/conversation';
 import { CodexChildRequests } from '../../../src/agents/codex/child-requests';
+import { CodexTasks } from '../../../src/agents/codex/tasks';
+
+it('子线程每轮结束回收owner，新轮重建后仍可批准，迟到旧轮请求不能复活', async () => {
+  const firstAnswer = vi.fn(async (): Promise<InteractionAnswer> => ({ action: 'submit', values: { allow: 'allow' } }));
+  const nextAnswer = vi.fn(async (): Promise<InteractionAnswer> => ({ action: 'submit', values: { allow: 'allow' } }));
+  let input: AgentTurnInput = {
+    workspace: { id: 'project', name: 'Fixture', dir: path.resolve('fixture') },
+    text: '',
+    emit: vi.fn(),
+    requestPermission: async () => ({ allow: false }),
+    requestInteraction: firstAnswer,
+  };
+  const client = { respond: vi.fn(), rejectRequest: vi.fn() };
+  const released = vi.fn((id: string) => requests.forget(id));
+  const tasks = new CodexTasks({
+    root: () => 'root',
+    cwd: input.workspace.dir,
+    read: async (id) => ({
+      id,
+      cwd: input.workspace.dir,
+      parentThreadId: 'root',
+      source: { subAgent: { thread_spawn: { parent_thread_id: 'root', depth: 1 } } },
+    }),
+    stop: async () => {},
+    changed: () => {},
+    discovered: (id) => requests.remember(id, input),
+    released,
+  });
+  const requests = new CodexChildRequests({ client, tasks, runtimeId: 'runtime', sessionId: () => 'root' });
+  const approval = (id: string, turnId: string, threadId = 'child') => ({
+    id,
+    method: 'item/commandExecution/requestApproval',
+    params: { threadId, turnId, command: 'fixture' },
+  });
+  try {
+    tasks.notify('item/started', { threadId: 'root', item: { type: 'subAgentActivity', agentThreadId: 'child' } });
+    tasks.notify('turn/started', { threadId: 'child', turn: { id: 'first' } });
+    await tasks.settled();
+    requests.request(approval('first-approval', 'first'));
+    await vi.waitFor(() => expect(client.respond).toHaveBeenCalledWith('first-approval', { decision: 'accept' }));
+    tasks.notify('turn/completed', { threadId: 'child', turn: { id: 'first', status: 'completed' } });
+    await tasks.settled();
+    expect(released).toHaveBeenCalledWith('child');
+    input = { ...input, requestInteraction: nextAnswer };
+    tasks.notify('item/started', { threadId: 'root', item: { type: 'subAgentActivity', agentThreadId: 'child' } });
+    tasks.notify('turn/started', { threadId: 'child', turn: { id: 'second' } });
+    tasks.notify('turn/started', { threadId: 'child', turn: { id: 'first' } });
+    await tasks.settled();
+    requests.request(approval('late-approval', 'first'));
+    requests.request(approval('second-approval', 'second'));
+    await vi.waitFor(() => expect(client.respond).toHaveBeenCalledWith('second-approval', { decision: 'accept' }));
+    expect(client.rejectRequest).toHaveBeenCalledWith('late-approval');
+    expect(firstAnswer).toHaveBeenCalledOnce();
+    expect(nextAnswer).toHaveBeenCalledOnce();
+    tasks.notify('turn/completed', { threadId: 'child', turn: { id: 'second', status: 'completed' } });
+    await tasks.settled();
+    expect(released).toHaveBeenCalledTimes(2);
+    expect(tasks.active).toBe(false);
+    // 超过owner容量的终态历史也必须逐轮回收，不能挤掉后续活动子线程的请求归属。
+    for (let index = 0; index < 128; index++) {
+      const id = `later-${index}`;
+      tasks.notify('item/started', { threadId: 'root', item: { type: 'subAgentActivity', agentThreadId: id } });
+      tasks.notify('turn/started', { threadId: id, turn: { id: 'turn' } });
+      tasks.notify('turn/completed', { threadId: id, turn: { id: 'turn', status: 'completed' } });
+      await tasks.settled();
+    }
+    tasks.notify('item/started', {
+      threadId: 'root',
+      item: { type: 'subAgentActivity', agentThreadId: 'after-history' },
+    });
+    tasks.notify('turn/started', { threadId: 'after-history', turn: { id: 'last' } });
+    await tasks.settled();
+    requests.request(approval('after-history-approval', 'last', 'after-history'));
+    await vi.waitFor(() =>
+      expect(client.respond).toHaveBeenCalledWith('after-history-approval', { decision: 'accept' }),
+    );
+    expect(nextAnswer).toHaveBeenCalledTimes(2);
+  } finally {
+    requests.close();
+    tasks.close();
+  }
+});
 
 it('子线程请求等待归属核验并返回原生RPC，父回合结束后仍用原会话拥有者，重复及跨线程拒绝', async () => {
   let resolve!: (value: InteractionAnswer) => void;
