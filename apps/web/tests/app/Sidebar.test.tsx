@@ -370,6 +370,69 @@ it('所有会话来源读取失败时不能显示暂无会话', async () => {
   expect(await group.findAllByRole('alert')).toHaveLength(3);
   expect(group.queryByText('暂无会话')).toBeNull();
 });
+
+it('每个项目默认限制会话行数，展开可查看全部已加载项并再次收起', () => {
+  const sessions = Array.from({ length: 12 }, (_, index) => ({
+    ...claudeSession,
+    sessionId: `claude-${index + 1}`,
+    title: `项目会话 ${index + 1}`,
+    updatedAt: new Date(12_000 - index * 1000).toISOString(),
+  }));
+  managedSidebar(sessions);
+
+  const group = within(screen.getByRole('region', { name: '示例项目会话' }));
+  expect(group.getByText('项目会话 1')).toBeTruthy();
+  expect(group.getByText('项目会话 10')).toBeTruthy();
+  expect(group.queryByText('项目会话 11')).toBeNull();
+  expect(group.getByRole('button', { name: '展开其余 2 条' }).getAttribute('aria-expanded')).toBe('false');
+
+  fireEvent.click(group.getByRole('button', { name: '展开其余 2 条' }));
+  expect(group.getByText('项目会话 12')).toBeTruthy();
+  expect(group.getByRole('button', { name: '收起' }).getAttribute('aria-expanded')).toBe('true');
+
+  fireEvent.click(group.getByRole('button', { name: '收起' }));
+  expect(group.queryByText('项目会话 11')).toBeNull();
+  expect(group.getByRole('button', { name: '展开其余 2 条' })).toBeTruthy();
+});
+
+it('当前选中的旧会话在折叠列表中仍可见，搜索会显示所有匹配结果', () => {
+  const sessions = Array.from({ length: 12 }, (_, index) => ({
+    ...claudeSession,
+    sessionId: `claude-${index + 1}`,
+    title: `项目会话 ${index + 1}`,
+    updatedAt: new Date(12_000 - index * 1000).toISOString(),
+  }));
+  useChat.setState({ workspaceId: project.id, agent: 'claude', sessionId: 'claude-12' });
+  const view = managedSidebar(sessions);
+
+  const group = within(screen.getByRole('region', { name: '示例项目会话' }));
+  expect(group.getByText('项目会话 12')).toBeTruthy();
+  expect(group.queryByText('项目会话 10')).toBeNull();
+
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <Sidebar projects={[project]} sessionsByProject={{ p1: sessions }} search="项目会话" onAddProject={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  const searched = within(screen.getByRole('region', { name: '示例项目会话' }));
+  expect(searched.getByText('项目会话 12')).toBeTruthy();
+  expect(searched.getByText('项目会话 11')).toBeTruthy();
+  expect(searched.queryByRole('button', { name: /展开其余/ })).toBeNull();
+
+  const projectMatch = sessions.map((session, index) =>
+    index === 11 ? { ...session, title: '示例项目中的旧会话' } : session,
+  );
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <Sidebar projects={[project]} sessionsByProject={{ p1: projectMatch }} search="示例项目" onAddProject={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  const projectResults = within(screen.getByRole('region', { name: '示例项目会话' }));
+  expect(projectResults.getByText('示例项目中的旧会话')).toBeTruthy();
+  expect(projectResults.queryByRole('button', { name: /展开其余/ })).toBeNull();
+  expect(screen.getByTitle('当前搜索结果：12 条会话')).toBeTruthy();
+});
+
 async function actionFor(title: string, action: string) {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`会话“${title}”的更多操作`) }));
   fireEvent.click(await screen.findByRole('menuitem', { name: action }));

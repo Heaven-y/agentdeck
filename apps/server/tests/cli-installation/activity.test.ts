@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { createCliActivity } from '../../src/bootstrap/cli-activity';
+import type { SessionProvider } from '../../src/agents/contracts';
+import { createCliActivity, guardSessionProvider } from '../../src/bootstrap/cli-activity';
 
 it('安装排斥在途原生读取，维护期间拒绝同来源新读取，其他 CLI 保持可用', async () => {
   const activity = createCliActivity();
@@ -21,4 +22,33 @@ it('安装排斥在途原生读取，维护期间拒绝同来源新读取，其�
     'fixture',
   );
   await expect(activity.run('antigravity', async () => 'ok')).resolves.toBe('ok');
+});
+
+it('按项目目录发现会话时仍占用 CLI 读取租约，阻止并发安装', async () => {
+  const activity = createCliActivity();
+  let started!: () => void;
+  let release!: () => void;
+  const began = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const pending = new Promise<never>((resolve) => {
+    release = () => resolve([] as never);
+  });
+  const provider = guardSessionProvider(
+    'claude',
+    {
+      list: async () => [],
+      listProjects: async () => {
+        started();
+        return pending;
+      },
+    } as unknown as SessionProvider,
+    activity,
+  );
+
+  const reading = provider.listProjects!(['project']);
+  await began;
+  await expect(activity.exclusive('claude', async () => undefined)).rejects.toMatchObject({ code: 'agent_busy' });
+  release();
+  await reading;
 });

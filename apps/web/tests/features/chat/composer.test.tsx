@@ -494,8 +494,8 @@ it.each(['claude', 'codex'] as const)('一体输入底栏用菜单设置%s模型
     selection: { id: 'demo' },
     text: '执行任务',
   });
-  expect(screen.getByRole('button', { name: '模型选项' }).getAttribute('disabled')).not.toBeNull();
-  expect(plus.getAttribute('disabled')).not.toBeNull();
+  expect(screen.getByRole('button', { name: '模型选项' }).getAttribute('disabled')).toBeNull();
+  expect(plus.getAttribute('disabled')).toBeNull();
   act(() => {
     emit({
       type: 'turn.started',

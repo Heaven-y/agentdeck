@@ -64,6 +64,7 @@ describe('Claude 原生能力发现', () => {
       { id: 'native-suggestion', label: '原生建议', description: '仅建议', reasoningEfforts: ['low', 'high'] },
     ]);
     expect(catalog.warnings).toEqual([]);
+    expect(catalog.features?.images).toMatchObject({ support: 'unknown', available: false });
     const input = fake.calls[0]!;
     expect(input.options).toMatchObject({
       cwd: directory,

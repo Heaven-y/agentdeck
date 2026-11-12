@@ -52,13 +52,21 @@ export function capabilityHandlers(mode: string, transport: Transport): Record<s
     const cursor = message.params?.cursor;
     reply(message, {
       data: cursor
-        ? [{ id: 'other', model: 'other-model', displayName: '另一个模型' }]
+        ? [
+            {
+              id: 'other',
+              model: 'other-model',
+              displayName: '另一个模型',
+              ...(mode === 'model-modalities' ? { inputModalities: ['text'] } : {}),
+            },
+          ]
         : [
             {
               id: 'catalog-entry',
               model: 'suggested-model',
               displayName: '建议模型',
               description: '仅作候选',
+              ...(mode === 'model-modalities' ? { inputModalities: ['text', 'image'] } : {}),
               isDefault: mode !== 'catalog-no-default',
               defaultReasoningEffort: 'high',
               supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'custom-effort' }],

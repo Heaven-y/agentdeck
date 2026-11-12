@@ -91,6 +91,18 @@ afterEach(async () => {
 });
 
 describe('runClaudeTurn：调用参数', () => {
+  it('仅匹配本次输入UUID的顶层原生回显确认受理，子代理与旧回合回显不串账', async () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    const fake = fakeQuery([
+      { type: 'assistant', user_message_uuid: 'other', message: { content: [] } },
+      { type: 'assistant', parent_tool_use_id: 'child', user_message_uuid: id, message: { content: [] } },
+      { type: 'assistant', user_message_uuids: [id], message: { content: [] } },
+      { type: 'result', subtype: 'success', user_message_uuid: id },
+    ]);
+    const accepted = vi.fn();
+    await run(fake, { clientMessageId: id, onInputAccepted: accepted }).handle.done;
+    expect(accepted).toHaveBeenCalledOnce();
+  });
   it('只传 cwd、原生设置来源与原生系统预设，不追加应用行为指令或工具策略', async () => {
     const fake = fakeQuery();
     await run(fake).handle.done;

@@ -1,4 +1,5 @@
 import type { PermissionSelection } from '@agentdeck/shared/conversation';
+import type { InteractionAnswer } from '@agentdeck/shared/conversation';
 import type {
   AgentKind,
   AgentCapability,
@@ -10,8 +11,34 @@ import type {
 import type { ProductSettings } from '@agentdeck/shared/settings';
 import type { ConnectionStatus } from '../../lib/ws';
 import type { ChatItem } from './chat-reducer';
+import type { DraftAttachment } from './attachment-actions';
+import type { ChatIdentity } from '../../lib/ws';
+import type { FollowupContent, FollowupMode, AsyncQuestion } from '@agentdeck/shared/conversation';
+import type { LocalFollowupQueue, DraftBackup } from './followup-state';
 export type SessionOperation = { action: SessionActionInput['action'] | 'fork'; pending: boolean; error?: string };
 export type ChatState = {
+  followups: Record<string, LocalFollowupQueue>;
+  queueId?: string;
+  runningInput?: FollowupContent;
+  collaborationMode?: 'default' | 'plan';
+  setCollaborationMode(mode?: 'default' | 'plan'): void;
+  draftBackups: DraftBackup[];
+  receivedInputs: string[];
+  sendFollowup(text: string, mode: FollowupMode): boolean;
+  editFollowup(queueId: string, id: string, text: string): boolean;
+  cancelFollowup(queueId: string, id: string): boolean;
+  clearFollowups(queueId: string): boolean;
+  resumeFollowups(queueId: string): boolean;
+  restoreFollowup(queueId: string, id: string): void;
+  discardFollowupBackup(queueId: string, id: string): void;
+  restoreDraftBackup(id: string): void;
+  discardDraftBackup(id: string): void;
+  respondAsyncQuestion(question: AsyncQuestion, answer: InteractionAnswer): boolean;
+  verifyAsyncQuestion(question: AsyncQuestion): Promise<boolean>;
+  dismissAsyncQuestion(question: AsyncQuestion): void;
+  nativeInteractions: ChatItem[];
+  respondInteraction(id: string, answer: InteractionAnswer): boolean;
+  dismissInteraction(id: string): void;
   conversationId: string;
   background: Record<string, ConversationView>;
   tabIds: string[];
@@ -19,6 +46,18 @@ export type ChatState = {
   moveConversationTab(id: string, target: string): void;
   conversationVisible: boolean;
   draft: string;
+  draftAttachments: DraftAttachment[];
+  attachmentsBusy: boolean;
+  pendingAttachmentInput?: { text: string; attachments: DraftAttachment[]; rejected?: boolean; uncertain?: boolean };
+  attachmentIdentity(): ChatIdentity | undefined;
+  invalidateAttachmentIdentity(): void;
+  syncAttachmentIdentity(): void;
+  addAttachments(files: File[]): Promise<void>;
+  retryAttachments(): Promise<void>;
+  removeAttachment(id: string): void;
+  attachmentPreviewFailed(id: string): void;
+  restoreAttachmentInput(): void;
+  discardAttachmentInput(): void;
   unread: boolean;
   view: 'chat' | 'trajectory';
   setDraft(text: string): void;
@@ -88,6 +127,7 @@ export type ChatState = {
 export type ConversationView = Pick<
   ChatState,
   | 'conversationId'
+  | 'collaborationMode'
   | 'workspaceId'
   | 'agent'
   | 'sessionId'
@@ -117,6 +157,13 @@ export type ConversationView = Pick<
   | 'historyNotice'
   | 'banner'
   | 'draft'
+  | 'draftAttachments'
+  | 'attachmentsBusy'
+  | 'pendingAttachmentInput'
   | 'unread'
   | 'view'
+  | 'queueId'
+  | 'runningInput'
+  | 'draftBackups'
+  | 'receivedInputs'
 >;

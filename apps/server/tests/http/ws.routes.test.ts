@@ -13,7 +13,13 @@ it('发送参数错误按clientTurnId回传，客户端可结束等待且不泄�
     runners: {},
     sessions: { assertBelongs: async () => undefined },
   });
-  const app = await buildApp({ token, port: 0, routes: (server) => registerWsRoutes(server, { turns }) });
+  const app = await buildApp({
+    token,
+    port: 0,
+    routes: (server) => {
+      registerWsRoutes(server, { turns });
+    },
+  });
   await app.listen({ host: '127.0.0.1', port: 0 });
   const address = app.server.address();
   if (!address || typeof address === 'string') throw new Error('缺少监听地址');

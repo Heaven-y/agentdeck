@@ -5,7 +5,6 @@ import path from 'node:path';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
 import {
   makeResourceTarget,
-  resourcePathKey,
   type ResourceContext,
   type ResourcePlan,
   type ResourceRoot,
@@ -13,6 +12,7 @@ import {
   type ResourceTarget,
 } from '../agents/common/configuration/resources';
 import { cliConfigurations } from '../agents/registry';
+import { protectClaudePluginResource } from '../agents/claude/configuration/ownership';
 import { assertDirectoryUnchanged, inspectDirectory, MAX_CONFIG_BYTES } from '../platform/files/safe-file';
 
 const MAX_DISCOVERY_ENTRIES = 4096;
@@ -36,14 +36,14 @@ async function optionalStat(file: string) {
 }
 
 export async function describeResource(target: ResourceTarget): Promise<NativeResource> {
-  const { file, ...metadata } = target;
+  const { file, readOnly, ...metadata } = target;
   try {
     const parents = await inspectDirectory(path.dirname(file));
     const stat = parents ? await optionalStat(file) : undefined;
     if (parents) await assertDirectoryUnchanged(parents);
     if (stat && (!stat.isFile() || stat.isSymbolicLink())) throw new NativeResourceError('unsafe_path');
     if (stat && stat.size > MAX_CONFIG_BYTES) throw new NativeResourceError('too_large');
-    return { ...metadata, exists: !!stat, editable: true };
+    return { ...metadata, exists: !!stat, editable: !readOnly };
   } catch (error) {
     return { ...metadata, exists: false, editable: false, unavailableReason: resourceError(error).message };
   }
@@ -61,7 +61,7 @@ export async function describeRoot(root: ResourceRoot): Promise<NativeResourceRo
 }
 
 export async function discoverResources(context: ResourceContext, plan: ResourcePlan) {
-  const targets = new Map(plan.targets.map((target) => [resourcePathKey(target.file), target]));
+  const targets = new Map(plan.targets.map((target) => [target.id, target]));
   const warnings = new Set<string>();
   let remaining = MAX_DISCOVERY_ENTRIES;
 
@@ -89,7 +89,7 @@ export async function discoverResources(context: ResourceContext, plan: Resource
 
   async function addExisting(base: ResourceScan, relative: string, kind: NativeResource['kind']) {
     const target = makeResourceTarget(context.agent, base, relative, { kind });
-    if (await optionalStat(target.file)) targets.set(resourcePathKey(target.file), target);
+    if (await optionalStat(target.file)) targets.set(target.id, target);
   }
 
   async function ruleFiles(scan: ResourceScan, relative = '', depth = 0): Promise<void> {
@@ -116,6 +116,7 @@ export async function discoverResources(context: ResourceContext, plan: Resource
         ...scan,
         directory: path.join(scan.directory, entry.name),
         displayPath: path.posix.join(scan.displayPath, entry.name),
+        readOnly: true,
       };
       for (const [name, kind] of [
         ['plugin.json', 'plugins'],
@@ -135,6 +136,21 @@ export async function discoverResources(context: ResourceContext, plan: Resource
         directory: path.join(base.directory, 'skills'),
         displayPath: `${base.displayPath}/skills`,
       });
+      await agentFiles({
+        ...base,
+        mode: 'agents',
+        directory: path.join(base.directory, 'agents'),
+        displayPath: `${base.displayPath}/agents`,
+      });
+    });
+  }
+
+  async function agentFiles(scan: ResourceScan) {
+    await eachEntry(scan.directory, async (entry) => {
+      if (entry.isFile() && entry.name.endsWith(scan.mode === 'agent-configs' ? '.toml' : '.md'))
+        await addExisting(scan, entry.name, 'agents');
+      if (entry.isDirectory() && scan.mode === 'agents')
+        await addExisting(scan, path.join(entry.name, 'agent.md'), 'agents');
     });
   }
 
@@ -160,8 +176,12 @@ export async function discoverResources(context: ResourceContext, plan: Resource
   for (const scan of plan.scans) {
     if (scan.mode === 'skills') await skillFiles(scan);
     else if (scan.mode === 'plugins') await pluginFiles(scan);
+    else if (scan.mode === 'agents' || scan.mode === 'agent-configs') await agentFiles(scan);
     else await ruleFiles(scan);
   }
   if (context.project) await directoryRules(context.project.dir);
-  return { targets: [...targets.values()], warnings: [...warnings] };
+  return {
+    targets: await Promise.all([...targets.values()].map((target) => protectClaudePluginResource(context, target))),
+    warnings: [...warnings],
+  };
 }

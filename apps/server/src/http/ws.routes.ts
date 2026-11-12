@@ -19,7 +19,7 @@ function rawText(data: Buffer | ArrayBuffer | Buffer[]): string {
   return Buffer.from(data as ArrayBuffer).toString('utf8');
 }
 
-export function registerWsRoutes(app: FastifyInstance, deps: { turns: TurnManager }): void {
+export function registerWsRoutes(app: FastifyInstance, deps: { turns: TurnManager }): ResumeHub {
   const recovery = new ResumeHub(deps.turns);
   app.addHook('onClose', (_server, done) => {
     recovery.dispose();
@@ -87,4 +87,5 @@ export function registerWsRoutes(app: FastifyInstance, deps: { turns: TurnManage
       else deps.turns.socketClosed(socket);
     });
   });
+  return recovery;
 }

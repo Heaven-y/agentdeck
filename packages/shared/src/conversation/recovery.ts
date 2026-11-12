@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { ClientMessage, ServerMessage } from './protocol';
+import type { FollowupSnapshot } from './followups';
+import type { RuntimeTasksState } from './runtime-tasks';
 
 /** 只有首帧可以启用恢复；身份是页签专属随机凭据，不包含会话正文。 */
 export const ResumeRequestSchema = z.object({
@@ -15,6 +17,8 @@ export type ResumeRequest = z.infer<typeof ResumeRequestSchema>;
 export type RecoveryTurn = { message: Extract<ClientMessage, { type: 'chat.send' }>; sentAt: number };
 export type RecoveryFailureCode = 'owner_missing' | 'owner_connected' | 'cache_expired' | 'capacity' | 'server_closed';
 export type RecoveryNotice =
+  | { type: 'connection.tasks'; states: RuntimeTasksState[] }
+  | { type: 'connection.followups'; snapshots: FollowupSnapshot[] }
   | { type: 'connection.snapshot'; turns: RecoveryTurn[] }
   | { type: 'connection.ready'; sequence: number; acceptedClientTurnIds: string[] }
   | { type: 'connection.rejected'; code: RecoveryFailureCode; message: string };

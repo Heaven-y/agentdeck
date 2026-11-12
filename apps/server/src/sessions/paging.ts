@@ -26,6 +26,7 @@ const Cursor = z
   })
   .strict();
 type Position = z.infer<typeof Cursor>;
+const SnapshotCursor = z.tuple([z.uuid(), z.number().int().min(0).max(100_000)]);
 type Context = { query: SessionPageQuery; projects: Workspace[]; archives?: Set<string>; actions: SessionCapabilities };
 const expired = () => new SessionError(409, 'session_page_expired', '会话列表已更新，请重新读取。');
 const fingerprint = (context: Context) =>
@@ -118,14 +119,50 @@ function advance(scan: Scan, page: NativeSessionPage, index: number) {
   return next !== undefined;
 }
 
+function projectDirsFor(context: Context): string[] {
+  const { query, projects } = context;
+  if (query.scope !== 'active' && query.scope !== 'archived') return [];
+  return projects.filter((project) => !query.projectId || project.id === query.projectId).map((project) => project.dir);
+}
+
 /** 原生页大小固定，筛选后不够一页时有限向后扫描，再把游标交回页面。 */
 export function createSessionPaging() {
   const cache = createSessionPageCache();
   async function nativePage(
     provider: SessionProvider,
-    source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string },
+    source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string; scopeKey?: string },
+    projectDirs: string[],
     signal?: AbortSignal,
   ) {
+    if (provider.listProjects && projectDirs.length > 0) {
+      // 目录来源没有原生游标：一次枚举形成有界缓存快照，后续页不能重新排序。
+      let cursor: z.infer<typeof SnapshotCursor> | undefined;
+      try {
+        if (source.cursor) cursor = SnapshotCursor.parse(JSON.parse(source.cursor));
+      } catch {
+        throw expired();
+      }
+      const snapshot = await cache.read(
+        {
+          ...source,
+          cursor: undefined,
+          scopeKey: `snapshot:${source.scopeKey}`,
+          required: source.cursor !== undefined,
+        },
+        async (abort) => ({ items: await provider.listProjects!(projectDirs, abort, source.archived) }),
+        signal,
+      );
+      if (cursor && cursor[0] !== snapshot.snapshotId) throw expired();
+      const offset = cursor?.[1] ?? 0;
+      const items = snapshot.items.slice(offset, offset + SESSION_PAGE_SIZE);
+      return {
+        items,
+        nextCursor:
+          offset + items.length < snapshot.items.length
+            ? JSON.stringify([snapshot.snapshotId, offset + items.length])
+            : undefined,
+      };
+    }
     return cache.read(
       source,
       async (abort): Promise<NativeSessionPage> => {
@@ -157,7 +194,14 @@ export function createSessionPaging() {
         signal?.throwIfAborted();
         const page = await nativePage(
           provider,
-          { agent: query.agent, archived, cursor: pos.native, reader: query.reader },
+          {
+            agent: query.agent,
+            archived,
+            cursor: pos.native,
+            reader: query.reader,
+            ...(provider.listProjects ? { scopeKey: fingerprint(context) } : {}),
+          },
+          projectDirsFor(context),
           signal,
         );
         if (cache.revision(query.agent) !== pos.revision) throw expired();

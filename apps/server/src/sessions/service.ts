@@ -12,6 +12,7 @@ import {
   type SubagentQuery,
   type SubagentRead,
   type PermissionSelection,
+  type NativeMediaLocator,
 } from '@agentdeck/shared/conversation';
 import { type Workspace } from '@agentdeck/shared/projects';
 import { homedir } from 'node:os';
@@ -139,6 +140,15 @@ export function createSessionsService(
     await operations.preferences.setPermission(session, selected);
   }
   return {
+    media(ws: Workspace, agent: AgentKind, locator: NativeMediaLocator, signal?: AbortSignal) {
+      return safeOperation(agent, async () => {
+        const native = await scopedWorkspace(ws, agent, locator.sessionId, signal);
+        await assertNotArchived(agent, locator.sessionId);
+        const provider = providerOf(providers, agent);
+        if (!provider.media) throw new SessionError(404, 'media_missing', '此原生会话的图片读取尚不可用。');
+        return provider.media(locator.sessionId, native.dir, locator, signal);
+      });
+    },
     invalidate: paging.invalidate,
     page(query: SessionPageQuery, signal?: AbortSignal) {
       return safeOperation(query.agent, async () => {

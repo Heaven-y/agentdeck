@@ -2,6 +2,11 @@ import type { SessionRef } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from './chat-state';
 
 const fields = [
+  'queueId',
+  'runningInput',
+  'collaborationMode',
+  'draftBackups',
+  'receivedInputs',
   'conversationId',
   'workspaceId',
   'agent',
@@ -32,6 +37,9 @@ const fields = [
   'historyNotice',
   'banner',
   'draft',
+  'draftAttachments',
+  'attachmentsBusy',
+  'pendingAttachmentInput',
   'unread',
   'view',
 ] as const satisfies readonly (keyof ConversationView)[];
@@ -41,8 +49,12 @@ export const conversationBusy = (view: Pick<ConversationView, 'running' | 'pendi
 export const conversationHasDraft = (view: ConversationView) =>
   !!(
     view.draft ||
+    view.draftAttachments.length ||
+    view.pendingAttachmentInput ||
+    view.draftBackups.length ||
     view.selectedCapability ||
     view.permission ||
+    view.collaborationMode ||
     Object.values(view.modelOverrides).some(Boolean) ||
     Object.values(view.reasoningEfforts).some(Boolean)
   );
@@ -73,7 +85,8 @@ export function retainConversation(state: ChatState): ChatState['background'] {
       !state.items.length &&
       !conversationHasDraft(state) &&
       !conversationBusy(state) &&
-      !state.tabIds.includes(state.conversationId))
+      !state.tabIds.includes(state.conversationId) &&
+      !state.queueId)
   )
     return state.background;
   const snapshot = Object.fromEntries(fields.map((field) => [field, state[field]])) as ConversationView;
@@ -87,6 +100,10 @@ function canReload(view: ConversationView) {
   if (!view.sessionId || !view.items.length || conversationBusy(view)) return false;
   if (
     [
+      view.queueId,
+      view.draftAttachments.length,
+      view.pendingAttachmentInput,
+      view.draftBackups.length,
       view.unread,
       view.loadingHistory,
       view.permissionSaving,
@@ -139,4 +156,4 @@ export function conversationTitle(view: Pick<ConversationView, 'title' | 'items'
   return first?.kind === 'user' ? first.text.slice(0, 60) : view.draft.slice(0, 60) || '新会话';
 }
 export const waitingPermission = (view: ConversationView) =>
-  view.items.some((item) => item.kind === 'permission' && !item.resolved);
+  view.items.some((item) => (item.kind === 'permission' || item.kind === 'interaction') && !item.resolved);

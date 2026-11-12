@@ -1,5 +1,6 @@
 import type { ChatState } from './chat-state';
 import type { SessionRef, SessionActionInput } from '@agentdeck/shared/conversation';
+import { InteractionAnswerSchema } from '@agentdeck/shared/conversation';
 import {
   DEFAULT_REASONING_EFFORTS,
   EMPTY_MODEL_OVERRIDES,
@@ -17,6 +18,10 @@ import { markPermissionPending, reduceChat } from './chat-reducer';
 import { capabilityRestriction, selectionRestriction } from './capability-selection';
 import { createChatEvents } from './chat-events';
 import { createChatHistory } from './chat-history';
+import { createAttachmentActions, attachmentBlocked } from './attachment-actions';
+import { createFollowupActions } from './followup-actions';
+import { draftContent, pendingFollowups, viewQueue } from './followup-state';
+import { createAsyncQuestionActions } from './async-question-actions';
 import { saveConversationPermission } from './chat-permission';
 import { createConversationTabs, existingTabs, openedTab } from './conversation-tabs';
 import {
@@ -43,19 +48,51 @@ export function managementPending(current: ChatState): boolean {
   );
 }
 function cannotSend(current: ChatState, text: string): boolean {
-  return (
-    conversationBusy(current) ||
-    current.loadingHistory ||
-    current.permissionLoading ||
-    current.permissionSaving ||
-    !!current.permissionError ||
-    !!current.historyError ||
-    (!text.trim() && !current.selectedCapability) ||
-    managementPending(current)
-  );
+  const empty = !text.trim() && !current.selectedCapability && !current.draftAttachments.length;
+  return [
+    conversationBusy(current),
+    current.loadingHistory,
+    current.permissionLoading,
+    current.permissionSaving,
+    current.permissionError,
+    current.historyError,
+    empty,
+    attachmentBlocked(current),
+    managementPending(current),
+  ].some(Boolean);
+}
+function canStart(current: ChatState, text: string): current is ChatState & { workspaceId: string } {
+  return !!current.workspaceId && !cannotSend(current, text);
+}
+function shouldQueue(current: ChatState) {
+  const queue = viewQueue(current);
+  return conversationBusy(current) || (!queue?.invalid && pendingFollowups(queue).length > 0);
 }
 function sendRestriction(current: ChatState, text: string): string | undefined {
+  if (current.draftAttachments.length && current.pendingAttachmentInput?.rejected)
+    return '请先恢复或放弃暂存输入，再发送新的附件消息。';
   return selectionRestriction(current.selectedCapability, current.sessionId, text);
+}
+function sentAttachmentInput(current: ChatState, text: string): ChatState['pendingAttachmentInput'] {
+  if (current.draftAttachments.length) return { text, attachments: current.draftAttachments };
+  return current.pendingAttachmentInput?.rejected ? current.pendingAttachmentInput : undefined;
+}
+function sendMessagePayload(current: ChatState & { workspaceId: string }, text: string, clientTurnId: string) {
+  return {
+    type: 'chat.send' as const,
+    workspaceId: current.workspaceId,
+    agent: current.agent,
+    sessionId: current.sessionId,
+    text,
+    ...attachmentRefs(current),
+    ...(current.selectedCapability ? { selection: { id: current.selectedCapability.id } } : {}),
+    model: current.modelOverrides[current.agent].trim() || undefined,
+    reasoningEffort: current.reasoningEfforts[current.agent].trim() || undefined,
+    collaborationMode: current.agent === 'codex' ? current.collaborationMode : undefined,
+    ...(current.permission ? { permission: current.permission } : {}),
+    clientTurnId,
+    conversationId: current.conversationId,
+  };
 }
 function renamedConversation(current: ChatState, workspaceId: string, session: SessionRef, input: SessionActionInput) {
   if (input.action !== 'rename') return {};
@@ -89,6 +126,32 @@ function persistWorkspace(id?: string): void {
 export const useChat = create<ChatState>()((set, get) => {
   const history = createChatHistory(get, set);
   return {
+    followups: {},
+    ...createAsyncQuestionActions(get, set, (message) => socket?.send(message) ?? false),
+    ...createFollowupActions(get, set, (message) => socket?.send(message) ?? false),
+    ...createAttachmentActions(get, set, () => socket?.identity?.()),
+    nativeInteractions: [],
+    respondInteraction(id, answer) {
+      if (!InteractionAnswerSchema.safeParse(answer).success) return false;
+      const state = get();
+      const view = [state, ...Object.values(state.background)].find((view) =>
+        view.items.some((item) => item.kind === 'interaction' && item.id === id && !item.resolved),
+      );
+      const items = view?.items ?? state.nativeInteractions;
+      if (
+        !items.some((item) => item.kind === 'interaction' && item.id === id && !item.resolved && !item.responding) ||
+        !socket?.send({ type: 'interaction.respond', id, answer })
+      )
+        return false;
+      const updated = items.map((item) =>
+        item.kind === 'interaction' && item.id === id ? { ...item, responding: true } : item,
+      );
+      set(view ? updateConversation(state, view, { items: updated }) : { nativeInteractions: updated });
+      return true;
+    },
+    dismissInteraction(id) {
+      set((state) => ({ nativeInteractions: state.nativeInteractions.filter((item) => item.id !== id) }));
+    },
     cancelHistoryRead: () => {
       history.changeSelection();
     },
@@ -195,6 +258,10 @@ export const useChat = create<ChatState>()((set, get) => {
     },
     setAgent(agent) {
       const current = get();
+      if (current.draftAttachments.length || current.attachmentsBusy) {
+        set({ banner: '请先移除当前附件，再切换 CLI。' });
+        return;
+      }
       if (current.sessionId || current.running || current.loadingHistory || current.pendingClientTurnId) return;
       set({ initialDefaultsEligible: false });
       if (current.agent !== agent) {
@@ -272,9 +339,10 @@ export const useChat = create<ChatState>()((set, get) => {
         reasoningEfforts: { ...current.reasoningEfforts, [current.agent]: reasoningEffort },
         initialDefaultsEligible: false,
       })),
+    setCollaborationMode: (collaborationMode) => set({ collaborationMode, initialDefaultsEligible: false }),
     selectCapability(capability) {
       const current = get();
-      if (current.running || current.loadingHistory || managementPending(current)) return;
+      if (current.loadingHistory || managementPending(current)) return;
       if (capability && capabilityRestriction(capability, current.sessionId)) return;
       set({ selectedCapability: capability, initialDefaultsEligible: false });
     },
@@ -340,8 +408,10 @@ export const useChat = create<ChatState>()((set, get) => {
       }
     },
     send(text) {
+      get().syncAttachmentIdentity();
       const current = get();
-      if (!current.workspaceId || !socket || cannotSend(current, text)) return false;
+      if (shouldQueue(current)) return current.sendFollowup(text, 'queue');
+      if (!socket || !canStart(current, text)) return false;
       const restriction = sendRestriction(current, text);
       if (restriction) {
         set({ banner: restriction });
@@ -349,19 +419,7 @@ export const useChat = create<ChatState>()((set, get) => {
       }
       const clientTurnId = crypto.randomUUID();
       const message = text;
-      const sent = socket.send({
-        type: 'chat.send',
-        workspaceId: current.workspaceId,
-        agent: current.agent,
-        sessionId: current.sessionId,
-        text: message,
-        ...(current.selectedCapability ? { selection: { id: current.selectedCapability.id } } : {}),
-        model: current.modelOverrides[current.agent].trim() || undefined,
-        reasoningEffort: current.reasoningEfforts[current.agent].trim() || undefined,
-        ...(current.permission ? { permission: current.permission } : {}),
-        clientTurnId,
-        conversationId: current.conversationId,
-      });
+      const sent = socket.send(sendMessagePayload(current, message, clientTurnId));
       if (!sent) {
         set({ banner: '连接已断开，消息未发送。请等待重新连接后再试。' });
         return false;
@@ -371,14 +429,18 @@ export const useChat = create<ChatState>()((set, get) => {
         items: reduceChat(state.items, {
           type: 'user_message',
           text: current.selectedCapability ? `/${current.selectedCapability.name}${text ? ` ${text}` : ''}` : message,
+          ...attachmentDisplay(current),
         }),
         selectedCapability: undefined,
         draft: '',
+        draftAttachments: [],
+        pendingAttachmentInput: sentAttachmentInput(current, message),
         // 旧轮次未确认的压缩留在历史中，新轮次不能把它重新显示为进行中。
         compaction: state.compaction?.status === 'running' ? undefined : state.compaction,
         running: true,
         lastSentAt: Date.now(),
         pendingClientTurnId: clientTurnId,
+        runningInput: draftContent(current, message),
         interruptRequested: false,
         banner: undefined,
       }));
@@ -427,3 +489,12 @@ export function startChatConnection(connect: Connect = connectChat): void {
   );
 }
 export const reconnectChat = () => socket?.reconnect();
+
+function attachmentRefs(state: ChatState) {
+  return state.draftAttachments.length
+    ? { attachments: state.draftAttachments.map((item) => ({ id: item.asset!.id, revision: item.asset!.revision })) }
+    : {};
+}
+function attachmentDisplay(state: ChatState) {
+  return state.draftAttachments.length ? { attachments: state.draftAttachments.map((item) => item.asset!) } : {};
+}

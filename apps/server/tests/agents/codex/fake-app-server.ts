@@ -20,6 +20,9 @@ const threadId = 'native-thread';
 let turnId = 'native-turn';
 let generatedTurns = 0;
 let startedUsageTurns = 0;
+let backgroundTerminal = ['background-terminal', 'background-terminal-natural-end'].includes(
+  process.env.CODEX_TEST_MODE ?? '',
+);
 const thread = (id = threadId, cwd = process.cwd()) => ({
   id,
   sessionId: 'fork-tree-root',
@@ -60,6 +63,7 @@ const historyToolItems =
       ]
     : [];
 const readThread = (message: Message) => {
+  if (largeHistory(message)) return;
   const id = String(message.params?.threadId);
   const result = thread(
     mode === 'wrong-session-id' ? 'another-thread' : id,
@@ -68,7 +72,7 @@ const readThread = (message: Message) => {
   const turns = [
     {
       id: 'old-turn',
-      status: mode === 'fork-in-progress' ? 'inProgress' : mode === 'fork-unknown-status' ? 'unknown' : 'completed',
+      status: historyStatus(),
       itemsView: mode === 'partial-history' ? 'summary' : 'full',
       items: [
         { id: 'user', type: 'userMessage', content: [{ type: 'text', text: '历史问题' }] },
@@ -89,6 +93,21 @@ const readThread = (message: Message) => {
     });
   reply(message, { thread: { ...result, turns: message.params?.includeTurns ? turns : [] } });
 };
+function historyStatus(): string {
+  return mode === 'fork-in-progress' ? 'inProgress' : mode === 'fork-unknown-status' ? 'unknown' : 'completed';
+}
+function largeHistory(message: Message): boolean {
+  if (mode !== 'large-text-history' && mode !== 'large-image-history') return false;
+  const item =
+    mode === 'large-image-history'
+      ? {
+          type: 'userMessage',
+          content: [{ type: 'image', url: 'data:image/png;base64,' + 'a'.repeat(9 * 1024 * 1024) }],
+        }
+      : { type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) };
+  reply(message, { thread: { ...thread(), turns: [{ items: [item] }] } });
+  return true;
+}
 function listThreads(message: Message): void {
   const cursor = message.params?.cursor;
   const first = [
@@ -137,6 +156,7 @@ function reportUsage(): void {
   }
 }
 function afterStart(): void {
+  if (mode.startsWith('steer')) return;
   if (mode.startsWith('approval')) {
     approval();
     if (mode === 'approval-exit') setTimeout(() => process.exit(1), 40);
@@ -161,6 +181,10 @@ function afterStart(): void {
   notify('item/completed', { threadId, turnId, item: { id: 'answer', type: 'agentMessage', text: '流式回复' } });
   reportUsage();
   end(mode === 'turn-failed' ? 'failed' : 'completed');
+  if (mode === 'background-terminal-natural-end')
+    setTimeout(() => {
+      backgroundTerminal = false;
+    }, 300);
 }
 function start(message: Message): void {
   const respond = () => {
@@ -267,6 +291,28 @@ const handlers: Record<string, (message: Message) => void> = {
   'thread/resume': (message) =>
     reply(message, { thread: thread(String(message.params?.threadId)), model: 'native-model' }),
   'thread/read': readThread,
+  'thread/goal/get': (message) =>
+    reply(message, {
+      goal: mode === 'active-goal' ? { threadId, status: 'active', objective: 'fixture' } : null,
+    }),
+  'thread/backgroundTerminals/list': (message) =>
+    mode === 'unsupported-background-terminals'
+      ? write({ id: message.id, error: { code: -32601, message: 'not supported' } })
+      : reply(message, {
+          data: backgroundTerminal
+            ? [{ itemId: 'fixture-item', processId: 'fixture-process', command: 'secret', cwd: 'secret' }]
+            : [],
+          nextCursor: null,
+        }),
+  'thread/backgroundTerminals/terminate': (message) => {
+    const terminated = backgroundTerminal && message.params?.processId === 'fixture-process';
+    if (terminated) backgroundTerminal = false;
+    reply(message, { terminated });
+  },
+  'thread/backgroundTerminals/clean': (message) => {
+    backgroundTerminal = false;
+    reply(message, {});
+  },
   'thread/list': listThreads,
   'thread/fork': forkThread,
   'thread/name/set': mutation,
@@ -274,6 +320,30 @@ const handlers: Record<string, (message: Message) => void> = {
   'thread/archive': mutation,
   'thread/unarchive': mutation,
   'turn/start': start,
+  'review/start': start,
+  'collaborationMode/list': (message) => reply(message, { data: [{ mode: 'plan' }, { mode: 'default' }] }),
+  'turn/steer': (message) => {
+    if (mode === 'steer-rejected' || message.params?.expectedTurnId !== turnId) {
+      write({ id: message.id, error: { code: -32600, message: 'wrong turn' } });
+      return;
+    }
+    if (mode === 'steer-unknown') {
+      process.exit(1);
+      return;
+    }
+    notify('item/completed', {
+      threadId,
+      turnId,
+      item: {
+        type: 'userMessage',
+        id: 'steered',
+        clientId: message.params?.clientUserMessageId,
+        content: message.params?.input,
+      },
+    });
+    reply(message, { turnId });
+    setTimeout(() => end(), 10);
+  },
   'turn/interrupt': (message) => {
     if (mode !== 'ignore-interrupt') {
       reply(message, {});
@@ -281,6 +351,13 @@ const handlers: Record<string, (message: Message) => void> = {
     }
   },
   echo,
+  'fixture/media-notification': (message) => {
+    const item = message.params?.invalid
+      ? { type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) }
+      : { type: 'mcpToolCall', result: { content: [{ type: 'image', data: 'a'.repeat(9 * 1024 * 1024) }] } };
+    notify('item/completed', { item });
+    reply(message, {});
+  },
   hang: () => {},
   oversize: () => {
     process.stdout.write('x'.repeat(8 * 1024 * 1024 + 1));

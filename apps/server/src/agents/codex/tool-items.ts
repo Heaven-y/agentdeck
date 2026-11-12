@@ -1,5 +1,6 @@
 import { list, record, text, type RecordValue } from './types';
 import { nonnegativeInteger } from './observability';
+import { mcpResultText } from './media';
 
 type ToolDescription = { name: string; input: unknown };
 const TOOL_INPUTS: Record<string, (item: RecordValue) => ToolDescription> = {
@@ -64,7 +65,7 @@ function dynamicOutput(item: RecordValue): string {
 const TOOL_OUTPUTS: Record<string, (item: RecordValue) => string> = {
   commandExecution: (item) => text(item.aggregatedOutput),
   fileChange: fileDiff,
-  mcpToolCall: (item) => printable(item.error ?? item.result),
+  mcpToolCall: mcpResultText,
   dynamicToolCall: dynamicOutput,
   webSearch: (item) => printable(item.results ?? item.action),
   collabAgentToolCall: (item) => printable(item.agentsStates),

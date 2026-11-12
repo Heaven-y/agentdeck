@@ -7,6 +7,8 @@ import { toolDisplayName } from './tool-presentation';
 function currentActivity(items: ChatItem[]) {
   const current = items.slice(items.findLastIndex((item) => item.kind === 'user') + 1);
   if (current.some((item) => item.kind === 'permission' && !item.resolved)) return '等待批准…';
+  if (current.some((item) => item.kind === 'interaction' && !item.resolved && item.interaction.blocking))
+    return '等待你的回答…';
   const tool = current.findLast((item) => item.kind === 'tool' && item.status === 'running');
   if (tool?.kind === 'tool') return `正在${toolDisplayName(tool.name)}…`;
   const activity = current.findLast((item) => item.kind === 'activity' && item.status === 'running');

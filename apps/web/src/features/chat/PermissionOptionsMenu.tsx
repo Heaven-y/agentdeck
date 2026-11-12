@@ -10,7 +10,8 @@ export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   const selected = useChat((state) => state.permission);
   const choose = useChat((state) => state.setPermission);
   const pending = useChat((state) => state.permissionLoading || state.permissionSaving);
-  disabled ||= pending;
+  const running = useChat((state) => state.running || !!state.pendingClientTurnId);
+  disabled ||= pending || running;
   const choices = permissionChoices[agent];
   const current = choices.find((entry) => entry.selection.mode === selected?.mode);
   return (

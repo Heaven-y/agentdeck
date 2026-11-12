@@ -2,6 +2,7 @@
 import type { AgentTurnInput, TurnHandle, TurnRunner } from '../contracts';
 import { CodexRuntime, CodexTurn } from './runtime';
 import type { CodexRuntimeOptions } from './types';
+import { SessionError } from '../errors';
 
 export { CodexRuntime, CodexTurn } from './runtime';
 
@@ -15,6 +16,8 @@ function startTurn(runtime: CodexRuntime, input: AgentTurnInput): TurnHandle {
   return {
     interrupt: () => turn.interrupt(),
     done: turn.run(),
+    canSteer: () => turn.canSteer(),
+    steer: (input) => turn.steer(input),
   };
 }
 
@@ -22,7 +25,7 @@ function startTurn(runtime: CodexRuntime, input: AgentTurnInput): TurnHandle {
 export function runCodexTurn(input: AgentTurnInput, options: CodexRuntimeOptions = {}): TurnHandle {
   const runtime = new CodexRuntime(options);
   const handle = startTurn(runtime, input);
-  return { interrupt: () => handle.interrupt(), done: handle.done.then(() => runtime.close()) };
+  return { ...handle, done: handle.done.then(() => runtime.close()) };
 }
 
 type Entry = { runtime: CodexRuntime; key: string; timer?: NodeJS.Timeout };
@@ -37,12 +40,14 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
   const keyOf = (input: AgentTurnInput) =>
     JSON.stringify([
       input.workspace.id,
+      input.projectDir ?? input.workspace.dir,
       input.workspace.dir,
       input.workspace.server,
       input.workspace.remoteDir,
       input.sessionId ?? '',
       input.model ?? '',
       input.reasoningEffort ?? '',
+      input.collaborationMode ?? '',
       input.permission?.mode ?? '',
     ]);
   const drop = async (entry: Entry) => {
@@ -52,10 +57,14 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
   };
   const schedule = (entry: Entry) => {
     clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => void drop(entry), idleMs);
+    entry.timer = setTimeout(() => {
+      if (entry.runtime.hasBackground) schedule(entry);
+      else void drop(entry);
+    }, idleMs);
     entry.timer.unref?.();
   };
   const runner = ((input: AgentTurnInput): TurnHandle => {
+    assertBackgroundChoice(input);
     let entry = runtimes.get(keyOf(input));
     if (entry && !entry.runtime.alive) {
       void drop(entry);
@@ -69,6 +78,8 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
     const current = entry;
     const handle = startTurn(current.runtime, input);
     return {
+      canSteer: handle.canSteer,
+      steer: handle.steer,
       interrupt: () => handle.interrupt(),
       done: handle.done.then(async () => {
         if (!current.runtime.alive) {
@@ -86,6 +97,19 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
       }),
     };
   }) as TurnRunner;
+  function assertBackgroundChoice(input: AgentTurnInput): void {
+    if (!input.sessionId) return;
+    if (
+      [...runtimes.values()].some(
+        (entry) =>
+          entry.runtime.sessionId === input.sessionId && entry.runtime.hasBackground && entry.key !== keyOf(input),
+      )
+    )
+      throw new SessionError(409, 'runtime_busy', '此会话的后台任务仍在运行，请先完成或停止后再更换运行设置。');
+  }
+  runner.hasBackground = () => [...runtimes.values()].some((entry) => entry.runtime.hasBackground);
+  runner.runtimeControl = (id) =>
+    [...runtimes.values()].find((entry) => entry.runtime.sessionId === id)?.runtime.runtimeControl();
   runner.dispose = async () => {
     const entries = [...runtimes.values()];
     runtimes.clear();

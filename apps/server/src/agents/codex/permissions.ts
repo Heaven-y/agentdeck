@@ -22,7 +22,7 @@ function grantedPermissions(params: RecordValue): RecordValue {
   }
   return permissions;
 }
-function responseFor(request: ServerRequest, decision: Decision): RecordValue {
+export function codexPermissionResponse(request: ServerRequest, decision: Decision): RecordValue {
   if (request.method === 'item/permissions/requestApproval') {
     return { permissions: decision === 'allowed' ? grantedPermissions(request.params) : {}, scope: 'turn' };
   }
@@ -49,7 +49,7 @@ export class CodexPermissions {
       return;
     }
     if (this.stopped || this.pending.size >= 128) {
-      this.client.respond(request.id, responseFor(request, 'cancelled'));
+      this.client.respond(request.id, codexPermissionResponse(request, 'cancelled'));
       return;
     }
     const appId = randomUUID();
@@ -92,7 +92,7 @@ export class CodexPermissions {
     if (!pending) return;
     this.pending.delete(id);
     clearTimeout(pending.timer);
-    if (respond) this.client.respond(id, responseFor(pending.request, decision));
+    if (respond) this.client.respond(id, codexPermissionResponse(pending.request, decision));
     this.input.emit({ type: 'permission_resolved', requestId: pending.appId, decision });
   }
 

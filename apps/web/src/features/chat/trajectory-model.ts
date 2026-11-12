@@ -45,7 +45,13 @@ export const trajectoryRoles: Record<TrajectoryRole, string> = {
 export function trajectoryRole(item: TrajectoryItem): TrajectoryRole {
   if (item.kind === 'compaction') return 'context';
   if (item.kind === 'user') return 'user';
-  if (item.kind === 'tool' || item.kind === 'permission') return 'tool';
+  if (
+    item.kind === 'tool' ||
+    item.kind === 'permission' ||
+    item.kind === 'interaction' ||
+    item.kind === 'async-question'
+  )
+    return 'tool';
   return 'assistant';
 }
 
@@ -126,6 +132,8 @@ export function trajectoryCategory(item: TrajectoryItem): string {
       assistant: '回复',
       reasoning: '思考',
       permission: '审批',
+      interaction: '提问',
+      'async-question': '补充问题',
       error: '错误',
       compaction: '压缩',
       statistics: '统计',
@@ -153,8 +161,14 @@ export function trajectorySummary(item: TrajectoryItem): string {
     case 'statistics':
       return statisticsSummary(item);
     default:
-      return item.text;
+      return messageSummary(item);
   }
+}
+function messageSummary(
+  item: Extract<TrajectoryItem, { kind: 'async-question' | 'interaction' | 'user' | 'assistant' | 'reasoning' }>,
+) {
+  if (item.kind === 'async-question') return item.question.spec.title;
+  return item.kind === 'interaction' ? item.interaction.title : item.text;
 }
 
 function statisticsSummary(item: Extract<TrajectoryItem, { kind: 'statistics' }>) {
@@ -169,6 +183,7 @@ function compactionSummary(item: Extract<TrajectoryItem, { kind: 'compaction' }>
 }
 
 export function trajectoryStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
+  if (item.kind === 'async-question') return questionStatus(item.status);
   if (item.kind === 'activity')
     return {
       label: activityStatus(item),
@@ -183,12 +198,15 @@ export function trajectoryStatus(item: TrajectoryItem): { label: string; tone: s
   }
   return otherStatus(item);
 }
+function questionStatus(status: Extract<TrajectoryItem, { kind: 'async-question' }>['status']) {
+  return {
+    label: status === 'open' ? '等待回答' : status === 'accepted' ? '已回答' : '答复待发',
+    tone: 'text-muted-foreground',
+  };
+}
 
 function otherStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
-  if (item.kind === 'permission') {
-    const label = item.resolved ? { allow: '已批准', deny: '已拒绝', cancelled: '已取消' }[item.resolved] : '等待确认';
-    return { label, tone: item.resolved ? 'text-muted-foreground' : 'text-warning' };
-  }
+  if (item.kind === 'interaction' || item.kind === 'permission') return interactionStatus(item);
   if (item.kind === 'assistant' && item.streaming) return { label: '生成中', tone: 'text-muted-foreground' };
   if (item.kind === 'error') return { label: '失败', tone: 'text-destructive-foreground' };
   if (item.kind !== 'compaction') return;
@@ -196,4 +214,18 @@ function otherStatus(item: TrajectoryItem): { label: string; tone: string } | un
     ? '未完成'
     : { running: '进行中', completed: '完成', failed: '失败', cancelled: '中断' }[item.state.status];
   return { label, tone: 'text-muted-foreground' };
+}
+
+function interactionStatus(item: TrajectoryItem): { label: string; tone: string } | undefined {
+  if (item.kind === 'interaction')
+    return {
+      label: item.resolved
+        ? { submitted: '已提交', declined: '已拒绝', cancelled: '已取消', completed: '已完成' }[item.resolved]
+        : '等待回答',
+      tone: item.resolved ? 'text-muted-foreground' : 'text-warning',
+    };
+  if (item.kind === 'permission') {
+    const label = item.resolved ? { allow: '已批准', deny: '已拒绝', cancelled: '已取消' }[item.resolved] : '等待确认';
+    return { label, tone: item.resolved ? 'text-muted-foreground' : 'text-warning' };
+  }
 }

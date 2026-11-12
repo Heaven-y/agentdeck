@@ -24,10 +24,12 @@
 | 上下文、token、速度和执行轨迹 | [统计口径](engineering/cli-observability.md) |
 | 模型显示、Claude 1M 与推理档位 | [模型能力](engineering/model-capabilities.md) |
 | 静态页面插件、宿主接口与 SSH Console | [插件契约](engineering/workbench-plugins.md) |
+| 三 CLI 原生能力逐项状态、限制与产品边界 | [原生能力矩阵](engineering/native-capability-matrix.md) |
+| 三 CLI 原生交互、附件与扩展管理补齐 | [当前实施计划](plans/native-capability-parity.md) |
 
 ## 维护规则
 
 - 需求写“做什么”，界面写“怎么操作”，架构和专项说明写“怎么实现”，决策写“为什么”，路线图写“交付到哪里”。参数只在所属文档维护，其他位置引用。
 - 代码已接入、受控验证、真实环境通过和外部阻塞分别记录。只改文档不重新推定历史结果。
-- 仅保留正在执行的计划；已完成计划的有效约束归入长期文档，原文登记到[历史追溯](engineering/decisions.md#历史追溯)。当前没有进行中的实施计划，后续事项以路线图为准。
+- 仅保留正在执行的计划；已完成计划的有效约束归入长期文档，原文登记到[历史追溯](engineering/decisions.md#历史追溯)。当前正在核查与执行三 CLI 原生能力补齐，逐项状态见上方实施计划。
 - 新文档加入本导航；重命名或移除章节时同步修复链接。整理后运行文档检查，不因纯文档修改重复业务测试。

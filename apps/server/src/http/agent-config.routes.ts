@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { anonymousConfigError, NativeConfigError } from '../agents/common/configuration/legacy-errors';
 import { MAX_CONFIG_BYTES } from '../platform/files/safe-file';
 import type { NativeConfigAgent, NativeConfigService } from '../settings/native-config';
+import { SessionError } from '../agents/errors';
 
 export type AgentConfigRoutesDeps = { service: NativeConfigService };
 const Params = z.object({ agent: z.enum(['claude', 'codex']) }).strict();
@@ -21,6 +22,8 @@ async function respond(reply: FastifyReply, operation: () => Promise<unknown>) {
   try {
     return await operation();
   } catch (error) {
+    if (error instanceof SessionError)
+      return reply.code(error.status).send({ code: error.code, message: error.message });
     const failure = anonymousConfigError(error);
     return reply.code(failure.status).send({ code: failure.code, message: failure.message });
   }

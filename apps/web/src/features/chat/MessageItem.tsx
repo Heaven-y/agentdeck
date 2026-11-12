@@ -3,6 +3,8 @@ import { memo } from 'react';
 import { Streamdown } from 'streamdown';
 import type { ChatItem } from './chat-reducer';
 import { PermissionCard } from './PermissionCard';
+import { InteractionCard } from './InteractionCard';
+import { MessageAttachments } from './MessageAttachments';
 import { ToolCard } from './ToolCard';
 import { CompactionStatus } from './ContextStatus';
 import type { ExpandedProps } from './timeline-model';
@@ -11,6 +13,7 @@ import { StatisticsLine } from './StatisticsLine';
 import { ActivityCard } from './ActivityCard';
 import { SessionReferenceText, sessionMarkdownComponents, sessionMarkdownUrl } from './SessionReferenceText';
 import { sessionRemarkPlugins } from './session-reference-markdown';
+import { AsyncQuestionCard } from './AsyncQuestionCard';
 
 function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant' }> }) {
   return (
@@ -24,6 +27,9 @@ function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant
       >
         {item.text}
       </Streamdown>
+      {item.responseModel && (
+        <p className="mt-2 text-xs leading-5 break-all text-muted-foreground">响应模型：{item.responseModel}</p>
+      )}
     </div>
   );
 }
@@ -41,10 +47,13 @@ export const MessageItem = memo(function MessageItem({
   onExpandedChange,
 }: { item: ChatItem } & ExpandedProps) {
   switch (item.kind) {
+    case 'async-question':
+      return <AsyncQuestionCard item={item} />;
     case 'user':
       return (
         <div className="conversation-user">
           <SessionReferenceText text={item.text} />
+          <MessageAttachments attachments={item.attachments} />
         </div>
       );
     case 'assistant':
@@ -70,6 +79,8 @@ export const MessageItem = memo(function MessageItem({
       return <ActivityCard item={item} expanded={expanded} onExpandedChange={onExpandedChange} />;
     case 'permission':
       return <PermissionCard item={item} />;
+    case 'interaction':
+      return <InteractionCard item={item} />;
     case 'error':
       return (
         <div

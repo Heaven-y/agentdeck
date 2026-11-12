@@ -27,6 +27,7 @@ import { PluginNavigation } from '../features/plugins/PluginNavigation';
 import { PluginWorkspace } from '../features/plugins/PluginWorkspace';
 import { usePluginPages } from '../features/plugins/use-plugin-pages';
 import { DesktopTitleBar } from './DesktopTitleBar';
+import { NativeInteractionInbox } from '../features/chat/InteractionCard';
 
 const SettingsDialog = lazy(() => import('../features/settings/SettingsDialog'));
 const CommandPalette = lazy(() => import('./CommandPalette'));
@@ -328,6 +329,7 @@ export function App() {
           </div>
         </div>
       </WorkspaceLayout>
+      <NativeInteractionInbox />
     </div>
   );
 }

@@ -177,7 +177,8 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
         registerProbeRoutes(a, { probes });
         cli.registerRoutes(a);
         registerProductSettingsRoutes(a, productSettings, probes);
-        registerWsRoutes(a, { turns });
+        const recovery = registerWsRoutes(a, { turns });
+        cli.registerAttachments(a, recovery);
       },
     });
 

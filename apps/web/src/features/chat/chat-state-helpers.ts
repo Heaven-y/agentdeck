@@ -2,6 +2,7 @@ import type { AgentKind, AgentEvent, ContextUsage, CompactionState, SessionRef }
 import type { ChatState, ConversationView } from './chat-state';
 import type { ChatItem } from './chat-reducer';
 import { ApiError } from '../../lib/http';
+import type { DraftAttachment } from './attachment-actions';
 export const sessionActionKey = (workspaceId: string, session: SessionRef): string =>
   JSON.stringify([workspaceId, session.agent, session.sessionId]);
 export const DEFAULT_REASONING_EFFORTS: Record<AgentKind, string> = {
@@ -35,11 +36,13 @@ export function historyParameters(current: ChatState, session: SessionRef) {
       modelOverrides: current.modelOverrides,
       reasoningEfforts: current.reasoningEfforts,
       permission: current.permission,
+      collaborationMode: current.collaborationMode,
     };
   return {
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES },
     reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
     permission: undefined,
+    collaborationMode: undefined,
   };
 }
 
@@ -66,8 +69,16 @@ export function reportedModel(model?: string): string | undefined {
 }
 
 export const emptyConversation = {
+  collaborationMode: undefined,
+  queueId: undefined,
+  runningInput: undefined,
+  draftBackups: [],
+  receivedInputs: [],
   title: undefined,
   draft: '',
+  draftAttachments: [] as DraftAttachment[],
+  attachmentsBusy: false,
+  pendingAttachmentInput: undefined,
   unread: false,
   view: 'chat' as const,
   sessionId: undefined,

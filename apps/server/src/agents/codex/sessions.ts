@@ -9,8 +9,13 @@ import type {
   NativeSessionPage,
 } from '../contracts';
 import { SessionError } from '../errors';
+import { imageSource, mediaMissing } from '../common/native-media';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
+import { codexToolImage } from './media';
+import { readCodexSubagentMedia } from './subagents';
 import { CodexClient } from './client';
 import { CodexEventMapper, codexForkPoint } from './mapper';
+import { markAnsweredQuestions } from './async-questions';
 import { cancelled, CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from './types';
 
 const MAX_SESSIONS = 100_000;
@@ -88,12 +93,31 @@ export async function readCodexSession(
   return withClient(dir, options, async (client) => {
     await checkedThread(client, id, dir);
     const thread = await checkedThread(client, id, dir, true);
-    const mapper = new CodexEventMapper({ preserveToolContent: options.preserveToolContent });
+    const mapper = new CodexEventMapper({ preserveToolContent: options.preserveToolContent, sessionId: id });
     return {
       session: summary(thread),
       cwd: text(thread.cwd),
-      events: completeTurns(thread).flatMap((turn) => mapper.history(turn)),
+      events: markAnsweredQuestions(completeTurns(thread).flatMap((turn) => mapper.history(turn))),
     };
+  });
+}
+export async function readCodexMedia(
+  id: string,
+  dir: string,
+  locator: NativeMediaLocator,
+  options: CodexRuntimeOptions = {},
+) {
+  if (locator.subagentId) return readCodexSubagentMedia(id, dir, locator, options);
+  return withClient(dir, options, async (client) => {
+    const thread = await checkedThread(client, id, dir, true);
+    const item = completeTurns(thread)
+      .flatMap((turn) => (Array.isArray(turn.items) ? turn.items.map(record) : []))
+      .find((item) => item.id === locator.messageId);
+    if (!item) throw mediaMissing();
+    if (locator.kind === 'user' && item.type === 'userMessage')
+      return imageSource(Array.isArray(item.content) ? item.content[locator.index] : undefined);
+    if (locator.kind === 'tool') return codexToolImage(item, locator.index);
+    throw mediaMissing();
   });
 }
 
@@ -122,7 +146,6 @@ export async function listCodexSessions(
         limit: 100,
         sortKey: 'updated_at',
         modelProviders: [],
-        sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
         archived,
         cursor,
       });
@@ -151,7 +174,6 @@ export async function pageCodexSessions(
       cursor: page.cursor,
       sortKey: 'updated_at',
       modelProviders: [],
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
       archived: options.archived ?? false,
     });
     if (!Array.isArray(response.data)) throw new CodexError('Codex 未返回有效的会话列表。');

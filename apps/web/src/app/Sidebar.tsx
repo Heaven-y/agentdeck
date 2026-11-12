@@ -1,4 +1,4 @@
-import { Folder, FolderOpen, FolderPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Folder, FolderOpen, FolderPlus } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
@@ -53,6 +53,7 @@ export type SidebarProps = {
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_FAILURES: SessionListFailure[] = [];
+const DEFAULT_PROJECT_SESSION_LIMIT = 10;
 const agentSearchNames = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity AGY' };
 const newestFirst = (a: SessionSummary, b: SessionSummary) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
 const matchesSession = (session: SessionSummary, query: string) =>
@@ -77,9 +78,28 @@ function visibleProjects(projects: Workspace[], sessions: Record<string, Workspa
   });
 }
 
+function displayedProjectSessions(sessions: WorkspaceSession[], activeKey: string, showAll: boolean) {
+  if (showAll || sessions.length <= DEFAULT_PROJECT_SESSION_LIMIT) return sessions;
+  const visible = sessions.slice(0, DEFAULT_PROJECT_SESSION_LIMIT);
+  const active = sessions.find((session) => sessionActionKey(session.projectId ?? '', session) === activeKey);
+  if (active && !visible.some((session) => sessionActionKey(session.projectId ?? '', session) === activeKey)) {
+    visible[visible.length - 1] = active;
+    const positions = new Map(
+      sessions.map((session, index) => [sessionActionKey(session.projectId ?? '', session), index]),
+    );
+    visible.sort(
+      (left, right) =>
+        (positions.get(sessionActionKey(left.projectId ?? '', left)) ?? 0) -
+        (positions.get(sessionActionKey(right.projectId ?? '', right)) ?? 0),
+    );
+  }
+  return visible;
+}
+
 function ProjectItem({
   project,
   sessions,
+  searching,
   expanded,
   current,
   loading,
@@ -97,6 +117,7 @@ function ProjectItem({
 }: {
   project: Workspace;
   sessions: WorkspaceSession[];
+  searching: boolean;
   expanded: boolean;
   current: boolean;
   loading: boolean;
@@ -114,6 +135,11 @@ function ProjectItem({
 }) {
   const FolderIcon = expanded ? FolderOpen : Folder;
   const sortableSessions = useMemo(() => sessions.filter((session) => !session.local), [sessions]);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const visibleSessions = useMemo(
+    () => displayedProjectSessions(sessions, activeKey, searching || showAllSessions),
+    [sessions, activeKey, searching, showAllSessions],
+  );
   return (
     <li className="min-w-0">
       <div className="group flex min-w-0 items-center rounded-lg hover:bg-muted/70">
@@ -127,7 +153,12 @@ function ProjectItem({
         >
           <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-          <span title="已加载会话数" className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          <span
+            title={
+              searching ? `当前搜索结果：${sessions.length} 条会话` : `已加载会话及本页临时会话：${sessions.length} 条`
+            }
+            className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+          >
             {sessions.length}
           </span>
         </button>
@@ -156,7 +187,7 @@ function ProjectItem({
           />
           {sessions.length > 0 && (
             <ul className="flex flex-col gap-0.5">
-              {sessions.map((session) => {
+              {visibleSessions.map((session) => {
                 const Row = session.local ? ProjectSessionRow : SessionRow;
                 return (
                   <Row
@@ -172,6 +203,12 @@ function ProjectItem({
               })}
             </ul>
           )}
+          <ProjectSessionExpansionControl
+            count={sessions.length}
+            expanded={showAllSessions}
+            searching={searching}
+            toggle={() => setShowAllSessions((expanded) => !expanded)}
+          />
         </section>
       )}
     </li>
@@ -211,6 +248,31 @@ function ProjectSessionStatus({
     <p role={loading ? 'status' : undefined} className="px-3 py-2 text-xs text-muted-foreground">
       {loading ? '正在读取会话…' : '暂无会话'}
     </p>
+  );
+}
+
+function ProjectSessionExpansionControl({
+  count,
+  expanded,
+  searching,
+  toggle,
+}: {
+  count: number;
+  expanded: boolean;
+  searching: boolean;
+  toggle(): void;
+}) {
+  if (searching || count <= DEFAULT_PROJECT_SESSION_LIMIT) return null;
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      className="flex min-h-8 items-center gap-1 rounded px-3 text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+      onClick={toggle}
+    >
+      {expanded ? <ChevronUp aria-hidden className="size-3.5" /> : <ChevronDown aria-hidden className="size-3.5" />}
+      {expanded ? '收起' : `展开其余 ${count - DEFAULT_PROJECT_SESSION_LIMIT} 条`}
+    </button>
   );
 }
 
@@ -391,6 +453,7 @@ export function Sidebar({
                   key={project.id}
                   project={project}
                   sessions={sessions}
+                  searching={Boolean(query)}
                   expanded={Boolean(query) || selection.isExpanded(project.id)}
                   current={selection.selectedProject === project.id}
                   loading={loadingSessions}

@@ -10,9 +10,13 @@ import { buttonClass } from '../../ui/styles';
 import { SettingsDetailDialog } from './SettingsDetailDialog';
 import { NativeResourceCatalog, type NativeResourceSelection } from './NativeResourceCatalog';
 import { nativeAgentNames, nativeSettingsError } from './native-resource-labels';
+import { invalidateNativeCapabilities } from '../../cli/shared/capability-cache';
 
 const NativeResourceEditor = lazy(() => import('./NativeResourceEditor'));
 const NativeResourceCreate = lazy(() => import('./NativeResourceCreate'));
+const NativeSkillsPanel = lazy(() => import('./NativeSkillsPanel'));
+const NativeMcpPanel = lazy(() => import('./NativeMcpPanel'));
+const NativePluginsPanel = lazy(() => import('./NativePluginsPanel'));
 
 export default function NativeResourcesDialog({
   agent,
@@ -30,6 +34,7 @@ export default function NativeResourcesDialog({
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [target, setTarget] = useState<NativeResourceSelection>();
+  const [category, setCategory] = useState('all');
   useEffect(() => {
     const controller = new AbortController();
     void settingsApi
@@ -74,11 +79,13 @@ export default function NativeResourcesDialog({
   return (
     <SettingsDetailDialog title={`原生配置与扩展 · ${nativeAgentNames[agent]}`} onBack={onBack} onClose={onClose}>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-1 text-sm text-muted-foreground">
-          <p>{project ? `当前项目：${project.name}` : '尚未选择项目，显示当前可用的原生入口。'}</p>
-          {project && <p className="break-all font-mono text-xs">{project.dir}</p>}
-        </div>
-        <button type="button" className={buttonClass('outline')} onClick={refresh} disabled={!catalog && !error}>
+        <ResourceProject project={project} />
+        <button
+          type="button"
+          className={buttonClass('outline')}
+          onClick={refresh}
+          disabled={catalogLoading(catalog, error)}
+        >
           <RefreshCw aria-hidden className="size-4" />
           刷新目录
         </button>
@@ -88,8 +95,69 @@ export default function NativeResourcesDialog({
           {error}
         </p>
       )}
-      {catalog ? (
-        <NativeResourceCatalog catalog={catalog} select={setTarget} />
+      <nav aria-label="原生资源分类" className="flex flex-wrap gap-2">
+        {[
+          ['all', '全部原文'],
+          ['skills', 'Skills'],
+          ['mcp', 'MCP'],
+          ['plugins', '原生插件'],
+          ['custom', '规则 / Hooks / 代理定义'],
+        ].map(([id, label]) => (
+          <button
+            type="button"
+            className={buttonClass(category === id ? 'primary' : 'outline')}
+            aria-pressed={category === id}
+            key={id}
+            onClick={() => setCategory(id!)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      {category === 'skills' ? (
+        <Suspense fallback={<p role="status">正在打开 Skills 管理…</p>}>
+          <NativeSkillsPanel
+            key={JSON.stringify([agent, projectId])}
+            context={{ agent, projectId }}
+            reload={reload}
+            onEdit={(id) => {
+              const resource = catalog?.entries.find((entry) => entry.id === id);
+              if (resource) setTarget({ resource });
+              else refresh();
+            }}
+            onCreate={(root) => setTarget({ root })}
+            onChanged={() => {
+              void invalidateNativeCapabilities(agent);
+              setReload((value) => value + 1);
+            }}
+          />
+        </Suspense>
+      ) : category === 'mcp' ? (
+        <Suspense fallback={<p role="status">正在打开 MCP 管理…</p>}>
+          <NativeMcpPanel
+            key={JSON.stringify([agent, projectId])}
+            context={{ agent, projectId }}
+            reload={reload}
+            onChanged={() => {
+              void invalidateNativeCapabilities(agent);
+              setReload((value) => value + 1);
+            }}
+          />
+        </Suspense>
+      ) : category === 'plugins' ? (
+        <Suspense fallback={<p role="status">正在打开原生插件管理…</p>}>
+          <NativePluginsPanel
+            key={JSON.stringify([agent, projectId])}
+            context={{ agent, projectId }}
+            reload={reload}
+            onChanged={() => {
+              void invalidateNativeCapabilities(agent);
+              setReload((value) => value + 1);
+            }}
+          />
+        </Suspense>
+      ) : catalog ? (
+        <NativeResourceCatalog catalog={filteredCatalog(catalog, category)} select={setTarget} />
       ) : (
         !error && (
           <p role="status" className="py-8 text-center text-sm text-muted-foreground">
@@ -99,4 +167,25 @@ export default function NativeResourcesDialog({
       )}
     </SettingsDetailDialog>
   );
+}
+const catalogLoading = (catalog: Catalog | undefined, error: string) => !catalog && !error;
+function ResourceProject({ project }: { project?: Workspace }) {
+  return (
+    <div className="min-w-0 flex-1 space-y-1 text-sm text-muted-foreground">
+      <p>{project ? `当前项目：${project.name}` : '尚未选择项目，显示当前可用的原生入口。'}</p>
+      {project && <p className="break-all font-mono text-xs">{project.dir}</p>}
+    </div>
+  );
+}
+
+function filteredCatalog(catalog: Catalog, category: string): Catalog {
+  if (category === 'all') return catalog;
+  const custom = category === 'custom';
+  return {
+    ...catalog,
+    entries: catalog.entries.filter((entry) =>
+      custom ? ['rules', 'hooks', 'agents'].includes(entry.kind) : entry.kind === category,
+    ),
+    roots: catalog.roots.filter((root) => (custom ? root.kind !== 'skills' : root.kind === category)),
+  };
 }

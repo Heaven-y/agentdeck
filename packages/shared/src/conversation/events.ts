@@ -1,19 +1,25 @@
 // Agent 对话事件：后端把各 CLI 的原始消息统一转换成这些事件，再推送给前端
 import type { AgentKind } from './agents';
 import type { CompactionState, ContextUsage, TokenUsage } from './capabilities';
+import type { InteractionEvent } from './interaction';
+import type { ChatAttachment, MessageAttachment } from './attachments';
+import type { AsyncQuestion } from './followups';
 
 /** 同一次成功模型生成的原生计时；首段可能包含推理，流式时长不含工具执行。 */
 export type GenerationTiming = { durationMs: number; firstTokenMs?: number };
 
 export type AgentEvent =
+  | { type: 'async_question'; question: AsyncQuestion; answered?: boolean }
+  | { type: 'input_attachments'; attachments: ChatAttachment[] }
+  | InteractionEvent
   | { type: 'context'; usage: ContextUsage | null }
   | { type: 'compaction'; state: CompactionState }
   /** 会话开始或继续，sessionId 由 Agent 分配 */
   | { type: 'session'; sessionId: string; model: string; cwd: string; agent?: AgentKind }
   /** 用户消息（只出现在历史记录中，实时对话由前端自己显示） */
-  | { type: 'user_message'; text: string }
+  | { type: 'user_message'; text: string; attachments?: MessageAttachment[]; nativeInputId?: string }
   /** 助手文本增量 */
-  | { type: 'text'; delta: string }
+  | { type: 'text'; delta: string; responseModel?: string }
   /** 思考过程增量 */
   | { type: 'reasoning'; delta: string }
   | { type: 'tool_call'; id: string; name: string; input: unknown }
@@ -22,6 +28,7 @@ export type AgentEvent =
       id: string;
       output: string;
       isError: boolean;
+      attachments?: MessageAttachment[];
       durationMs?: number;
       timingSource?: 'native' | 'observed';
       usage?: TokenUsage;

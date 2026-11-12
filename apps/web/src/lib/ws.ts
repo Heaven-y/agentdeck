@@ -8,7 +8,13 @@ import type {
   RecoveryServerMessage,
 } from '@agentdeck/shared/conversation';
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
-export type ChatSocket = { send(msg: ClientMessage): boolean; reconnect(): void; close(): void };
+export type ChatIdentity = { token: string; instanceId: string };
+export type ChatSocket = {
+  send(msg: ClientMessage): boolean;
+  reconnect(): void;
+  close(): void;
+  identity?(): ChatIdentity | undefined;
+};
 type Handlers = {
   onMessage(msg: ServerMessage): void;
   onStatus(status: ConnectionStatus): void;
@@ -112,12 +118,18 @@ export function connectChat(handlers: Handlers): ChatSocket {
     handlers.onRecovery?.(message);
     handlers.onStatus('open');
   }
+  function receiveSnapshot(message: Extract<RecoveryNotice, { type: 'connection.snapshot' }>) {
+    if (rebuild) handlers.onRecovery?.(message);
+  }
   function received(message: RecoveryServerMessage) {
     if (!accepting) return;
     switch (message.type) {
-      case 'connection.snapshot':
-        if (rebuild) handlers.onRecovery?.(message);
+      case 'connection.followups':
+      case 'connection.tasks':
+        handlers.onRecovery?.(message);
         return;
+      case 'connection.snapshot':
+        return receiveSnapshot(message);
       case 'connection.event':
         return receiveEvent(message);
       case 'connection.ready':
@@ -143,6 +155,7 @@ export function connectChat(handlers: Handlers): ChatSocket {
     }
   });
   return {
+    identity: () => (ready ? { token: identity.token, instanceId } : undefined),
     send(message) {
       if (!ready || ws.readyState !== ws.OPEN) return false;
       ws.send(JSON.stringify(message));

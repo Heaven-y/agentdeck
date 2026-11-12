@@ -1,6 +1,13 @@
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
 import type { FastifyInstance } from 'fastify';
+import path from 'node:path';
+import { AttachmentStore } from '../chat/attachments';
+import type { ResumeHub } from '../chat/resume-hub';
+import { registerChatAttachmentRoutes } from '../http/chat-attachments.routes';
+import { inputCapabilities } from '../chat/input-capabilities';
+import type { AgentTurnInput } from '../agents/contracts';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
 import { createAgentProbes, createLocalRunner } from '../agents/common/probe';
 import { createCliInstallationBackend } from '../cli-installation';
@@ -24,6 +31,8 @@ import {
   pageCodexSessions,
   mutateCodexSession,
   readCodexSession,
+  readCodexMedia,
+  readCodexSubagents,
 } from '../agents/codex';
 import { withCapabilityDirectory } from '../agents/common/capability-directory';
 import { createConfiguredRunner } from '../agents/common/configured-runner';
@@ -44,6 +53,20 @@ import { createModelSettingsService } from '../settings/model-settings';
 import { createNativeConfigService } from '../settings/native-config';
 import { createNativeResourcesService } from '../settings/native-resources';
 import { createSessionToolsService } from '../settings/session-tools';
+import { createNativeManagementAccess } from '../native-management/access';
+import { createNativeManagementService } from '../native-management/service';
+import { registerNativeManagementRoutes } from '../http/native-management.routes';
+import { createNativeMcpService } from '../native-management/mcp-service';
+import { McpRuntimeRegistry } from '../native-management/mcp-runtime';
+import { createMcpControlService } from '../native-management/mcp-control-service';
+import { registerNativeMcpRoutes } from '../http/native-mcp.routes';
+import { createNativePluginService } from '../native-management/plugin-service';
+import { registerNativePluginRoutes } from '../http/native-plugins.routes';
+import { registerNativeActionRoutes } from '../http/native-actions.routes';
+import { createNativeActionsService } from '../sessions/native-actions';
+import { createClaudeRewindBackend } from '../agents/claude/native-actions';
+import { createCodexHistoryBackend } from '../agents/codex/history-actions';
+import { SessionError } from '../agents/errors';
 
 import type { WorkspaceActivity } from '../workspaces/activity';
 import type { WorkspaceStore } from '../workspaces/store';
@@ -62,11 +85,17 @@ export function createCliServices({
   probeRunner?: ProcessRunner;
 }) {
   const acquireWorkspace = (id: string) => activity.acquire(id);
+  const attachments = new AttachmentStore(path.join(configDir, 'attachments'));
   const nativeActivity = createCliActivity();
+  const mcpRegistry = new McpRuntimeRegistry();
   const launchEnvironment = createLaunchEnvironment({
     configDir: configDir,
     onSaved: (agent) => capabilities.invalidate(agent),
   });
+  const inputFeatures = (agent: AgentKind, input: AgentTurnInput, signal: AbortSignal) =>
+    nativeActivity.run(agent, async () =>
+      inputCapabilities(agent, input, await launchEnvironment.resolve(agent), signal),
+    );
   const capabilities = createCapabilitiesService(
     {
       claude: withCapabilityDirectory((dir, signal) =>
@@ -87,7 +116,42 @@ export function createCliServices({
     },
     { configDir: configDir },
   );
-  const nativeResources = createNativeResourcesService({ onSaved: (agent) => capabilities.invalidate(agent) });
+  const managementAccess = createNativeManagementAccess({
+    withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
+    native: nativeActivity,
+    workspace: activity,
+  });
+  const nativeChanged = async (agent: AgentKind) => {
+    await capabilities.invalidate(agent);
+    sessions.invalidate(agent);
+    await runners[agent].restart();
+  };
+  const nativeResources = createNativeResourcesService({
+    onSaved: nativeChanged,
+    withWrite: (...args) => managementAccess.write(...args),
+  });
+  const nativeManagement = createNativeManagementService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+  });
+  const nativeMcp = createNativeMcpService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+  });
+  const nativePlugins = createNativePluginService({
+    environment: (agent) => launchEnvironment.resolve(agent),
+    access: managementAccess,
+    onChanged: nativeChanged,
+    getProject: (id) => store.get(id),
+  });
+  const mcpControls = createMcpControlService({
+    service: nativeMcp,
+    registry: mcpRegistry,
+    access: managementAccess,
+    workspace: { acquire: acquireWorkspace, get: (id) => store.get(id) },
+  });
   const antigravityManagement = createAntigravitySessionManagement({
     environment: () => launchEnvironment.resolve('antigravity'),
   });
@@ -106,6 +170,8 @@ export function createCliServices({
           list: (dir, signal, archived) => listCodexSessions(dir, { signal, archived }),
           page: (dir, input, signal, archived) => pageCodexSessions(dir, input, { signal, archived }),
           read: (id, dir, signal) => readCodexSession(id, dir, { signal }),
+          media: (id, dir, locator, signal) => readCodexMedia(id, dir, locator, { signal }),
+          subagents: (id, dir, query, signal) => readCodexSubagents(id, dir, query, { signal }),
           assertBelongs: (id, dir, signal) => assertCodexSession(id, dir, { signal }),
           mutate: (id, dir, input) => mutateCodexSession(id, dir, input),
           fork: (id, dir, input) => forkCodexSession(id, dir, input),
@@ -124,11 +190,11 @@ export function createCliServices({
   const runners = {
     claude: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('claude'),
-      create: (env) => createClaudeRunner({ env }),
+      create: (env) => createClaudeRunner({ env, mcpRegistry }),
     }),
     codex: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('codex'),
-      create: (env) => createCodexRunner({ env }),
+      create: (env) => createCodexRunner({ env, mcpRegistry }),
     }),
     antigravity: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('antigravity'),
@@ -145,6 +211,8 @@ export function createCliServices({
     capabilities,
     runners,
     acquireWorkspace,
+    attachments,
+    inputFeatures,
   });
   const installations = createCliInstallationService({
     backend:
@@ -162,20 +230,68 @@ export function createCliServices({
     },
   });
 
+  const nativeActions = createNativeActionsService({
+    withSession: (scope, operation) =>
+      turns.withIdleAgent(scope.agent, async () => {
+        const release = acquireWorkspace(scope.workspaceId);
+        try {
+          const workspace = await store.get(scope.workspaceId);
+          if (!workspace) throw new SessionError(404, 'workspace_missing', '工作区不存在');
+          const native = await sessions.assertBelongs(workspace, scope.agent, scope.sessionId);
+          return await nativeActivity.exclusive(scope.agent, () => operation(native ?? workspace));
+        } finally {
+          release();
+        }
+      }),
+    open: async (scope, workspace) => {
+      const env = await launchEnvironment.resolve(scope.agent);
+      return scope.agent === 'claude'
+        ? createClaudeRewindBackend(scope.sessionId, workspace.dir, env)
+        : createCodexHistoryBackend(scope.sessionId, workspace.dir, { env });
+    },
+    changed: async (agent) => {
+      sessions.invalidate(agent);
+      await runners[agent].restart();
+      await capabilities.invalidate(agent);
+    },
+  });
+
   return {
     turns,
+    registerAttachments(app: FastifyInstance, recovery: ResumeHub) {
+      registerChatAttachmentRoutes(app, {
+        attachments,
+        recovery,
+        acquireWorkspace,
+        inputFeatures,
+        getWorkspace: (id) => store.get(id),
+        assertBelongs: (workspace, agent, id) => sessions.assertBelongs(workspace, agent, id),
+      });
+    },
     nativeActivity,
     disposeInstallations: () => installations.dispose(),
-    disposeSessionManagement: () => antigravityManagement.dispose(),
+    disposeSessionManagement: () => {
+      mcpControls.oauth.dispose();
+      return Promise.all([nativePlugins.dispose(), antigravityManagement.dispose()]).then(() => undefined);
+    },
     registerRoutes(a: FastifyInstance) {
+      registerNativeActionRoutes(a, nativeActions);
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });
       registerCapabilityRoutes(a, { store, capabilities, sessions });
       registerModelCatalogRoutes(a, { store, capabilities });
+      const legacyConfig = createNativeConfigService({ onSaved: nativeChanged });
       registerAgentConfigRoutes(a, {
-        service: createNativeConfigService({ onSaved: (agent) => capabilities.invalidate(agent) }),
+        service: {
+          ...legacyConfig,
+          save: (agent, input) => managementAccess.write(agent, undefined, () => legacyConfig.save(agent, input)),
+        },
       });
-      registerNativeResourceRoutes(a, { service: nativeResources, store, activity });
+      // 项目与 CLI 写租约已在服务内取得，避免 HTTP 包装重复取锁。
+      registerNativeResourceRoutes(a, { service: nativeResources, store });
+      registerNativeManagementRoutes(a, { service: nativeManagement, store });
+      registerNativeMcpRoutes(a, { service: nativeMcp, controls: mcpControls, store });
+      registerNativePluginRoutes(a, { service: nativePlugins, store });
       registerModelSettingsRoutes(
         a,
         createModelSettingsService({ resources: nativeResources, environment: launchEnvironment }),

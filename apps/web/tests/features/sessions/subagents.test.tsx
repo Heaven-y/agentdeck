@@ -57,8 +57,63 @@ it('打开后才读取子代理，分页追加但不写主对话，切换子代�
   fireEvent.click(screen.getByRole('button', { name: '关闭子代理历史' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
-it('其他CLI不显示未接入的子代理入口', () => {
+it('三CLI共享摘要与嵌套入口，返回上级后保持根会话身份', async () => {
   useChat.setState({ agent: 'codex' });
+  const api = vi.spyOn(sessionsApi, 'subagents').mockImplementation(async (_workspace, _session, query) => {
+    if (!query.agentId)
+      return {
+        agentIds: [query.parentAgentId ? 'nested' : 'child'],
+        summaries: [
+          {
+            agentId: query.parentAgentId ? 'nested' : 'child',
+            parentSessionId: 'parent',
+            parentAgentId: query.parentAgentId,
+            name: '阅读者',
+            role: '检查源码',
+            status: 'running',
+          },
+        ],
+      };
+    return {
+      agentId: query.agentId,
+      parentAgentId: query.parentAgentId,
+      events: [{ type: 'text', delta: `${query.agentId}独立内容` }],
+    };
+  });
   mount();
-  expect(screen.queryByRole('button', { name: '子代理' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '子代理' }));
+  await screen.findByText('child独立内容', { exact: false });
+  expect(screen.getByText('检查源码')).toBeTruthy();
+  expect(screen.getByText('运行中')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '查看其子代理' }));
+  await screen.findByText('nested独立内容', { exact: false });
+  fireEvent.click(screen.getByRole('button', { name: '返回主会话子代理' }));
+  await screen.findByText('child独立内容', { exact: false });
+  expect(api.mock.calls.every((call) => call[1] === 'parent' && call[3]?.agent === 'codex')).toBe(true);
+});
+it('切换CLI后迟到目录不会串入新入口', async () => {
+  let finish!: (value: { agentIds: string[] }) => void;
+  vi.spyOn(sessionsApi, 'subagents').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  mount();
+  fireEvent.click(screen.getByRole('button', { name: '子代理' }));
+  useChat.setState({ agent: 'antigravity' });
+  finish({ agentIds: ['old-child'] });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.queryByText('old-child')).toBeNull();
+});
+it('历史API按选定CLI构造请求，嵌套导航保持根会话URL', async () => {
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(
+      new Response(JSON.stringify({ agentIds: [] }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+  await sessionsApi.subagents('project', 'root', { parentAgentId: 'child' }, { agent: 'antigravity' });
+  expect(fetch.mock.calls[0]?.[0]).toBe(
+    '/api/projects/project/sessions/antigravity/root/subagents?parentAgentId=child',
+  );
 });

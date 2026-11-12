@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 it('Antigravity 原生保存冲突后恢复连接旧模式和值，不覆盖发生冲突的原生文件', async () => {
-  const { service, write, environment, resources } = await fixture();
+  const { service, write, environment } = await fixture();
   const file = await write('.gemini/antigravity-cli/settings.json', '{"model":"old"}');
   await environment.save('antigravity', {
     revision: 'missing',
@@ -49,10 +49,12 @@ it('Antigravity 原生保存冲突后恢复连接旧模式和值，不覆盖发�
   });
   const initial = await service.read('antigravity');
   expect(JSON.stringify(initial)).not.toContain('prior-private-key');
-  const save = resources.save;
-  vi.spyOn(resources, 'save').mockImplementationOnce(async (...args) => {
+  const save = environment.save;
+  vi.spyOn(environment, 'save').mockImplementationOnce(async (...args) => {
+    const saved = await save(...args);
+    // 模拟外部进程在连接已保存、原生文件提交前改写配置，不依赖内部窄写入口。
     await fs.writeFile(file, '{"model":"external"}');
-    return save(...args);
+    return saved;
   });
   await expect(
     service.save('antigravity', {

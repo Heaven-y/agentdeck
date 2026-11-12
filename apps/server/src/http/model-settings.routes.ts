@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
 import { ModelSettingsError } from '../agents/common/configuration/patch';
 import type { ModelSettingsService } from '../settings/model-settings';
+import { SessionError } from '../agents/errors';
 
 const Params = z.strictObject({ agent: AgentKindSchema });
 function agentOf(req: FastifyRequest) {
@@ -17,6 +18,8 @@ async function respond(reply: FastifyReply, operation: () => Promise<unknown>) {
   try {
     return await operation();
   } catch (error) {
+    if (error instanceof SessionError)
+      return reply.code(error.status).send({ code: error.code, message: error.message });
     const failure = error instanceof ModelSettingsError ? error : resourceError(error);
     return reply.code(failure.status).send({ code: failure.code, message: failure.message });
   }

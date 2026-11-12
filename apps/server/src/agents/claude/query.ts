@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage } from '@agentdeck/shared/conversation';
 import { resolveClaudeLaunch } from './launch';
 
 /** 固定SDK的控制契约；只收窄消息迭代内容，由映射器校验原生事件。 */
 export type ClaudeQuery = AsyncIterable<unknown> &
-  Pick<Query, 'interrupt' | 'close' | 'supportedCommands' | 'supportedModels' | 'getContextUsage'>;
+  Pick<Query, 'interrupt' | 'close' | 'supportedCommands' | 'supportedModels' | 'getContextUsage'> &
+  Partial<Pick<Query, 'mcpServerStatus' | 'reconnectMcpServer' | 'toggleMcpServer' | 'stopTask' | 'rewindFiles'>>;
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => ClaudeQuery;
 export const nativeClaudeQuery: QueryFn = (params) =>
   query({
@@ -45,14 +47,14 @@ export function createClaudeStream() {
   };
   return {
     prompt,
-    send(text: string) {
+    send(content: SDKUserMessage['message']['content'], uuid: string = randomUUID()) {
       if (closed) throw new Error('Claude 输入流已关闭');
       queue.push({
         type: 'user',
-        message: { role: 'user', content: text },
+        message: { role: 'user', content },
         session_id: '',
         parent_tool_use_id: null,
-        uuid: randomUUID(),
+        uuid: z.uuid().parse(uuid) as NonNullable<SDKUserMessage['uuid']>,
       });
       notify();
     },

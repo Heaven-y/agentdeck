@@ -1,4 +1,5 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AgentKind, SubagentSummary } from '@agentdeck/shared/conversation';
 import { GitFork } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DetailDialog } from '../../ui/DetailDialog';
@@ -11,7 +12,14 @@ import { TrajectoryContent } from '../chat/TrajectoryView';
 import { TrajectoryDetails } from '../chat/TrajectoryDetails';
 import { sessionsApi } from './api';
 
-type Identity = { workspaceId: string; sessionId: string };
+type Identity = { workspaceId: string; sessionId: string; agent: AgentKind };
+const statuses: Record<SubagentSummary['status'], string> = {
+  running: '运行中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+  unknown: '状态未知',
+};
 
 function SubagentTrajectory({ items }: { items: ChatItem[] }) {
   const [selected, setSelected] = useState<string>();
@@ -57,13 +65,24 @@ function HistoryStatus({
   return empty ? <p className="m-auto text-sm text-muted-foreground">没有可显示的记录</p> : null;
 }
 
-function ChildHistory({ workspaceId, sessionId, agentId }: Identity & { agentId: string }) {
+function ChildHistory({
+  workspaceId,
+  sessionId,
+  agent,
+  agentId,
+  parentAgentId,
+}: Identity & { agentId: string; parentAgentId?: string }) {
   const [view, setView] = useState<'chat' | 'trajectory'>('chat');
   const history = useInfiniteQuery({
-    queryKey: ['subagent-history', workspaceId, sessionId, agentId],
+    queryKey: ['subagents', workspaceId, agent, sessionId, 'history', parentAgentId, agentId],
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ signal, pageParam }) => {
-      const result = await sessionsApi.subagents(workspaceId, sessionId, { agentId, cursor: pageParam }, signal);
+      const result = await sessionsApi.subagents(
+        workspaceId,
+        sessionId,
+        { agentId, parentAgentId, cursor: pageParam },
+        { signal, agent },
+      );
       if (!('agentId' in result) || result.agentId !== agentId) throw new Error('子代理记录不匹配');
       return result;
     },
@@ -110,54 +129,146 @@ function ChildHistory({ workspaceId, sessionId, agentId }: Identity & { agentId:
   );
 }
 
-function SubagentHistoryDialog({ workspaceId, sessionId, onClose }: Identity & { onClose(): void }) {
+function AgentSelection({
+  ids,
+  summaries,
+  agentId,
+  select,
+  enter,
+}: {
+  ids: string[];
+  summaries: SubagentSummary[];
+  agentId: string;
+  select(id: string): void;
+  enter(): void;
+}) {
+  const summary = summaries.find((entry) => entry.agentId === agentId);
+  return (
+    <>
+      <label className="flex shrink-0 items-center gap-2 text-sm">
+        子代理
+        <select
+          aria-label="选择子代理"
+          className={`${inputClass} min-w-0 flex-1`}
+          value={agentId}
+          onChange={(event) => select(event.target.value)}
+        >
+          {ids.map((id, index) => (
+            <option key={id} value={id}>
+              {summaries.find((entry) => entry.agentId === id)?.name ?? `子代理 ${index + 1}`} · {id}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">{statuses[summary?.status ?? 'unknown']}</span>
+        {summary?.role && <span className="min-w-0 break-words">{summary.role}</span>}
+        <button type="button" className={`${buttonClass('ghost')} ml-auto text-xs`} onClick={enter}>
+          查看其子代理
+        </button>
+      </div>
+    </>
+  );
+}
+function SubagentDirectoryStatus({
+  pending,
+  failed,
+  empty,
+  retry,
+}: {
+  pending: boolean;
+  failed: boolean;
+  empty: boolean;
+  retry(): void;
+}) {
+  if (pending)
+    return (
+      <p role="status" className="m-auto text-sm text-muted-foreground">
+        正在读取…
+      </p>
+    );
+  if (failed)
+    return (
+      <p role="alert" className="text-sm text-destructive-foreground">
+        子代理目录读取失败。
+        <button className={buttonClass('ghost')} onClick={retry}>
+          重试
+        </button>
+      </p>
+    );
+  return empty ? <p className="m-auto text-sm text-muted-foreground">这条会话没有子代理记录</p> : null;
+}
+function SubagentHistoryDialog({ workspaceId, sessionId, agent, onClose }: Identity & { onClose(): void }) {
   const [selected, setSelected] = useState('');
+  const [parents, setParents] = useState<string[]>([]);
+  const parentAgentId = parents.at(-1);
+  const client = useQueryClient();
   const agents = useQuery({
-    queryKey: ['subagents', workspaceId, sessionId],
+    queryKey: ['subagents', workspaceId, agent, sessionId, 'list', parentAgentId],
     queryFn: async ({ signal }) => {
-      const result = await sessionsApi.subagents(workspaceId, sessionId, {}, signal);
+      const result = await sessionsApi.subagents(workspaceId, sessionId, { parentAgentId }, { signal, agent });
       if (!('agentIds' in result)) throw new Error('子代理目录格式不正确');
-      return result.agentIds;
+      return { ids: result.agentIds, summaries: result.summaries ?? [] };
     },
     gcTime: 0,
     retry: false,
   });
-  const agentId = agents.data?.includes(selected) ? selected : agents.data?.[0];
+  const agentId = agents.data?.ids.includes(selected) ? selected : agents.data?.ids[0];
   return (
     <DetailDialog title="子代理历史" onClose={onClose}>
       <div className="flex h-[min(60dvh,640px)] min-h-0 flex-col gap-3">
-        {agents.isPending && (
-          <p role="status" className="m-auto text-sm text-muted-foreground">
-            正在读取…
-          </p>
-        )}
-        {agents.isError && (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            子代理目录读取失败。
-            <button className={buttonClass('ghost')} onClick={() => void agents.refetch()}>
-              重试
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {parentAgentId && (
+            <button
+              type="button"
+              className={buttonClass('outline')}
+              onClick={() => {
+                setParents(parents.slice(0, -1));
+                setSelected(parentAgentId);
+              }}
+              aria-label={parents.length === 1 ? '返回主会话子代理' : '返回上级子代理'}
+            >
+              返回上级
             </button>
-          </p>
-        )}
-        {agents.data?.length === 0 && <p className="m-auto text-sm text-muted-foreground">这条会话没有子代理记录</p>}
+          )}
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={parentAgentId}>
+            {parentAgentId ? `来自 ${parentAgentId}` : '主会话的子代理'}
+          </span>
+          <button
+            type="button"
+            className={buttonClass('ghost')}
+            disabled={agents.isFetching}
+            onClick={() => void client.invalidateQueries({ queryKey: ['subagents', workspaceId, agent, sessionId] })}
+          >
+            刷新
+          </button>
+        </div>
+        <SubagentDirectoryStatus
+          pending={agents.isPending}
+          failed={agents.isError}
+          empty={agents.data?.ids.length === 0}
+          retry={() => void agents.refetch()}
+        />
         {agentId && (
           <>
-            <label className="flex shrink-0 items-center gap-2 text-sm">
-              子代理
-              <select
-                aria-label="选择子代理"
-                className={`${inputClass} min-w-0 flex-1`}
-                value={agentId}
-                onChange={(event) => setSelected(event.target.value)}
-              >
-                {agents.data?.map((id, index) => (
-                  <option key={id} value={id}>
-                    子代理 {index + 1} · {id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <ChildHistory key={agentId} workspaceId={workspaceId} sessionId={sessionId} agentId={agentId} />
+            <AgentSelection
+              ids={agents.data!.ids}
+              summaries={agents.data!.summaries}
+              agentId={agentId}
+              select={setSelected}
+              enter={() => {
+                setParents([...parents, agentId]);
+                setSelected('');
+              }}
+            />
+            <ChildHistory
+              key={`${parentAgentId ?? ''}:${agentId}`}
+              workspaceId={workspaceId}
+              sessionId={sessionId}
+              agent={agent}
+              agentId={agentId}
+              parentAgentId={parentAgentId}
+            />
           </>
         )}
       </div>
@@ -182,6 +293,13 @@ export function SubagentHistoryButton() {
   const agent = useChat((state) => state.agent);
   const workspaceId = useChat((state) => state.workspaceId);
   const sessionId = useChat((state) => state.sessionId);
-  if (agent !== 'claude' || !workspaceId || !sessionId) return null;
-  return <HistoryButton key={`${workspaceId}:${sessionId}`} workspaceId={workspaceId} sessionId={sessionId} />;
+  if (!workspaceId || !sessionId) return null;
+  return (
+    <HistoryButton
+      key={`${workspaceId}:${agent}:${sessionId}`}
+      workspaceId={workspaceId}
+      sessionId={sessionId}
+      agent={agent}
+    />
+  );
 }

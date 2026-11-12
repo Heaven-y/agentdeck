@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@agentdeck/shared/conversation';
+import { mediaReference } from '../common/native-media';
 import { managementObject as object, managementText as text, type ManagementRecord } from './management-rpc';
 import { contextEvent, historyTiming, stepUsage } from './metrics';
 import { historyGeneration } from './generation-timing';
@@ -184,16 +185,8 @@ function stepEvents(
   trajectory: ManagementRecord,
 ): AgentEvent[] {
   switch (step.type) {
-    case 'CORTEX_STEP_TYPE_USER_INPUT': {
-      const user = object(step.userInput);
-      const content =
-        text(user.query) ||
-        list(user.items)
-          .map((item) => text(object(item).text))
-          .filter(Boolean)
-          .join('\n');
-      return content ? [{ type: 'user_message', text: content }] : [];
-    }
+    case 'CORTEX_STEP_TYPE_USER_INPUT':
+      return userInputEvents(step, index, trajectory);
     case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE':
       return response(step, index, trajectory);
     case 'CORTEX_STEP_TYPE_CHECKPOINT':
@@ -234,4 +227,28 @@ export function antigravityHistory(
   const context = object(object(last.chatModel).chatStartMetadata).contextWindowMetadata;
   events.push(...contextEvent(context));
   return events;
+}
+
+function userInputEvents(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
+  const user = object(step.userInput);
+  const attachments = list(user.media).flatMap((value, mediaIndex) =>
+    text(object(value).mimeType).startsWith('image/')
+      ? [
+          mediaReference(text(trajectory.cascadeId), String(index), mediaIndex, {
+            kind: 'user',
+            mimeType: text(object(value).mimeType),
+          }),
+        ]
+      : [],
+  );
+  const content =
+    text(user.query) ||
+    text(user.userResponse) ||
+    list(user.items)
+      .map((item) => text(object(item).text))
+      .filter(Boolean)
+      .join('\n');
+  return content || attachments.length
+    ? [{ type: 'user_message', text: content, ...(attachments.length ? { attachments } : {}) }]
+    : [];
 }

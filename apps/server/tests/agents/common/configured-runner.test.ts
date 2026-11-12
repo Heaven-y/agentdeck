@@ -10,6 +10,31 @@ const input = (sessionId?: string): AgentTurnInput => ({
   emit: vi.fn(),
   requestPermission: vi.fn(),
 });
+it('父回合结束后后台任务阻止空闲回收和重启，权限更改不能杀死后台实例', async () => {
+  vi.useFakeTimers();
+  let active = true;
+  const dispose = vi.fn(async () => {}),
+    native = vi.fn(() => ({ done: Promise.resolve(), interrupt: async () => {} })) as unknown as TurnRunner;
+  native.dispose = dispose;
+  native.hasBackground = () => active;
+  const runner = createConfiguredRunner({ idleMs: 100, environment: async () => ({}), create: () => native });
+  try {
+    await runner(input('native')).done;
+    await vi.advanceTimersByTimeAsync(201);
+    expect(dispose).not.toHaveBeenCalled();
+    await expect(runner.restart()).rejects.toThrow();
+    const next = { ...input('native'), permission: { agent: 'claude' as const, mode: 'plan' as const } };
+    await runner(next).done;
+    expect(dispose).not.toHaveBeenCalled();
+    expect(native).toHaveBeenCalledOnce();
+    active = false;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(dispose).toHaveBeenCalledOnce();
+  } finally {
+    await runner.dispose?.();
+    vi.useRealTimers();
+  }
+});
 it('新进程读取环境，已有会话保持快照，显式重启后采用新环境', async () => {
   let key = 'first';
   const applied: string[] = [];
@@ -159,6 +184,20 @@ it('权限变化先回收旧实例，切回原生默认也重新启动且保留�
     await runner(input('same-session')).done;
     expect(started).toBe(2);
     expect(history).toEqual(['same-session', 'same-session', 'same-session']);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+it('项目根变更但原生 cwd 不变时创建新实例，保留原项目根身份', async () => {
+  const create = vi.fn((): TurnRunner => () => ({ done: Promise.resolve(), interrupt: async () => {} }));
+  const runner = createConfiguredRunner({ environment: async () => ({}), create });
+  const current = input('same-session');
+  try {
+    await runner({ ...current, projectDir: path.dirname(current.workspace.dir) }).done;
+    await runner({ ...current, projectDir: current.workspace.dir }).done;
+    expect(create).toHaveBeenCalledTimes(2);
+    await runner({ ...current, projectDir: current.workspace.dir }).done;
+    expect(create).toHaveBeenCalledTimes(2);
   } finally {
     await runner.dispose?.();
   }

@@ -1,7 +1,10 @@
+import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
 export type CodexRuntimeOptions = {
+  mcpRegistry?: McpRuntimeRegistry;
   command?: string | { command: string; args?: string[] };
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  experimentalApi?: boolean;
 };
 
 export type RecordValue = Record<string, unknown>;
@@ -14,7 +17,11 @@ export type ServerRequest = { id: RpcId; method: string; params: RecordValue };
 
 /** 原生诊断可能含 URL、密钥或配置片段，只向上层暴露固定分类。 */
 export class CodexError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly nativeRejected = false,
+    readonly methodNotFound = false,
+  ) {
     super(message);
     this.name = 'CodexError';
   }

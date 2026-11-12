@@ -9,10 +9,10 @@ import type {
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-export type Base = { directory: string; displayPath: string; scope: NativeResourceScope };
-export type ResourceTarget = Omit<NativeResource, 'exists' | 'editable'> & { file: string };
+export type Base = { directory: string; displayPath: string; scope: NativeResourceScope; readOnly?: boolean };
+export type ResourceTarget = Omit<NativeResource, 'exists' | 'editable'> & { file: string; readOnly?: boolean };
 export type ResourceRoot = Omit<NativeResourceRoot, 'editable'> & { directory: string };
-export type ResourceScan = Base & { mode: 'rules' | 'skills' | 'policy' | 'plugins' };
+export type ResourceScan = Base & { mode: 'rules' | 'skills' | 'policy' | 'plugins' | 'agents' | 'agent-configs' };
 export type ResourcePlan = {
   targets: ResourceTarget[];
   roots: ResourceRoot[];
@@ -55,7 +55,7 @@ export function makeResourceTarget(
   const suffix = path.extname(relative).toLowerCase();
   const format = suffix === '.json' ? 'json' : suffix === '.toml' ? 'toml' : suffix === '.md' ? 'markdown' : 'text';
   return {
-    id: resourceId(agent, location.directory),
+    id: resourceId(agent, location.directory, details.kind),
     agent,
     kind: details.kind,
     scope: base.scope,
@@ -64,6 +64,7 @@ export function makeResourceTarget(
     format,
     description: details.description ?? '保存原生文件；加载时机、信任与权限由 CLI 决定。',
     file: location.directory,
+    ...(base.readOnly ? { readOnly: true } : {}),
   };
 }
 
@@ -75,12 +76,12 @@ export function builder(context: ResourceContext) {
   const scan = (base: Base, relative: string, mode: ResourceScan['mode'], create = false) => {
     const location = at(base, relative);
     plan.scans.push({ ...location, mode });
-    if (create && (mode === 'rules' || mode === 'skills'))
+    if (create && (mode === 'rules' || mode === 'skills' || mode === 'agents'))
       plan.roots.push({
         id: resourceId(context.agent, location.directory, mode),
         kind: mode,
         scope: base.scope,
-        label: mode === 'rules' ? '规则目录' : 'Skills 目录',
+        label: mode === 'rules' ? '规则目录' : mode === 'agents' ? '代理定义目录' : 'Skills 目录',
         displayPath: location.displayPath,
         directory: location.directory,
       });

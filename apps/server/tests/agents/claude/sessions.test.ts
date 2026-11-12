@@ -31,12 +31,23 @@ beforeEach(() => {
   vi.mocked(deleteSession).mockResolvedValue(undefined);
 });
 
-it('摘要分页只调用SDK请求的一页，不遍历其他记录', async () => {
+it('摘要分页将工作区目录传给SDK，只读取请求的一页', async () => {
   vi.mocked(listSessions).mockResolvedValue([metadata]);
   const page = await createClaudeSessions().page!(dir, { limit: 1, cursor: '50' });
   expect(listSessions).toHaveBeenCalledExactlyOnceWith({ includeWorktrees: false, limit: 1, offset: 50 });
   expect(page.nextCursor).toBe('51');
   expect(page.items[0]?.sessionId).toBe(id);
+});
+
+it('工作区发现按每个登记目录读取并去重Claude SDK结果', async () => {
+  const otherDir = path.join(tmpdir(), 'agentdeck-management', 'other');
+  const other = { ...metadata, sessionId: '22222222-2222-4222-8222-222222222222', cwd: otherDir };
+  vi.mocked(listSessions).mockImplementation(async (options) => (options?.dir === otherDir ? [other] : [metadata]));
+  const rows = await createClaudeSessions().listProjects!([dir, otherDir]);
+
+  expect(listSessions).toHaveBeenNthCalledWith(1, { dir, includeWorktrees: false });
+  expect(listSessions).toHaveBeenNthCalledWith(2, { dir: otherDir, includeWorktrees: false });
+  expect(rows.map((row) => row.sessionId).sort()).toEqual([id, other.sessionId].sort());
 });
 
 it('分页摘要、兼容列表与历史使用同一活动时间且不为列表读取完整历史', async () => {

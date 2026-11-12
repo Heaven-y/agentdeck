@@ -30,7 +30,7 @@ function fixture() {
       withIdleSession: (_s, op) => op(),
     },
   );
-  return { service, page, list, rows };
+  return { service, page, list, rows, provider, project };
 }
 
 it('首屏只读一页，后续按需加载；同来源列表复用原生页', async () => {
@@ -47,6 +47,38 @@ it('首屏只读一页，后续按需加载；同来源列表复用原生页', a
   expect(f.page).toHaveBeenCalledTimes(2);
 });
 
+it('目录级会话来源按所有登记项目聚合后统一分页', async () => {
+  const f = fixture();
+  const rows = Array.from({ length: 55 }, (_, index) => ({
+    sessionId: `project-${index}`,
+    summary: `项目会话${index}`,
+    lastModified: 1_000 - index,
+    cwd: f.project.dir,
+  }));
+  const listProjects = vi.fn(async (dirs: string[]) => {
+    expect(dirs).toEqual([f.project.dir]);
+    return rows;
+  });
+  f.provider.listProjects = listProjects;
+
+  const first = await f.service.page({ agent: 'claude', scope: 'active' });
+  expect(first.items).toHaveLength(50);
+  expect(first.items[0]?.sessionId).toBe('project-0');
+  expect(first.nextCursor).toBeTruthy();
+  // 原生端新增/活动重排不能改变已开始翻页的聚合快照。
+  rows.unshift({ ...rows[0]!, sessionId: 'new-session', lastModified: 2_000 });
+  const second = await f.service.page({ agent: 'claude', scope: 'active', cursor: first.nextCursor });
+  expect(second.items.map((item) => item.sessionId)).toEqual([
+    'project-50',
+    'project-51',
+    'project-52',
+    'project-53',
+    'project-54',
+  ]);
+  expect(listProjects).toHaveBeenCalledTimes(1);
+  expect(f.page).not.toHaveBeenCalled();
+});
+
 it('搜索覆盖未加载的旧会话和项目名称，游标不能跨筛选条件复用', async () => {
   const f = fixture();
   const found = await f.service.page({ agent: 'claude', scope: 'active', search: '任务124' });
@@ -58,6 +90,50 @@ it('搜索覆盖未加载的旧会话和项目名称，游标不能跨筛选条�
   await expect(
     f.service.page({ agent: 'claude', scope: 'active', search: '别的', cursor: project.nextCursor }),
   ).rejects.toMatchObject({ code: 'session_page_expired' });
+});
+
+it('聚合快照被有界缓存回收后拒绝旧游标，避免重读后混入新顺序', async () => {
+  const f = fixture();
+  f.provider.listProjects = async () => f.rows;
+  const query = { agent: 'claude' as const, scope: 'active' as const, reader: 'original' };
+  const first = await f.service.page(query);
+  for (let index = 0; index < 32; index++) await f.service.page({ ...query, reader: `other-${index}` });
+  await expect(f.service.page({ ...query, cursor: first.nextCursor })).rejects.toMatchObject({
+    code: 'session_page_expired',
+  });
+  f.rows.unshift({ ...f.rows[0]!, sessionId: 'new-session', lastModified: 2_000 });
+  const rebuilt = await f.service.page(query);
+  expect(rebuilt.items[0]?.sessionId).toBe('new-session');
+  await expect(f.service.page({ ...query, cursor: first.nextCursor })).rejects.toMatchObject({
+    code: 'session_page_expired',
+  });
+  const next = await f.service.page({ ...query, cursor: rebuilt.nextCursor });
+  expect(next.items[0]?.sessionId).toBe('s49');
+});
+
+it('拒绝损坏或越界的聚合游标，不重新枚举目录尝试补救', async () => {
+  const f = fixture();
+  const listProjects = vi.fn(async () => f.rows);
+  f.provider.listProjects = listProjects;
+  const query = { agent: 'claude' as const, scope: 'active' as const };
+  const first = await f.service.page(query);
+  const position = JSON.parse(Buffer.from(first.nextCursor!, 'base64url').toString('utf8'));
+  const [snapshotId] = JSON.parse(position.native);
+  for (const native of ['broken', JSON.stringify(['invalid-id', 50]), JSON.stringify([snapshotId, -1])]) {
+    const cursor = Buffer.from(JSON.stringify({ ...position, native })).toString('base64url');
+    await expect(f.service.page({ ...query, cursor })).rejects.toMatchObject({ code: 'session_page_expired' });
+  }
+  expect(listProjects).toHaveBeenCalledOnce();
+});
+
+it('其他目录仍从全局来源读取，目录聚合不会吞掉未归属会话', async () => {
+  const f = fixture();
+  const listProjects = vi.fn(async () => f.rows.filter((row) => row.cwd === f.project.dir));
+  f.provider.listProjects = listProjects;
+  f.rows.push({ sessionId: 'outside', summary: '其他目录', lastModified: 1, cwd: path.resolve('fixtures', 'outside') });
+  const result = await f.service.page({ agent: 'claude', scope: 'unassigned' });
+  expect(result.items.map((item) => item.sessionId)).toEqual(['outside']);
+  expect(listProjects).not.toHaveBeenCalled();
 });
 
 it('原生变化后作废页和旧游标，重新打开首屏能看见新标题', async () => {

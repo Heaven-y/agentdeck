@@ -1,4 +1,4 @@
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import type { ModelInfo, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
 import { claudeControl, createClaudeStream, nativeClaudeQuery, type ClaudeQuery, type QueryFn } from './query';
@@ -108,13 +108,24 @@ function modelsFrom(models: ModelInfo[]): AgentModel[] {
     }));
 }
 
-async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeCapabilityCatalog> {
+async function readCatalog(
+  q: ClaudeQuery,
+  signal: AbortSignal,
+  evidence: { cliVersion?: string; sdkVersion?: string },
+): Promise<NativeCapabilityCatalog> {
   const [commands, models] = await Promise.allSettled([
     claudeControl(q.supportedCommands(), signal),
     claudeControl(q.supportedModels(), signal),
   ]);
+  const discovered = [commands, models].some((result) => result.status === 'fulfilled');
   return {
     entries: commands.status === 'fulfilled' ? entriesFrom(usableCommands(commands.value)) : [],
+    features: nativeFeaturesFor('claude', {
+      runtime: 'claude-sdk',
+      handshake: discovered ? 'confirmed' : 'failed',
+      ...evidence,
+      implemented: ['images', 'documents', 'questions', 'forms'],
+    }),
     models: models.status === 'fulfilled' ? modelsFrom(models.value) : [],
     defaultModel:
       models.status === 'fulfilled'
@@ -133,7 +144,7 @@ async function readCatalog(q: ClaudeQuery, signal: AbortSignal): Promise<NativeC
 export function createClaudeCapabilityDiscovery(queryFn: QueryFn = nativeClaudeQuery) {
   return async (
     dir: string,
-    options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
+    options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv; cliVersion?: string; sdkVersion?: string } = {},
   ): Promise<NativeCapabilityCatalog> => {
     if (options.signal?.aborted) throw new Error('Claude 能力读取已取消');
     const controller = new AbortController();
@@ -152,7 +163,10 @@ export function createClaudeCapabilityDiscovery(queryFn: QueryFn = nativeClaudeQ
           abortController: controller,
         },
       });
-      const catalog = await readCatalog(q, controller.signal);
+      const catalog = await readCatalog(q, controller.signal, {
+        cliVersion: options.cliVersion,
+        sdkVersion: options.sdkVersion,
+      });
       if (controller.signal.aborted) throw new Error('Claude 能力读取已取消');
       return catalog;
     } finally {
@@ -182,6 +196,7 @@ export async function claudeInvocationText(
   if (invocation.kind === 'command' && invocation.name === 'context') throw new Error('上下文查询必须使用原生控制接口');
   const commands = usableCommands(await claudeControl(q.supportedCommands(), signal));
   if (invocation.kind === 'command') {
+    if (invocation.name !== 'compact') throw new Error('此专用操作未接入Claude原生命令');
     if (!compactAvailable(commands)) throw new Error('当前工作区的原生压缩不可用，存在缺失或同名命令冲突');
   } else {
     assertSkill(commands, invocation.name);

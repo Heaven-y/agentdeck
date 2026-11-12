@@ -20,7 +20,41 @@ Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环�
 
 用户配置根尊重 Claude 的 CLAUDE_CONFIG_DIR 和 Codex 的 CODEX_HOME；Codex 共享 Skills 的用户目录仍是 ~/.agents/skills。项目与子目录按真实来源标注，列表不会把工作台当前选择解释成原生最终生效顺序。
 
-原生插件不同于工作台插件。配置页显示原生路径、作用域和相应命令说明，不直接改写安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。
+原生插件不同于工作台插件。原生配置页提供各 CLI 实际支持的插件生命周期和 MCP 管理，全部原文入口保留；不直接改写插件安装缓存，也不把需要交互的 TUI 命令当作普通模型消息。
+
+## 原生插件管理
+
+“原生插件”按 CLI、实际来源、作用域、版本和启用状态列出安装记录，支持详情、安装、卸载和原生启停。Claude 使用原生 install/update/enable/disable/uninstall/validate/configure，卸载固定保留数据；Codex 使用 add/remove 和 marketplace 命令，启停只定点修改所选原生 plugins 配置字段；Antigravity 使用 install/uninstall/enable/disable/validate，不伪造独立更新。未知 CLI 版本、来源、托管资源或未能唯一核实的 Codex 安装缓存保持只读。
+
+Claude 原生列表会跨项目返回记录，插件、Skills 和 MCP 共同按当前规范化目录与原生 projectPath 过滤项目/个人项目安装。Codex 普通 GET 联合本地配置和安装缓存读取目录，并通过 config/read 的原生层级判断托管及项目可信状态；不调用生产禁用的 plugin RPC，不自动调用可能联网的 plugin list。显式刷新 Git 市场后只对指定市场调用原生 list；本地 Codex 市场没有 Git 刷新按钮。Claude 支持按 user/project/local 增删市场及指定来源刷新，未知作用域不开放写入。Antigravity 没有自定义市场管理入口，也不预装来源。
+
+prepare 仅生成宿主 operationId 与来源、动作、作用域和影响预览，不执行安装。Claude 没有 dry-run，首次 start 收到原生 shownCommand 后进入“等待命令确认”；用户核对全文与 SHA-256 后以同 operationId 继续，只有准确摘要通过 --accept-command 传入原生，不使用无条件 --yes。同一执行代次重复 start 返回原任务；参数或摘要变化拒绝。进程异常或部分失败重读真实状态并标记结果待核对，不重启安装。关闭设置可恢复同一宿主中的任务；宿主重启后旧操作 ID 不再执行，必须重新核对原生状态。
+
+所有操作持有 CLI 空闲、原生维护和项目空闲租约至进程退出与能力失效结束，开始前复核项目目录和 revision。取消清理整棵原生进程树；单次安装命令预算 120 秒、输出 512 KiB，命令确认最多等待 10 分钟，预览 15 分钟过期。终态及部分失败都会失效能力与会话缓存并回收闲置实例，任务最多保留 100 条、24 小时。Claude 配置只展示需求和已配置状态，秘密与默认值不回填；通过 values-stdin 写入，未填写项保留。配置另有带宿主密钥的摘要校验，外部修改后拒绝覆盖，任务结束/取消/过期后清除待写值。Antigravity 缺变量时保留原生禁用状态，并引导到原生面板配置。
+
+接口为 `GET /api/native-management/:agent/plugins` 及 `POST .../detail`、`.../prepare`、`.../start`、`.../operation`、`.../cancel`，继承本机会话鉴权、Origin 与 no-store。客户端只能选择固定动作和来源，不接受任意程序或命令参数。
+
+## Skills 与定制资源管理
+
+“原生配置与扩展”按 Skills、MCP、原生插件、规则 / Hooks / 代理定义分类，保留全部原文入口。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；同名资源分别显示，客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
+
+| CLI | 技能状态与写入 | 保留边界 |
+|---|---|---|
+| Claude | skillOverrides 支持 on、name-only、user-invocable-only、off，另有“默认继承”删除所选层覆盖；用户、项目、个人项目设置分别选择 | 原生按技能名生效，同名来源共享设置；插件技能只读并转所属插件管理。同步与托管技能不直接删除；托管策略仍可覆盖本机设置 |
+| Codex | skills/list 原生路径身份，skills/config/write 仅写所选绝对 SKILL.md 路径；之后 forceReload 重读同 cwd 并核对 effectiveEnabled | 开关写入 Codex 原生用户配置，不伪造项目启停层；插件、管理员、内置及未验证外部来源只读。项目可信状态不因保存而改变 |
+| Antigravity | 普通用户 config/skills 与项目 .agents/skills 可使用各自 skills.json 顶层 exclude；选择器取真实目录名，展示名独立保留，写后重新读取原生目录确认 | 私有 antigravity-cli/skills 和 Shared skills 不受清单排除控制，提供自有文件编辑与确认删除。复杂 entries/inherits/路径过滤以及目录名冲突保留原文，避免把目录名称排除伪装为单一路径开关 |
+
+Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取发现，不刷新市场、不执行插件。原生插件根身份保留到技能来源；个人或项目 Skills 目录中的 `@skills-dir` 插件，其根 SKILL.md 与原文入口同样只读，不作为普通自有技能独立启停或删除。离线资源扫描也检查 `.claude-plugin/plugin.json` 标记，避免原生目录暂不可读时误开放写入。没有可靠离线来源的 Claude 内建技能不编造目录或开关，仍由原生 `/skills` 管理；这与完整管理自有本地技能的范围分开。未知版本或原生目录读取失败时显示“未核实”，不把失败当作未安装或完整支持。
+
+自有 Skills 仍可新建与编辑 SKILL.md；“导入本地技能目录”由浏览器选择整个目录，将普通文件及二进制资料一并导入既有资源根，不接受服务器任意源路径。上限为 128 文件、6 层、每文件 1 MiB、合计 8 MiB，SKILL.md 另限 256 KiB 与有效 UTF-8；不运行安装脚本。暂存目录组装后一次更名，已有目录不覆盖。删除需明确确认整个目录，revision 覆盖支持文件；隔离后的复核失败会保留外部更改并恢复原位置，原位置已被占用等情况保留隔离内容并报告结果待核实。插件、托管、同步及链接来源不提供删除动作。
+
+Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 settings 层，代理定义来自 agents 目录；Codex 的 hooks.json、config.toml agents 声明及 agents/*.toml 保留来源和信任说明；Antigravity 的 hooks.json、agents.json 与 agents 下原文保持原生作用域。Markdown 代理正文只验证编码和大小，真实语义与执行仍由 CLI 负责，不自建运行器。
+
+写操作依次取得 CLI 空闲租约、原生进程维护锁、项目空闲租约，再进入文件事务。普通原生目录读取与 CLI 安装互斥；同一操作内部不重复取锁。资源保存、创建、导入、删除及启停成功或可能部分写入的失败都会失效能力与会话缓存，并回收对应 CLI 的闲置运行实例，下轮重新读取资源；活动回合不被管理操作强制打断。后台任务的长期占用由会话级运行控制统一接入这一空闲判断。未编辑的设置随刷新同步；真实草稿按所选范围保留值和开始编辑时的 revision，外部更新后不会自动改绑新 revision，可明确放弃草稿并采用最新设置。正文仍由原文编辑器单独保护。
+
+模型表单把连接环境保存、原生文件提交、冲突回滚和最终失效放在同一个用户配置维护租约内；内部使用已持有租约的窄写入口，避免重复加锁。Antigravity 仅改 API Key 而原生 JSON 不变时同样遵守此边界。忙碌保存返回安全的 409 agent_busy，不能误报为磁盘读写故障。
+
+技能目录接口为 `GET /api/native-management/:agent/skills`，写操作使用 `POST .../change` 与 `POST .../import`，均继承本机会话鉴权、Origin 检查与 no-store；请求只接受服务器返回的资源 ID、revision、限定动作与实际作用域。
 
 ## 模型与服务连接
 
@@ -58,7 +92,7 @@ Codex 的自动压缩计数口径 `model_auto_compact_token_limit_scope` 和较�
 
 `GET /api/native-resources/:agent?projectId=...` 只返回已知文件与有界目录的元数据。显式打开使用 `POST /api/native-resources/:agent/:resourceId/open`，此时可能返回文件中的敏感字段；正文只在编辑器局部状态保存，不进入公共查询缓存或浏览器持久存储。
 
-文件保存使用同一资源路径的 PUT，请求携带原文和 revision。接口按真实文件格式检查 JSON/TOML；Markdown 和 Starlark 文本只检查有效 UTF-8 与大小，后者的语义交给原生 CLI。固定资源根内可以创建规则文件或 SKILL.md，不接受任意文件路径。
+文件保存使用同一资源路径的 PUT，请求携带原文和 revision。接口按真实文件格式检查 JSON/TOML；Markdown 和 Starlark 文本只检查有效 UTF-8 与大小，后者的语义交给原生 CLI。固定资源根内可以创建规则、代理定义文件或 SKILL.md，不接受任意文件路径。
 
 正文上限 256 KiB；目录扫描总预算 4096 项、深度上限 6 层。拒绝符号链接、路径越界和已被外部修改的文件；读取失败和不存在分别显示。兼容的两文件配置接口与新接口共用路径写入队列，防止并发覆盖。
 
@@ -83,6 +117,22 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 工作台在自己的 `session-preferences.json` 中保存会话权限覆盖，与原生默认配置分开。version 1 文档保留 `archived`，增加可选 `permissions` 数组；每项只有 `agent`、原生 `sessionId` 和该 CLI 支持的权限选择，不写会话正文、标题或项目路径。旧文档缺少该数组时视为空。
 
 归档和恢复保留权限，删除会话时清理对应记录。Claude/Antigravity 重置时移除覆盖；Codex 的显式重置保留 `native` 动作，以便续接时重新读取原生有效配置。写入沿用事务与文件身份核对，不能覆盖同时发生的其他偏好更新；记录损坏时报告不可用，不静默重建。
+
+## MCP 配置与运行管理
+
+“原生配置与扩展 → MCP”离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的原生命令列表可能访问市场，普通列表从配置和已核实安装缓存读取插件 .mcp.json，保留所属插件、实际 scope 和安装根身份；插件带入服务只读。
+
+Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
+
+秘密仅写：URL 只显示 origin，参数不回填，环境变量和请求头只显示名称；保留、替换和清除分别提交。保存携带来源身份和 revision，冲突不覆盖外部更新，界面保留原草稿及原 revision。持久写使用 CLI 空闲维护锁并与安装、项目活动和文件事务互斥；成功或可能部分写入的失败均失效相关能力并回收空闲实例。
+
+运行状态与持久配置分开。选择活实例后，Claude 使用 SDK 状态、重连和运行启停，Codex 使用分页 `mcpServerStatus/list` 与实例级 `config/mcpServer/reload`；操作针对所选实例中有效的同名服务，重载不是单个服务器的持久开关。没有实例时，只有显式检查才创建有界临时原生进程并发现工具，不执行工具或模型回合。Codex 无线程查询可能返回工具目录但 `runtimeStatus=null`，此时显示“无法核实运行状态”，不宣称持续连接。Antigravity 1.5.3 没有可靠的独立运行状态接口，保持“已配置，未检查”，检查与 OAuth 转原生 MCP 面板。
+
+运行实例分别保存项目 ID、登记项目根与实际会话目录；项目子目录会话可被列出，项目换根后不显示或接受旧实例。选择实例后按其实际目录重新读取配置并显示该目录，实例视图只提供运行控制；持久修改须切回项目配置。检查、控制与 OAuth 均按实际目录核实配置身份，同名多来源无法确定对应关系时拒绝执行。控制与检查先取得项目普通活动租约再重读目录，授权操作保持租约至原生进程结束；项目换目录、删除与这些操作互斥，同时不阻塞等待用户答复的回合。插件 MCP 的内部来源身份包含原生作用域和规范化安装根，同插件同名服务跨来源不碰撞，安装路径不直接返回网页。
+
+Codex OAuth 由独立 app-server 承载，授权链接只在用户启动后出现；成功以同一 loginId 的完成通知为准。取消、超时或所绑定对话实例退出会关闭授权进程，迟到成功无效；关闭设置后再次打开可恢复未结束操作。该操作使用原生读取活动租约，不等待正在等待授权的回合空闲。Claude 2.1.317 的 `mcp login --no-browser` 实测仍要求交互终端，管道 stdin 不可用；此入口提供原生终端指引，对话内 SDK URL 请求继续通过问题卡片处理。真实第三方账号授权由用户操作，本轮仅验证本地合成服务。
+
+2026-11-11 隔离验证：Claude stdio/HTTP 连接与失败、user/local 原生命令增删；Codex stdio/HTTP 工具发现、线程状态与重载、OAuth 成功/失败/取消；Antigravity 原生 `mcp list` 识别配置及禁用均有实测记录。未修改真实用户 profile，未执行 MCP 工具。后台任务对维护空闲的裁决由后续子代理阶段接入，不能把当前回合结束当作所有后台任务完成。
 
 ## Antigravity MCP 工具加载
 

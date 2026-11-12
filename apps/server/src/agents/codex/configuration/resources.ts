@@ -9,6 +9,9 @@ export function codexPlan(context: ResourceContext, output: Builder) {
   );
   for (const name of ['AGENTS.md', 'AGENTS.override.md']) output.file(user, name, 'rules');
   output.scan(user, 'rules', 'policy');
+  output.file(user, 'hooks.json', 'hooks', 'Codex 原生 Hooks 文件；需原生版本和 features.hooks 支持，保存不执行命令。');
+  output.file(user, 'config.toml', 'agents', '代理角色声明位于 agents 表；config_file 路径相对声明它的配置文件解析。');
+  output.scan(user, 'agents', 'agent-configs');
   output.scan(userBase(context, '.agents'), 'skills', 'skills', true);
   const project = projectBase(context);
   if (project) {
@@ -20,6 +23,9 @@ export function codexPlan(context: ResourceContext, output: Builder) {
     );
     for (const name of ['AGENTS.md', 'AGENTS.override.md']) output.file(project, name, 'rules');
     output.scan(project, '.codex/rules', 'policy');
+    output.file(project, '.codex/hooks.json', 'hooks', '受信任项目的原生 Hooks；保存不授予信任。');
+    output.file(project, '.codex/config.toml', 'agents', '项目代理角色原文；只加载原生信任允许的配置。');
+    output.scan(project, '.codex/agents', 'agent-configs');
     output.scan(project, '.agents/skills', 'skills', true);
   }
   output.plan.guidance.push(

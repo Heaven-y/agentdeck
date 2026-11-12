@@ -1,7 +1,7 @@
 import type { AgentKind } from '../conversation/agents';
 
-export type NativeResourceKind = 'settings' | 'rules' | 'skills' | 'mcp' | 'plugins' | 'hooks';
-export type NativeResourceScope = 'user' | 'project' | 'local' | 'directory';
+export type NativeResourceKind = 'settings' | 'rules' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'agents';
+export type NativeResourceScope = 'user' | 'project' | 'local' | 'directory' | 'managed';
 export type NativeResourceFormat = 'json' | 'toml' | 'markdown' | 'text';
 
 /** 目录只有元数据；id 由服务端生成，不能用路径代替。 */
@@ -17,12 +17,13 @@ export type NativeResource = {
   editable: boolean;
   description: string;
   unavailableReason?: string;
+  owner?: { kind: 'plugin'; name: string };
 };
 
 /** 只在预定义目录内创建一个规则文件或一个 Skill 的 SKILL.md。 */
 export type NativeResourceRoot = {
   id: string;
-  kind: 'rules' | 'skills';
+  kind: 'rules' | 'skills' | 'agents';
   scope: NativeResourceScope;
   label: string;
   displayPath: string;

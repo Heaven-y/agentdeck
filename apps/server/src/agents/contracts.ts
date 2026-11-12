@@ -1,4 +1,9 @@
 import type { PermissionSelection } from '@agentdeck/shared/conversation';
+import type { ChatAttachment } from '@agentdeck/shared/conversation';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
+import type { RuntimeTaskSnapshot } from '@agentdeck/shared/conversation';
+export type { RuntimeTaskSnapshot } from '@agentdeck/shared/conversation';
+import type { InteractionSpec, InteractionAnswer, InteractionOwner } from '@agentdeck/shared/conversation';
 import type {
   AgentEvent,
   SessionActionInput,
@@ -12,19 +17,71 @@ import type { Workspace } from '@agentdeck/shared/projects';
 import type { NativeInvocation } from './capability-types';
 
 export type PermissionAnswer = { allow: boolean; message?: string };
+export type NativeInteractionRequest = {
+  spec: InteractionSpec;
+  runtimeId: string;
+  completionId?: string;
+  scope?: Pick<InteractionOwner, 'kind' | 'id'>;
+};
+export type InteractionRequester = (
+  request: NativeInteractionRequest,
+  options?: { signal?: AbortSignal },
+) => Promise<InteractionAnswer>;
 export type AgentTurnInput = {
   workspace: Workspace;
+  /** 已登记项目根；workspace.dir 在续聊时保留实际原生 cwd。 */
+  projectDir?: string;
   sessionId?: string;
   model?: string;
   reasoningEffort?: string;
+  collaborationMode?: 'default' | 'plan';
   permission?: PermissionSelection;
   text: string;
+  attachments?: NativeAttachment[];
+  attachmentsStored?: (ids: string[]) => Promise<void>;
+  /** 原生回显/受理响应的身份；与网页请求送达回执区分。 */
+  clientMessageId?: string;
+  onInputAccepted?: () => void;
   invocation?: NativeInvocation;
   emit(event: AgentEvent): void;
   requestPermission(request: { requestId: string; toolName: string; input: unknown }): Promise<PermissionAnswer>;
+  requestInteraction?: InteractionRequester;
+  completeInteraction?(runtimeId: string, completionId: string): void;
+  registerRuntime?: (control: RuntimeControl) => void;
 };
-export type TurnHandle = { interrupt(): Promise<void>; done: Promise<void> };
+export type NativeAttachment = ChatAttachment & { path: string; data: Buffer };
+export type NativeInputResult = { status: 'accepted' | 'rejected' | 'unknown'; message?: string };
+export type NativeSteerInput = {
+  clientMessageId: string;
+  text: string;
+  attachments?: NativeAttachment[];
+  onAccepted?: () => void;
+  attachmentsStored?: (ids: string[]) => Promise<void>;
+};
+export type TurnHandle = {
+  interrupt(): Promise<void>;
+  done: Promise<void>;
+  canSteer?: () => boolean;
+  steer?: (input: NativeSteerInput) => Promise<NativeInputResult>;
+};
+/** 会话实例控制独立于单轮，后台任务仍存活时不能随 TurnHandle 完成而丢弃。 */
+export type RuntimeControl = {
+  readonly instanceId: string;
+  readonly sessionId: string;
+  tasks(): readonly RuntimeTaskSnapshot[];
+  readonly taskActivity?: boolean;
+  readonly taskWarning?: string;
+  subscribe?(listener: () => void): () => void;
+  close?(): Promise<void>;
+  readonly alive?: boolean;
+  stopTask(id: string): Promise<void>;
+  /** 标记技能/MCP/插件等资源过期，阻止旧实例后续复用；不能据此中断活动任务。 */
+  invalidateResources(): Promise<void>;
+};
 export type TurnRunner = ((input: AgentTurnInput) => TurnHandle) & {
+  /** 只返回已核实归属的活实例；未实现时不声明后台任务停止能力。 */
+  runtimeControl?(sessionId: string): RuntimeControl | undefined;
+  hasBackground?(): boolean;
   /** 关闭长驻运行时；单轮实现可省略。 */
   dispose?(): Promise<void>;
 };
@@ -53,6 +110,12 @@ export type NativeSessionRead = {
 export type NativeSessionFork = Pick<NativeSessionRead, 'session' | 'cwd'>;
 
 export type SessionProvider = {
+  media?(
+    id: string,
+    dir: string,
+    locator: NativeMediaLocator,
+    signal?: AbortSignal,
+  ): Promise<{ data: Buffer; mimeType: string }>;
   capabilities?: Partial<SessionCapabilities>;
   list(dir: string, signal?: AbortSignal, archived?: boolean): Promise<NativeSessionRow[]>;
   page?(
@@ -61,6 +124,8 @@ export type SessionProvider = {
     signal?: AbortSignal,
     archived?: boolean,
   ): Promise<NativeSessionPage>;
+  /** 对只支持目录级会话发现的 CLI，按全部已登记项目聚合元数据。 */
+  listProjects?(dirs: string[], signal?: AbortSignal, archived?: boolean): Promise<NativeSessionRow[]>;
   read(id: string, dir: string, signal?: AbortSignal): Promise<NativeSessionRead>;
   /** 按需读取原生子代理，保持与父会话正文、用量及分叉点分离。 */
   subagents?(id: string, dir: string, query: SubagentQuery, signal?: AbortSignal): Promise<SubagentRead>;

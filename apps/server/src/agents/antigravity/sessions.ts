@@ -1,4 +1,4 @@
-import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
+import { NativeSessionIdSchema, type SubagentQuery } from '@agentdeck/shared/conversation';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeSessionDirectory, resolveProjectId } from '../common/session-ownership';
@@ -6,8 +6,11 @@ import { sameSessionDirectory } from '../common/session-scope';
 import type { NativeSessionSummary, SessionProvider, NativeSessionPageInput } from '../contracts';
 import { SessionError } from '../errors';
 import { antigravityHistory } from './history';
+import { imageSource, mediaMissing } from '../common/native-media';
+import { record, list } from '../common/user-interaction-fields';
 import type { AntigravitySessionManagement } from './session-management-types';
 import { readSummaries, type SummaryRow } from './summaries';
+import { createAntigravitySubagents, createAntigravitySubagentMedia } from './subagents';
 
 /** Antigravity 在用户目录下维护自己的会话摘要库，不随项目目录变化。 */
 export const ANTIGRAVITY_DB_PATH = path.join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db');
@@ -54,6 +57,7 @@ function nativeSummary(row: SummaryRow): NativeSessionSummary {
 export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> = {}): SessionProvider {
   const dbPath = api.dbPath ?? ANTIGRAVITY_DB_PATH;
   const read = api.readSummaries ?? readSummaries;
+  const readChildren = api.management?.readSubagentTrajectory?.bind(api.management);
 
   function rows(page?: NativeSessionPageInput): SummaryRow[] {
     try {
@@ -75,6 +79,29 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
   }
 
   return {
+    ...(readChildren
+      ? {
+          async subagents(id: string, dir: string, query: SubagentQuery, signal?: AbortSignal) {
+            belongs(id, dir);
+            return createAntigravitySubagents(readChildren)(id, dir, query, signal);
+          },
+        }
+      : {}),
+    async media(id, dir, locator, signal) {
+      const found = belongs(id, dir);
+      if (locator.subagentId) {
+        if (!readChildren) throw mediaMissing();
+        return createAntigravitySubagentMedia(readChildren)(id, dir, locator, signal);
+      }
+      if (locator.kind !== 'user' || !api.management?.readTrajectory) throw mediaMissing();
+      const cwd = nativeSessionDirectory({ workspaceUris: found.workspaceUris });
+      if (!cwd || !(await sameSessionDirectory(cwd, dir))) throw mediaMissing();
+      const { trajectory } = await api.management.readTrajectory(id, cwd, signal);
+      if (trajectory.cascadeId !== id) throw mediaMissing();
+      const step = record(list(trajectory.steps)[Number(locator.messageId)]);
+      if (step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') throw mediaMissing();
+      return imageSource(list(record(step.userInput).media)[locator.index]);
+    },
     capabilities: {
       rename: !!api.management?.rename,
       fork: api.management ? 'native' : null,

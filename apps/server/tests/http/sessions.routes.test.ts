@@ -120,9 +120,31 @@ function setup(projects = [ws, other]) {
 }
 
 describe('子代理历史路由', () => {
+  it('原生媒体路由只接受已归属会话的定位器，拒绝路径和其他工作区并禁止缓存', async () => {
+    const { app, codex } = setup();
+    codex.assertBelongs = vi.fn(async (_id: string, dir: string) => {
+      if (dir !== ws.dir) throw new SessionError(404, 'session_missing', '会话不属于此项目');
+      return dir;
+    });
+    codex.media = vi.fn(async () => ({ mimeType: 'image/png', data: Buffer.from('fixture-image') }));
+    const url = '/api/workspaces/w1/sessions/s1/media?agent=codex&messageId=m&index=0&kind=user';
+    const reply = await app.inject(url);
+    expect(reply.statusCode).toBe(200);
+    expect(reply.headers['cache-control']).toBe('no-store');
+    expect(reply.headers['x-content-type-options']).toBe('nosniff');
+    expect(reply.headers['content-type']).toBe('image/png');
+    expect((await app.inject(url + '&path=private.png')).statusCode).toBe(400);
+    expect((await app.inject(url.replace('/w1/', '/w2/'))).statusCode).toBe(404);
+    expect(codex.media).toHaveBeenCalledOnce();
+  });
   it('拒绝路径形式的子代理 ID 和没有子代理身份的游标', async () => {
     const { app } = setup();
-    for (const query of ['agentId=..%2Foutside', 'cursor=100', 'agentId=child&cursor=-1']) {
+    for (const query of [
+      'agentId=..%2Foutside',
+      'parentAgentId=..%2Foutside',
+      'cursor=100',
+      'agentId=child&cursor=-1',
+    ]) {
       const response = await app.inject(`/api/projects/w1/sessions/claude/s1/subagents?${query}`);
       expect(response.statusCode).toBe(400);
       expect(response.headers['cache-control']).toBe('no-store');
@@ -132,12 +154,14 @@ describe('子代理历史路由', () => {
     const { app, codex } = setup();
     codex.subagents = vi.fn(async () => ({ agentId: 'child', events: [], nextCursor: '200' }));
     codex.assertBelongs = vi.fn(async () => path.join(ws.dir, 'nested'));
-    const response = await app.inject('/api/projects/w1/sessions/codex/s1/subagents?agentId=child&cursor=100');
+    const response = await app.inject(
+      '/api/projects/w1/sessions/codex/s1/subagents?parentAgentId=nested&agentId=child&cursor=100',
+    );
     expect(response.statusCode).toBe(200);
     expect(codex.subagents).toHaveBeenCalledWith(
       's1',
       path.join(ws.dir, 'nested'),
-      { agentId: 'child', cursor: '100' },
+      { parentAgentId: 'nested', agentId: 'child', cursor: '100' },
       expect.any(AbortSignal),
     );
     const wrongProject = await app.inject('/api/projects/w2/sessions/codex/s1/subagents');
@@ -345,7 +369,7 @@ describe('会话接口', () => {
     const r = await app.inject({ method: 'GET', url: '/api/projects/w1/sessions/claude/s1' });
     expect(r.json().session).toMatchObject({ agent: 'claude', sessionId: 's1' });
     expect(r.json().events).toEqual([
-      { type: 'user_message', text: '你好' },
+      { type: 'user_message', text: '你好', nativeInputId: 'u1' },
       { type: 'text', delta: '在' },
     ]);
     expect(api.messages).toHaveBeenCalledWith('s1', ws.dir);

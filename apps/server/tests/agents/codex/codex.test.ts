@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import type { PermissionAnswer, TurnHandle } from '../../../src/agents/contracts';
@@ -36,6 +36,139 @@ const command = {
   command: process.execPath,
   args: ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('./fake-app-server.ts', import.meta.url))],
 };
+it('显式计划模式协商原生能力后传实际模型，审查走review/start而非普通prompt', async () => {
+  const f = await setup();
+  await runCodexTurn(
+    {
+      workspace: f.workspace,
+      text: 'plan fixture',
+      collaborationMode: 'plan',
+      emit: () => {},
+      requestPermission: async () => ({ allow: false }),
+    },
+    f.options,
+  ).done;
+  const calls = await f.messages();
+  expect(calls.find((message) => message.method === 'initialize')?.params?.capabilities).toMatchObject({
+    experimentalApi: true,
+  });
+  expect(calls.find((message) => message.method === 'collaborationMode/list')).toBeDefined();
+  expect(calls.find((message) => message.method === 'turn/start')?.params?.collaborationMode).toMatchObject({
+    mode: 'plan',
+    settings: { model: 'native-model' },
+  });
+  const review = await setup();
+  await runCodexTurn(
+    {
+      workspace: review.workspace,
+      text: '检查本轮修改',
+      invocation: { kind: 'command', name: 'review' },
+      emit: () => {},
+      requestPermission: async () => ({ allow: false }),
+    },
+    review.options,
+  ).done;
+  const reviewed = await review.messages();
+  expect(reviewed.find((message) => message.method === 'turn/start')).toBeUndefined();
+  expect(reviewed.find((message) => message.method === 'review/start')?.params).toMatchObject({
+    delivery: 'inline',
+    target: { type: 'custom', instructions: '检查本轮修改' },
+  });
+});
+
+it('父回合结束后Codex后台终端仍属于同一RuntimeControl，可停止且释放占用', async () => {
+  const f = await setup('background-terminal');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  const handle = runner({
+    workspace: f.workspace,
+    text: '启动一个临时后台任务',
+    emit: (event) => {
+      if (event.type === 'session') sessionId = event.sessionId;
+    },
+    requestPermission: async () => ({ allow: true }),
+  });
+  try {
+    await handle.done;
+    const control = runner.runtimeControl?.(sessionId);
+    expect(control?.tasks()).toMatchObject([
+      { id: 'codex-terminal:fixture-process', status: 'running', canStop: true },
+    ]);
+    expect(JSON.stringify(control?.tasks())).not.toContain('secret');
+    expect(control?.taskActivity).toBe(true);
+    await control!.stopTask('codex-terminal:fixture-process');
+    expect(control!.tasks()).toEqual([]);
+    expect(control!.taskActivity).toBe(false);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it('resume前识别活动goal，拒绝启动未接管的自动轮次且不发送显式用户prompt', async () => {
+  const f = await setup('active-goal');
+  const events: AgentEvent[] = [];
+  await runCodexTurn(
+    {
+      workspace: f.workspace,
+      sessionId: 'native-thread',
+      text: '不要并发启动',
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    },
+    f.options,
+  ).done;
+  const requests = await f.messages();
+  expect(requests.some((message) => message.method === 'thread/goal/get')).toBe(true);
+  expect(requests.some((message) => message.method === 'thread/resume' || message.method === 'turn/start')).toBe(false);
+  expect(events.find((event) => event.type === 'error')?.message).toContain('正在运行的自主目标');
+});
+
+it('支持后台终端的Codex runtime每次有界刷新，自然结束释放租约；客户端不支持时不暴露合成任务', async () => {
+  const f = await setup('background-terminal-natural-end');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  const first = runner({
+    workspace: f.workspace,
+    text: '开始任务',
+    emit: (event) => {
+      if (event.type === 'session') sessionId = event.sessionId;
+    },
+    requestPermission: async () => ({ allow: true }),
+  });
+  try {
+    await first.done;
+    expect(runner.runtimeControl?.(sessionId)?.taskActivity).toBe(true);
+    await vi.waitFor(() => expect(runner.runtimeControl?.(sessionId)?.taskActivity).toBe(false), {
+      timeout: 7_000,
+      interval: 20,
+    });
+    expect(runner.runtimeControl?.(sessionId)?.tasks()).toEqual([]);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it('不支持后台终端实验接口的Codex版本不生成假任务或活动租约', async () => {
+  const f = await setup('unsupported-background-terminals');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  try {
+    const handle = runner({
+      workspace: f.workspace,
+      text: '普通回合',
+      emit: (event) => {
+        if (event.type === 'session') sessionId = event.sessionId;
+      },
+      requestPermission: async () => ({ allow: true }),
+    });
+    await handle.done;
+    const control = runner.runtimeControl?.(sessionId);
+    expect(control?.tasks()).toEqual([]);
+    expect(control?.taskActivity).toBe(false);
+  } finally {
+    await runner.dispose?.();
+  }
+});
 it('原生列表分页一次只请求指定页，后续页由调用方触发', async () => {
   const f = await setup();
   const first = await pageCodexSessions(f.workspace.dir, { limit: 50 }, f.options);
@@ -103,6 +236,79 @@ async function setup(mode = 'normal') {
 }
 
 describe('Codex app-server 核心边界', () => {
+  it('原生引导绑定当前轮次和稳定消息ID，拒绝与未知传输结果分别保留', async () => {
+    for (const [mode, expected] of [
+      ['steer', 'accepted'],
+      ['steer-rejected', 'rejected'],
+      ['steer-unknown', 'unknown'],
+    ] as const) {
+      const f = await setup(mode);
+      let firstAccepted = 0,
+        guideAccepted = 0;
+      const handle = runCodexTurn(
+        {
+          workspace: f.workspace,
+          text: 'initial',
+          clientMessageId: '00000000-0000-4000-8000-000000000001',
+          onInputAccepted: () => {
+            firstAccepted++;
+          },
+          emit: () => {},
+          requestPermission: async () => ({ allow: false }),
+        },
+        f.options,
+      );
+      await vi.waitFor(() => expect(handle.canSteer?.()).toBe(true));
+      const clientMessageId = '00000000-0000-4000-8000-000000000002';
+      const result = await handle.steer!({
+        clientMessageId,
+        text: 'guide',
+        onAccepted: () => {
+          guideAccepted++;
+        },
+      });
+      expect(result.status).toBe(expected);
+      expect(firstAccepted).toBe(1);
+      expect(guideAccepted).toBe(expected === 'accepted' ? 1 : 0);
+      const sent = (await f.messages()).find((message) => message.method === 'turn/steer');
+      expect(sent?.params).toMatchObject({ expectedTurnId: 'native-turn', clientUserMessageId: clientMessageId });
+      if (mode === 'steer-rejected') await handle.interrupt();
+      await handle.done;
+      expect((await handle.steer!({ clientMessageId, text: 'late' })).status).toBe('rejected');
+    }
+  });
+  it('可能含媒体的历史请求仍按实际内容限制：纯文字超过8MiB拒绝，媒体历史有界接收', async () => {
+    for (const mode of ['large-text-history', 'large-image-history']) {
+      const { dir, options } = await setup(mode);
+      const client = await CodexClient.start({ ...options, cwd: dir });
+      try {
+        await client.initialize();
+        const request = client.request('thread/read', { threadId: 'native-thread', includeTurns: true });
+        if (mode === 'large-text-history') await expect(request).rejects.toThrow('8 MiB');
+        else expect(JSON.stringify(await request).length).toBeGreaterThan(8 * 1024 * 1024);
+      } finally {
+        await client.close();
+      }
+    }
+  });
+  it('图片输入允许有界大消息，工具图片通知可读取而同尺寸纯文字仍拒绝', async () => {
+    const { dir, options } = await setup();
+    const client = await CodexClient.start({ ...options, cwd: dir });
+    try {
+      await client.initialize();
+      const data = 'a'.repeat(9 * 1024 * 1024);
+      await client.request('turn/start', { input: [{ type: 'image', url: `data:image/png;base64,${data}` }] });
+      let imageSize = 0;
+      client.onNotification = (method, params) => {
+        if (method === 'item/completed') imageSize = Math.max(imageSize, JSON.stringify(params).length);
+      };
+      await client.request('fixture/media-notification', {});
+      expect(imageSize).toBeGreaterThan(8 * 1024 * 1024);
+      await expect(client.request('fixture/media-notification', { invalid: true })).rejects.toThrow('8 MiB');
+    } finally {
+      await client.close();
+    }
+  });
   it('真实子进程处理 UTF-8 分片、超时和意外退出且不透出 stderr', async () => {
     const { dir, options } = await setup();
     // timeoutMs 既是「请求超时」这个产品行为的阈值，也是本次连接等子进程启动的预算。
@@ -380,10 +586,8 @@ describe('原生会话读取', () => {
     const records = (await messages()).filter((value) => value.method === 'thread/list');
     expect(records).toHaveLength(2);
     expect(records.every((entry) => entry.params?.cwd === undefined)).toBe(true);
-    expect(records[0]?.params).toMatchObject({
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
-      modelProviders: [],
-    });
+    expect(records[0]?.params).toMatchObject({ modelProviders: [] });
+    expect(records[0]?.params).not.toHaveProperty('sourceKinds');
   });
   it('列表复用原生分页模型元数据，不为每条记录读取历史', async () => {
     const { dir, options, messages } = await setup();

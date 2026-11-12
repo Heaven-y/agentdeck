@@ -23,9 +23,21 @@ import {
 import { nativeFileTransaction } from '../platform/files/transactions';
 import { describeResource, describeRoot, discoverResources } from './native-resources-discovery';
 import { resourcePlan } from './resource-plan';
+import { protectClaudePluginResource } from '../agents/claude/configuration/ownership';
 
 export type NativeResourceProject = { id: string; dir: string };
-type Deps = { homeDir?: string; env?: NodeJS.ProcessEnv; onSaved?: (agent: AgentKind) => void | Promise<void> };
+/** 已取得用户配置写租约的窄写入口，避免复合模型事务再次取得维护锁。 */
+export type NativeUserConfigWriter = { save(id: string, input: NativeResourceSaveInput): Promise<NativeResourceSaved> };
+type Deps = {
+  homeDir?: string;
+  env?: NodeJS.ProcessEnv;
+  onSaved?: (agent: AgentKind) => void | Promise<void>;
+  withWrite?: <T>(
+    agent: AgentKind,
+    project: NativeResourceProject | undefined,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
+};
 
 function validateContent(target: ResourceTarget, content: string): Buffer {
   const data = Buffer.from(content, 'utf8');
@@ -85,19 +97,37 @@ export function createNativeResourcesService(deps: Deps = {}) {
       throw resourceError(error);
     });
   }
-  async function saveTarget(resource: ResourceTarget, input: NativeResourceSaveInput): Promise<NativeResourceSaved> {
+  async function saveTarget(
+    resource: ResourceTarget,
+    input: NativeResourceSaveInput,
+    notify = true,
+  ): Promise<NativeResourceSaved> {
+    if (resource.readOnly) throw new NativeResourceError('invalid_request');
     return transaction(resource.file, async () => {
       const data = validateContent(resource, input.content);
       await inspectDirectory(path.dirname(resource.file));
       const previous = await readConfigFile(resource.file);
       if (previous.revision !== input.revision) throw new NativeResourceError('revision_conflict');
       const parents = await inspectDirectory(path.dirname(resource.file), true);
-      await writeConfigFile(resource.file, data, previous, parents!);
-      await deps.onSaved?.(resource.agent);
+      try {
+        await writeConfigFile(resource.file, data, previous, parents!);
+      } finally {
+        if (notify) await deps.onSaved?.(resource.agent);
+      }
       return { resource: await describeResource(resource), revision: contentRevision(data) };
     });
   }
   return {
+    async withUserWrite<T>(agent: AgentKind, operation: (writer: NativeUserConfigWriter) => Promise<T>): Promise<T> {
+      const run = async () => {
+        try {
+          return await operation({ save: async (id, input) => saveTarget(await target(agent, id), input, false) });
+        } finally {
+          await deps.onSaved?.(agent);
+        }
+      };
+      return deps.withWrite ? deps.withWrite(agent, undefined, run) : run();
+    },
     async list(agent: AgentKind, project?: NativeResourceProject): Promise<NativeResourceCatalog> {
       const { plan, targets, warnings } = await catalog(agent, project);
       return {
@@ -124,23 +154,30 @@ export function createNativeResourcesService(deps: Deps = {}) {
       input: NativeResourceSaveInput,
       project?: NativeResourceProject,
     ): Promise<NativeResourceSaved> {
-      return saveTarget(await target(agent, id, project), input);
+      const operation = async () => saveTarget(await target(agent, id, project), input);
+      return deps.withWrite ? deps.withWrite(agent, project, operation) : operation();
     },
     async create(
       agent: AgentKind,
       input: NativeResourceCreateInput,
       project?: NativeResourceProject,
     ): Promise<NativeResourceSaved> {
-      const plan = resourcePlan(context(agent, project));
-      const root = plan.roots.find((entry) => entry.id === input.rootId);
-      if (!root) throw new NativeResourceError('resource_missing');
-      const name = simpleName(input.name);
-      if (root.kind === 'skills' && (name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)))
-        throw new NativeResourceError('invalid_request');
-      const relative =
-        root.kind === 'skills' ? path.join(name, 'SKILL.md') : name.endsWith('.md') ? name : `${name}.md`;
-      const resource = makeResourceTarget(agent, root, relative, { kind: root.kind });
-      return saveTarget(resource, { content: input.content, revision: 'missing' });
+      const operation = async () => {
+        const plan = resourcePlan(context(agent, project));
+        const root = plan.roots.find((entry) => entry.id === input.rootId);
+        if (!root) throw new NativeResourceError('resource_missing');
+        const name = simpleName(input.name);
+        if (root.kind === 'skills' && (name.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)))
+          throw new NativeResourceError('invalid_request');
+        const relative =
+          root.kind === 'skills' ? path.join(name, 'SKILL.md') : name.endsWith('.md') ? name : `${name}.md`;
+        const resource = makeResourceTarget(agent, root, relative, { kind: root.kind });
+        return saveTarget(await protectClaudePluginResource(context(agent, project), resource), {
+          content: input.content,
+          revision: 'missing',
+        });
+      };
+      return deps.withWrite ? deps.withWrite(agent, project, operation) : operation();
     },
   };
 }

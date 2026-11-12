@@ -50,6 +50,38 @@ function watchAbort(reply: FastifyReply) {
 }
 
 export function registerSessionRoutes(app: FastifyInstance, deps: Deps): void {
+  app.get('/api/workspaces/:workspaceId/sessions/:sessionId/media', routeOptions, async (req, reply) => {
+    const params = z
+      .strictObject({ workspaceId: z.string().min(1).max(200), sessionId: NativeSessionIdSchema })
+      .safeParse(req.params);
+    const query = z
+      .strictObject({
+        agent: AgentKindSchema,
+        messageId: z.string().min(1).max(512),
+        index: z.coerce.number().int().min(0).max(1000),
+        kind: z.enum(['user', 'tool']),
+        subagentId: z.string().min(1).max(200).optional(),
+      })
+      .safeParse(req.query);
+    if (!params.success || !query.success) return reply.code(400).send({ message: '原生图片定位格式不正确。' });
+    const watch = watchAbort(reply);
+    try {
+      return await writeInProject(params.data.workspaceId, async (workspace) => {
+        const { agent, ...locator } = query.data;
+        const result = await deps.sessions.media(
+          workspace,
+          agent,
+          { ...locator, sessionId: params.data.sessionId },
+          watch.signal,
+        );
+        return reply.type(result.mimeType).header('X-Content-Type-Options', 'nosniff').send(result.data);
+      });
+    } catch (error) {
+      return sendFailure(reply, error, '原生图片读取失败');
+    } finally {
+      watch.dispose();
+    }
+  });
   app.get('/api/sessions/page', routeOptions, async (req, reply) => {
     const query = SessionPageQuerySchema.safeParse(req.query);
     if (!query.success) return reply.code(400).send({ message: '会话分页请求格式不正确' });

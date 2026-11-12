@@ -90,7 +90,7 @@ export default function NativeResourceCreate({ context, root, onBack, onClose }:
   const state = useNativeResourceCreate({ context, root });
   return (
     <SettingsDetailDialog
-      title={`新建${state.isSkill ? ' Skill' : '规则'} · ${root.label}`}
+      title={`新建${state.isSkill ? ' Skill' : root.kind === 'agents' ? '代理定义' : '规则'} · ${root.label}`}
       backLabel="返回资源目录"
       busy={state.saving}
       onBack={() => state.leave(onBack)}

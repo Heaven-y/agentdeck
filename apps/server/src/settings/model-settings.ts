@@ -7,7 +7,11 @@ import { NativeResourceError } from '../agents/common/configuration/errors';
 import { parseModelConfig } from '../agents/common/configuration/fields';
 import { ModelSettingsError } from '../agents/common/configuration/patch';
 import { cliConfigurations } from '../agents/registry';
-import { createNativeResourcesService, type NativeResourcesService } from './native-resources';
+import {
+  createNativeResourcesService,
+  type NativeResourcesService,
+  type NativeUserConfigWriter,
+} from './native-resources';
 type Deps = {
   resources?: NativeResourcesService;
   environment?: ModelSettingsEnvironment;
@@ -39,13 +43,18 @@ export function createModelSettingsService(deps: Deps = {}) {
     if (!target) throw new NativeResourceError('resource_missing');
     return resources.open(agent, target.id);
   }
-  async function saveNative(agent: AgentKind, document: NativeDocument, content: string): Promise<NativeDocument> {
+  async function saveNative(
+    agent: AgentKind,
+    document: NativeDocument,
+    content: string,
+    writer: NativeUserConfigWriter,
+  ): Promise<NativeDocument> {
     if (content === document.content) {
       const current = await resources.open(agent, document.resource.id);
       if (current.revision !== document.revision) throw new NativeResourceError('revision_conflict');
       return current;
     }
-    const saved = await resources.save(agent, document.resource.id, { content, revision: document.revision });
+    const saved = await writer.save(document.resource.id, { content, revision: document.revision });
     return { ...saved, content };
   }
   async function response(agent: AgentKind, document: NativeDocument, environment: EnvironmentSnapshot | undefined) {
@@ -62,28 +71,30 @@ export function createModelSettingsService(deps: Deps = {}) {
     async save(agent: AgentKind, input: NativeModelSettingsInput) {
       const parsed = NativeModelSettingsInputSchema.safeParse(input);
       if (!parsed.success) throw new ModelSettingsError('模型配置请求格式不正确。');
-      const document = await open(agent);
-      const environment = await cliConfigurations[agent].readEnvironment(deps.environment);
-      if (input.revision !== modelSettingsRevision(document.revision, environment))
-        throw new NativeResourceError('revision_conflict');
-      const config = parseModelConfig(cliConfigurations[agent].format, document.content);
-      const adapter = cliConfigurations[agent];
-      const prepared = await adapter.prepare(config, parsed.data.changes, environment, {
-        environment: deps.environment,
-        modelCatalog: deps.antigravityModels,
+      return resources.withUserWrite(agent, async (writer) => {
+        const document = await open(agent);
+        const environment = await cliConfigurations[agent].readEnvironment(deps.environment);
+        if (input.revision !== modelSettingsRevision(document.revision, environment))
+          throw new NativeResourceError('revision_conflict');
+        const config = parseModelConfig(cliConfigurations[agent].format, document.content);
+        const adapter = cliConfigurations[agent];
+        const prepared = await adapter.prepare(config, parsed.data.changes, environment, {
+          environment: deps.environment,
+          modelCatalog: deps.antigravityModels,
+        });
+        const content = adapter.patch(document.content, config, prepared.changes);
+        const connection = prepared.connection;
+        const environmentSaved = await connection.save();
+        let saved: NativeDocument;
+        try {
+          saved = await saveNative(agent, document, content, writer);
+        } catch (error) {
+          await connection.restore(environmentSaved);
+          throw error;
+        }
+        // 回显使用已提交的快照，不重新解密，也不能因回显失败撤销已提交的连接。
+        return response(agent, saved, environmentSaved);
       });
-      const content = adapter.patch(document.content, config, prepared.changes);
-      const connection = prepared.connection;
-      const environmentSaved = await connection.save();
-      let saved: NativeDocument;
-      try {
-        saved = await saveNative(agent, document, content);
-      } catch (error) {
-        await connection.restore(environmentSaved);
-        throw error;
-      }
-      // 回显使用已提交的快照，不重新解密，也不能因回显失败撤销已提交的连接。
-      return response(agent, saved, environmentSaved);
     },
   };
 }

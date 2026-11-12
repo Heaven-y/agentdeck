@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AgentKind } from './agents';
+import type { NativeInteractionFeatures } from './native-features';
 
 export const CapabilitySelectionSchema = z.object({ id: z.string().min(1).max(100) }).strict();
 export type CapabilitySelection = z.infer<typeof CapabilitySelectionSchema>;
@@ -24,6 +25,8 @@ export type AgentModel = {
   modelId?: string;
   reasoningEfforts?: string[];
   defaultReasoningEffort?: string;
+  /** 仅保留原生明确报告的输入类型；缺省表示未知，不能从名称推断。 */
+  inputModalities?: string[];
 };
 export type AgentCapabilities = {
   agent: AgentKind;
@@ -34,6 +37,10 @@ export type AgentCapabilities = {
   discovered?: boolean;
   /** 模型可从磁盘恢复；技能与命令须在本进程从相同目录重新发现。 */
   commandsDiscovered?: boolean;
+  /** 旧缓存可省略；缺省不能开启新的原生交互。 */
+  features?: NativeInteractionFeatures;
+  /** 只在本进程从原生协商目录取得；旧缓存缺失时不可推断支持。 */
+  collaborationModes?: Array<'default' | 'plan'>;
   entries: AgentCapability[];
   models: AgentModel[];
   warnings: string[];

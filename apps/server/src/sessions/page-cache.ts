@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { NativeSessionPage } from '../agents/contracts';
 import { createSharedRead } from './shared-read';
+import { SessionError } from '../agents/errors';
 
-type Read = ReturnType<typeof createSharedRead<NativeSessionPage>>;
+type Read = ReturnType<typeof createSharedRead<NativeSessionPage & { snapshotId: string }>>;
 type Entry = { agent: AgentKind; read: Read; bytes: number; done: boolean };
 const MAX_PAGES = 32;
 const MAX_BYTES = 4 * 1024 * 1024;
@@ -36,7 +37,7 @@ export function createSessionPageCache() {
           entry.done = true;
           trim();
         }
-        return data;
+        return { ...data, snapshotId: randomUUID() };
       } catch (error) {
         if (entries.get(key)?.read === read) entries.delete(key);
         throw error;
@@ -57,12 +58,28 @@ export function createSessionPageCache() {
       }
     },
     read(
-      source: { agent: AgentKind; archived: boolean; cursor?: string; reader?: string },
+      source: {
+        agent: AgentKind;
+        archived: boolean;
+        cursor?: string;
+        reader?: string;
+        scopeKey?: string;
+        required?: boolean;
+      },
       load: (signal: AbortSignal) => Promise<NativeSessionPage>,
       signal?: AbortSignal,
     ) {
-      const key = JSON.stringify([source.agent, source.archived, source.cursor, source.reader, revision(source.agent)]);
+      const key = JSON.stringify([
+        source.agent,
+        source.archived,
+        source.cursor,
+        source.reader,
+        source.scopeKey,
+        revision(source.agent),
+      ]);
       let entry = entries.get(key);
+      if (source.required && (!entry || entry.read.controller.signal.aborted))
+        throw new SessionError(409, 'session_page_expired', '会话列表已更新，请重新读取。');
       if (!entry || entry.read.controller.signal.aborted) entry = create(key, source.agent, load);
       entries.delete(key);
       entries.set(key, entry);

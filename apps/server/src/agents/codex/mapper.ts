@@ -1,5 +1,8 @@
 import { NativeSessionIdSchema, type AgentEvent, type TokenUsage } from '@agentdeck/shared/conversation';
 import { CodexCompaction } from './compaction';
+import { mediaReference } from '../common/native-media';
+import { codexToolMedia } from './media';
+import { codexAsyncQuestion } from './async-questions';
 import { list, record, text, type RecordValue } from './types';
 import { codexItemDuration, CodexTurnUsage, nonnegativeInteger, type CodexUsageBreakdown } from './observability';
 import { codexToolCompleted, codexToolFailed, codexToolInput, codexToolOutput, isCodexTool } from './tool-items';
@@ -40,12 +43,17 @@ export class CodexEventMapper {
   private model?: string;
   private readonly usage = new CodexTurnUsage();
 
-  constructor(private readonly options: { manualCompaction?: boolean; preserveToolContent?: boolean } = {}) {
+  constructor(
+    private readonly options: { manualCompaction?: boolean; preserveToolContent?: boolean; sessionId?: string } = {},
+  ) {
     this.compaction = new CodexCompaction(options.manualCompaction === true);
   }
 
   setModel(model: string): void {
     this.model = model || undefined;
+  }
+  setSessionId(id: string): void {
+    this.options.sessionId = id;
   }
   startManualCompaction(): AgentEvent[] {
     return this.compaction.startManual(this.usedTokens);
@@ -158,16 +166,32 @@ export class CodexEventMapper {
   private mapText(item: RecordValue, history: boolean): AgentEvent[] {
     const id = text(item.id);
     if (item.type === 'userMessage') return history ? this.userMessage(item) : [];
-    if (item.type === 'agentMessage' && !this.streamed.has(`text:${id}`)) {
-      return [{ type: 'text', delta: text(item.text) }];
+    if (item.type === 'agentMessage') {
+      return this.agentMessage(item);
     }
     if (item.type !== 'reasoning' || this.streamed.has(`reasoning:${id}`)) return [];
     const summary = list(item.summary).map(text).join('\n');
     const content = summary || list(item.content).map(text).join('\n');
     return content ? [{ type: 'reasoning', delta: content }] : [];
   }
+  private agentMessage(item: RecordValue): AgentEvent[] {
+    const question = codexAsyncQuestion(item, this.options.sessionId);
+    return [
+      ...(!this.streamed.has(`text:${text(item.id)}`) && text(item.text)
+        ? [{ type: 'text' as const, delta: text(item.text) }]
+        : []),
+      ...(question ? [{ type: 'async_question' as const, question }] : []),
+    ];
+  }
 
   private userMessage(item: RecordValue): AgentEvent[] {
+    const attachments = this.options.sessionId
+      ? list(item.content).flatMap((value, index) =>
+          ['image', 'localImage'].includes(text(record(value).type))
+            ? [mediaReference(this.options.sessionId!, text(item.id), index, { kind: 'user' })]
+            : [],
+        )
+      : [];
     const content = list(item.content)
       .map((part) => {
         const value = record(part);
@@ -176,7 +200,9 @@ export class CodexEventMapper {
       })
       .filter(Boolean)
       .join('\n');
-    return content ? [{ type: 'user_message', text: content }] : [];
+    return content || attachments.length
+      ? [{ type: 'user_message', text: content, ...(attachments.length ? { attachments } : {}) }]
+      : [];
   }
 
   private mapTool(item: RecordValue, complete: boolean): AgentEvent[] {
@@ -193,6 +219,7 @@ export class CodexEventMapper {
         id,
         output: codexToolOutput(item, this.options.preserveToolContent),
         isError: codexToolFailed(item),
+        ...codexToolMedia(item, this.options.sessionId),
         ...codexItemDuration(item),
       });
     }

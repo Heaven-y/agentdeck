@@ -2,8 +2,12 @@ import type { RecoveryNotice, RecoveryTurn } from '@agentdeck/shared/conversatio
 import type { ChatState, ConversationView } from './chat-state';
 import { emptyConversation, DEFAULT_REASONING_EFFORTS, EMPTY_MODEL_OVERRIDES } from './chat-state-helpers';
 import { conversationBusy, conversationById, conversationViews, updateConversation } from './conversations';
-import { reduceChat } from './chat-reducer';
+import { reduceChat, type ChatItem } from './chat-reducer';
 import { openedTab } from './conversation-tabs';
+import { preserveAttachmentInput } from './attachment-actions';
+import { applyFollowupSnapshot, invalidateFollowups } from './followup-events';
+import { inputItem } from './followup-state';
+import { invalidateAsyncQuestions } from './async-question-actions';
 
 type SetState = (patch: Partial<ChatState>) => void;
 export const endedConversation = {
@@ -15,6 +19,7 @@ export const endedConversation = {
 
 function recoveredOptions(message: RecoveryTurn['message'], previous?: ConversationView) {
   return {
+    collaborationMode: message.collaborationMode,
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES, ...previous?.modelOverrides, [message.agent]: message.model ?? '' },
     reasoningEfforts: {
       ...DEFAULT_REASONING_EFFORTS,
@@ -36,7 +41,8 @@ function recoveredView(turn: RecoveryTurn, previous?: ConversationView): Convers
     agent: message.agent,
     sessionId: message.sessionId ?? previous?.sessionId,
     permission: message.permission,
-    items: reduceChat(previous?.items ?? [], { type: 'user_message', text: message.text || '已发送原生技能或命令' }),
+    items: inputItem(previous?.items ?? [], { ...message, text: recoveredText(message) }, message.clientTurnId),
+    runningInput: message,
     running: true,
     loadingHistory: false,
     permissionLoading: false,
@@ -45,6 +51,9 @@ function recoveredView(turn: RecoveryTurn, previous?: ConversationView): Convers
     historyNotice: '已恢复缓存中的回合；更早的原生历史尚未读取，可在本轮结束后重新读取。',
     historyReloadNeeded: true,
   };
+}
+function recoveredText(message: RecoveryTurn['message']): string {
+  return message.text || (message.attachments?.length ? '' : '已发送原生技能或命令');
 }
 
 export function createChatRecovery(get: () => ChatState, set: SetState, interrupts: Set<string>) {
@@ -55,10 +64,12 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
         ...endedConversation,
         items: reduceChat(view.items, { type: 'turn_end', isError: true }),
         historyError: message,
+        ...preserveAttachmentInput(view, true),
       }),
     );
   }
   function ready(notice: Extract<RecoveryNotice, { type: 'connection.ready' }>) {
+    get().syncAttachmentIdentity();
     const accepted = new Set(notice.acceptedClientTurnIds);
     for (const view of conversationViews(get())) {
       if (view.pendingClientTurnId && !accepted.has(view.pendingClientTurnId)) {
@@ -70,7 +81,9 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
           updateConversation(get(), view, {
             interruptRequested: false,
             items: view.items.map((item) =>
-              item.kind === 'permission' && !item.resolved ? { ...item, responding: false } : item,
+              (item.kind === 'permission' || item.kind === 'interaction') && !item.resolved
+                ? { ...item, responding: false }
+                : item,
             ),
           }),
         );
@@ -97,6 +110,9 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
     },
     onRecovery(notice: RecoveryNotice) {
       switch (notice.type) {
+        case 'connection.followups':
+          for (const snapshot of notice.snapshots) applyFollowupSnapshot(get, set, snapshot);
+          return;
         case 'connection.snapshot':
           saved.clear();
           for (const turn of notice.turns) saved.set(turn.message.clientTurnId, turn);
@@ -104,11 +120,20 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
         case 'connection.ready':
           return ready(notice);
         case 'connection.rejected':
+          invalidateAsyncQuestions(get, set);
+          invalidateFollowups(get, set);
+          get().invalidateAttachmentIdentity();
           interrupts.clear();
           saved.clear();
-          set({ banner: notice.message });
+          set({ banner: notice.message, nativeInteractions: get().nativeInteractions.map(cancelInteraction) });
           for (const view of conversationViews(get()).filter(conversationBusy)) fail(view, notice.message);
       }
     },
   };
+}
+function cancelInteraction(item: ChatItem): ChatItem {
+  if (item.kind !== 'interaction') return item;
+  if (!item.resolved || (item.interaction.kind === 'url' && item.resolved === 'submitted'))
+    return { ...item, resolved: 'cancelled', responding: false };
+  return item;
 }
