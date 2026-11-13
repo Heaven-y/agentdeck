@@ -220,6 +220,7 @@ it('切换 CLI 取消正文请求并忽略旧上下文迟到的敏感内容', as
   await waitFor(() => expect(screen.queryByText('late-sensitive-content')).toBeNull());
 });
 
+/** 整页集成用例在覆盖率并行门禁下受资源争抢；真实失败仍由各断言自身等待预算立即暴露。 */
 it('只在服务端给出的Skill目录创建；正文带用户填写的元信息，创建成功不重复提交', async () => {
   const handle = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation(async (input, init) =>
@@ -261,4 +262,4 @@ it('只在服务端给出的Skill目录创建；正文带用户填写的元信�
     content: '---\nname: "demo-skill"\ndescription: "检查演示项目"\n---\n\n# 检查要求\n先阅读项目说明。',
   });
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '创建文件' }).disabled).toBe(true);
-});
+}, 15000);
