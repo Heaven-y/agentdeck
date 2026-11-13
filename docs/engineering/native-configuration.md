@@ -38,7 +38,7 @@ prepare 仅生成宿主 operationId 与来源、动作、作用域和影响预�
 
 ## Skills 与定制资源管理
 
-“原生配置与扩展”按 Skills、MCP、原生插件、规则 / Hooks / 代理定义分类，保留全部原文入口。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；同名资源分别显示，客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
+设置页按 Skills、MCP、原生插件与原生文件分类，共用“原生配置与扩展 · CLI”目录并保留全部原文入口；原生文件集中规则 / Hooks / 代理定义与完整配置。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；同名资源分别显示，客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
 
 | CLI | 技能状态与写入 | 保留边界 |
 |---|---|---|
@@ -122,7 +122,7 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 ## MCP 配置与运行管理
 
-“原生配置与扩展 → MCP”离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的原生命令列表可能访问市场，普通列表从配置和已核实安装缓存读取插件 .mcp.json，保留所属插件、实际 scope 和安装根身份；插件带入服务只读。
+“MCP”分类页离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的原生命令列表可能访问市场，普通列表从配置和已核实安装缓存读取插件 .mcp.json，保留所属插件、实际 scope 和安装根身份；插件带入服务只读。
 
 Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
 
