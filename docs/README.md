@@ -26,6 +26,7 @@
 | 静态页面插件、宿主接口与 SSH Console | [插件契约](engineering/workbench-plugins.md) |
 | 三 CLI 原生能力逐项状态、限制与产品边界 | [原生能力矩阵](engineering/native-capability-matrix.md) |
 | 三 CLI 原生交互、附件与扩展管理补齐 | [当前实施计划](plans/native-capability-parity.md) |
+| 本轮对话体验修复与外观设置的实施步骤 | [对话体验计划](superpowers/plans/2026-11-13-chat-ux.md) |
 
 ## 维护规则
 
