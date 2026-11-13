@@ -250,9 +250,7 @@ export function App() {
       />
       <SettingsWorkspace
         opened={settings.opened}
-        settings={
-          <OpenSettings guardRef={settings.guardRef} close={settings.close} />
-        }
+        settings={<OpenSettings guardRef={settings.guardRef} close={settings.close} />}
       >
         <WorkspaceLayout
           dockOpen={sidebarVisible}

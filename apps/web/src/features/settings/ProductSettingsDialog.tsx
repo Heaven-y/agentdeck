@@ -21,8 +21,7 @@ const LaunchEnvironment = lazy(() => import('./LaunchEnvironmentPanel'));
 function SettingsDetailContent({ state, props }: { state: SettingsPageState; props: SettingsPageProps }) {
   const { page, currentAgent } = state;
   if (page === 'environment') return <EnvironmentReport disabled={false} />;
-  if (page === 'memory')
-    return <NativeMemorySettings agent={currentAgent} onOpenFiles={() => state.select('files')} />;
+  if (page === 'memory') return <NativeMemorySettings agent={currentAgent} onOpenFiles={() => state.select('files')} />;
   const category = resourceCategory[page as keyof typeof resourceCategory];
   const back = () => state.changePage(currentAgent);
   return (

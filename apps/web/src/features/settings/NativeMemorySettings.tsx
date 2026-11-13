@@ -84,7 +84,8 @@ function ClaudeAutoMemorySettings() {
           /memory；此页只修改全局启用设置，不读取记忆正文。
         </p>
         <p className="text-xs leading-5 text-muted-foreground">
-          需要 Claude Code 2.1.234 或更新版本。项目级启用或关闭由各项目原生设置管理；环境变量或管理员策略也可能覆盖此配置。
+          需要 Claude Code 2.1.234
+          或更新版本。项目级启用或关闭由各项目原生设置管理；环境变量或管理员策略也可能覆盖此配置。
         </p>
       </div>
       <MemoryStatus memory={state.memory} error={state.error} />

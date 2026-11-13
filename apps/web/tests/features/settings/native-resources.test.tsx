@@ -150,15 +150,7 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
 });
 
 it('嵌入资源页使用外部分类，只显示所选资源且不重复显示导航和关闭入口', async () => {
-  render(
-    <NativeResourcesDialog
-      agent="antigravity"
-      category="custom"
-      embedded
-      onBack={vi.fn()}
-      onClose={vi.fn()}
-    />,
-  );
+  render(<NativeResourcesDialog agent="antigravity" category="custom" embedded onBack={vi.fn()} onClose={vi.fn()} />);
   await screen.findByText(resource.displayPath);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('navigation', { name: '原生资源分类' })).toBeNull();

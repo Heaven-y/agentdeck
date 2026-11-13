@@ -166,21 +166,11 @@ function ResourceCategoryContent({
     </Suspense>
   ) : category === 'mcp' ? (
     <Suspense fallback={<p role="status">正在打开 MCP 管理…</p>}>
-      <NativeMcpPanel
-        key={agent}
-        context={{ agent }}
-        reload={reload}
-        onChanged={onChanged}
-      />
+      <NativeMcpPanel key={agent} context={{ agent }} reload={reload} onChanged={onChanged} />
     </Suspense>
   ) : category === 'plugins' ? (
     <Suspense fallback={<p role="status">正在打开原生插件管理…</p>}>
-      <NativePluginsPanel
-        key={agent}
-        context={{ agent }}
-        reload={reload}
-        onChanged={onChanged}
-      />
+      <NativePluginsPanel key={agent} context={{ agent }} reload={reload} onChanged={onChanged} />
     </Suspense>
   ) : catalog ? (
     <NativeResourceCatalog catalog={filteredCatalog(catalog, category)} select={select} />

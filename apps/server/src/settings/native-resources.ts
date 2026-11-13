@@ -11,11 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
-import {
-  makeResourceTarget,
-  userBase,
-  type ResourceTarget,
-} from '../agents/common/configuration/resources';
+import { makeResourceTarget, userBase, type ResourceTarget } from '../agents/common/configuration/resources';
 import {
   assertDirectoryUnchanged,
   contentRevision,
