@@ -114,12 +114,9 @@ dialog::backdrop {
 .settings-model-panel {
   animation: ui-fade-in var(--ui-enter) ease;
 }
-.settings-form-scroll {
-  scroll-padding-block: 14px;
-  overscroll-behavior: contain;
-}
 .settings-footer {
-  position: relative;
+  position: sticky;
+  bottom: 0;
   background: var(--color-card);
 }
 .settings-footer button {

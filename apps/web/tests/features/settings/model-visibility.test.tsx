@@ -77,3 +77,28 @@ it('设置勾选保存工作台范围并立即应用，保留其他 CLI 与原�
   fireEvent.click(screen.getByRole('button', { name: '恢复全部模型' }));
   await waitFor(() => expect(useChat.getState().defaults.modelVisibility).toEqual({ codex: ['gpt'] }));
 });
+it('Antigravity 的原生别名只列一行，勾选保存的仍是可发送的原生 id', async () => {
+  let document = { settings: ProductSettingsSchema.parse({}), revision: 'a'.repeat(64) };
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => document);
+  const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
+    document = { settings: input.settings, revision: 'b'.repeat(64) };
+    return document;
+  });
+  const models = [
+    { id: 'gemini-4-argon-high', label: 'Gemini 4 Argon (High)' },
+    { id: 'agentdeck', label: 'Gemini 4 Argon (High)', modelId: 'Gemini 4 Argon (High)' },
+    { id: 'gemini-4-argon-low', label: 'Gemini 4 Argon (Low)' },
+  ];
+  render(<ModelVisibilityPanel agent="antigravity" models={models} />);
+  await checkbox('显示 gemini-4-argon-high');
+  expect(screen.queryByRole('checkbox', { name: '显示 agentdeck' })).toBeNull();
+  expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('checkbox', { name: '显示 gemini-4-argon-low' }));
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({ modelVisibility: { antigravity: ['gemini-4-argon-high'] } }),
+      }),
+    ),
+  );
+});

@@ -41,6 +41,11 @@ function combinedCandidates(models: AgentModel[]): ModelCandidate[] {
   );
 }
 
+/** 设置页的显示范围清单沿用对话菜单的身份合并，避免把原生别名重复列成两个模型。 */
+export function visibilityCandidates(agent: AgentKind, models: AgentModel[]): ModelCandidate[] {
+  return agent === 'antigravity' ? combinedCandidates(models) : models;
+}
+
 function searchText(model: ModelCandidate): string {
   return `${model.label} ${model.id} ${model.modelId ?? ''} ${model.searchTerms?.join(' ') ?? ''}`;
 }

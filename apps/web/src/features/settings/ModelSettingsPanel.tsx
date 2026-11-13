@@ -239,11 +239,9 @@ export function ModelSettingsPanel({
     };
   });
   return (
-    <div
-      aria-label={`${nativeAgentNames[agent]} 模型设置`}
-      className="settings-model-panel flex min-h-0 flex-1 flex-col"
-    >
-      <div className="settings-form-scroll min-h-0 flex-1 space-y-5 overflow-y-auto px-1 pb-1 pr-4 [scrollbar-gutter:stable]">
+    <div aria-label={`${nativeAgentNames[agent]} 模型设置`} className="settings-model-panel flex flex-col">
+      {/* 只保留设置页这一层滚动：内层 overflow 容器会让滚轮停在不可滚动的元素上。 */}
+      <div className="space-y-5 px-1">
         <SettingsFeedback state={state} />
         <SessionToolsPanel key={agent} agent={agent} />
         {state.document && (

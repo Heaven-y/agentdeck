@@ -4,7 +4,7 @@ import type { ProductSettingsDocument } from '@agentdeck/shared/settings';
 import { queryClient } from '../../lib/query-client';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { useChat } from '../chat/chat-store';
-import { matchingModels } from '../chat/model-candidates';
+import { matchingModels, visibilityCandidates } from '../chat/model-candidates';
 import { modelDisplay } from '../../cli/shared/model-identity';
 import { settingsApi, settingsKeys } from './api';
 import { nativeSettingsError } from './native-resource-labels';
@@ -81,8 +81,10 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
   const { visible, ready, saving, error, save, reload } = useModelVisibility(agent);
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(50);
-  const selected = new Set(visible ?? models.map((model) => model.id));
-  const matches = matchingModels(models, query);
+  // 与对话菜单共用同一身份合并：原生别名不重复占一行，保存的仍是可发送的原生 id。
+  const choices = visibilityCandidates(agent, models);
+  const selected = new Set(visible ?? choices.map((model) => model.id));
+  const matches = matchingModels(choices, query);
   return (
     <section aria-label="对话菜单中的模型" className="space-y-3 border-t border-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
