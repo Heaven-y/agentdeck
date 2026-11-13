@@ -1,4 +1,4 @@
-import { chatKeys } from '../chat/api';
+﻿import { chatKeys } from '../chat/api';
 import { useEffect, useRef, useState } from 'react';
 import type { AgentCapabilities, AgentKind } from '@agentdeck/shared/conversation';
 import type { ModelSettingField, NativeModelSettingsDocument } from '@agentdeck/shared/settings';
@@ -50,7 +50,7 @@ function changedDraft(
   else next[field.key] = value;
   return next;
 }
-export function useModelSettings(agent: AgentKind, projectId?: string) {
+export function useModelSettings(agent: AgentKind, extraDirty = false) {
   const [document, setDocument] = useState<NativeModelSettingsDocument>();
   const [draft, setDraft] = useState<ModelSettingsDraft>({});
   const [error, setError] = useState('');
@@ -63,7 +63,7 @@ export function useModelSettings(agent: AgentKind, projectId?: string) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState('');
   const catalogRequest = useRef<AbortController | undefined>(undefined);
-  const dirty = Object.keys(draft).length > 0;
+  const dirty = Object.keys(draft).length > 0 || extraDirty;
   useEffect(() => {
     const controller = new AbortController();
     pending.current = controller;
@@ -81,13 +81,13 @@ export function useModelSettings(agent: AgentKind, projectId?: string) {
     const controller = new AbortController();
     catalogRequest.current = controller;
     void modelSettingsApi
-      .catalog(agent, projectId, controller.signal)
+      .catalog(agent, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setModelCatalog(result);
       })
       .catch(() => undefined);
     return () => catalogRequest.current?.abort();
-  }, [agent, projectId]);
+  }, [agent]);
   const leave: SettingsLeave = (action) => {
     if (lock.current || !confirmNativeDiscard(dirty)) return;
     pending.current?.abort();
@@ -109,7 +109,7 @@ export function useModelSettings(agent: AgentKind, projectId?: string) {
   };
   const save = async () => {
     if (!document || lock.current) return false;
-    if (!dirty) return true;
+    if (!Object.keys(draft).length) return true;
     lock.current = true;
     setSaving(true);
     setError('');
@@ -148,10 +148,10 @@ export function useModelSettings(agent: AgentKind, projectId?: string) {
     setModelsLoading(true);
     setModelsError('');
     try {
-      const result = await modelSettingsApi.refreshCatalog(agent, projectId, controller.signal);
+      const result = await modelSettingsApi.refreshCatalog(agent, controller.signal);
       if (controller.signal.aborted) return;
       setModelCatalog(result);
-      publishCatalog(agent, result, projectId);
+      publishCatalog(agent, result);
       setModelsError(modelWarning(result));
     } catch (reason) {
       if (!controller.signal.aborted) setModelsError(modelFailure(reason));

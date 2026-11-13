@@ -6,9 +6,11 @@ import { buttonClass } from '../../ui/styles';
 import { nativeAgentNames } from './native-resource-labels';
 import { ModelSettingsField } from './ModelSettingsField';
 import { modelSettingValue, modelSettingsFields, useModelSettings, type SettingsLeave } from './use-model-settings';
+import { leaveSettings } from './settings-navigation';
 import { modelEfforts } from '../../cli/model-capabilities';
 import { antigravityModelSuggestions } from '../../cli/antigravity/model-suggestions';
 import { ModelVisibilityPanel } from './ModelVisibilityPanel';
+import { useVisibilityDraft } from './use-visibility-draft';
 import { SessionToolsPanel } from './SessionToolsPanel';
 
 type State = ReturnType<typeof useModelSettings>;
@@ -192,23 +194,33 @@ function SettingsFeedback({ state }: { state: State }) {
     );
   return null;
 }
-function SettingsFooter({ state }: { state: State }) {
+function SettingsFooter({
+  state,
+  dirty,
+  save,
+  reread,
+}: {
+  state: State;
+  dirty: boolean;
+  save(): void;
+  reread(): void;
+}) {
   return (
     <footer className="settings-footer mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4">
       <p role={state.message ? 'status' : undefined} className="min-w-0 text-xs text-muted-foreground">
-        {state.message || (state.dirty ? '有未保存修改' : '对新会话生效')}
+        {state.message || (dirty ? '有未保存修改' : '对新会话生效')}
       </p>
       <div className="flex shrink-0 gap-2">
         {!state.document && state.error && (
-          <button type="button" className={buttonClass('ghost')} disabled={state.saving} onClick={state.reread}>
+          <button type="button" className={buttonClass('ghost')} disabled={state.saving} onClick={reread}>
             重试
           </button>
         )}
         <button
           type="button"
           className={`${buttonClass('primary')} rounded-lg`}
-          disabled={state.saving || state.modelsLoading || !state.dirty}
-          onClick={() => void state.save()}
+          disabled={state.saving || state.modelsLoading || !dirty}
+          onClick={() => void save()}
         >
           {state.saving ? '正在保存…' : '保存配置'}
         </button>
@@ -219,23 +231,35 @@ function SettingsFooter({ state }: { state: State }) {
 
 export function ModelSettingsPanel({
   agent,
-  projectId,
   guardRef,
   onNative,
   onLaunchEnvironment,
 }: {
   agent: AgentKind;
-  projectId?: string;
   guardRef: MutableRefObject<SettingsLeave>;
   onNative(): void;
   onLaunchEnvironment?: () => void;
 }) {
-  const state = useModelSettings(agent, projectId);
+  const visibility = useVisibilityDraft(agent);
+  // 显示范围草稿也属于这张表单：未保存时同样阻止离开。
+  const state = useModelSettings(agent, visibility.dirty);
   const fields = state.document ? visibleFields(modelSettingsFields(state.document, state.draft), state) : [];
+  const dirty = state.dirty;
+  const saving = state.saving;
+  const leave = (action: () => void) => {
+    if (saving) return;
+    state.leave(() => {
+      visibility.reload();
+      action();
+    });
+  };
+  const save = async () => {
+    if (await state.save()) await visibility.save();
+  };
   useLayoutEffect(() => {
-    guardRef.current = state.leave;
+    guardRef.current = leave;
     return () => {
-      guardRef.current = (action) => action();
+      guardRef.current = leaveSettings;
     };
   });
   return (
@@ -247,17 +271,17 @@ export function ModelSettingsPanel({
         {state.document && (
           <>
             <ModelSettingsForm state={state} fields={fields} />
-            <ModelVisibilityPanel key={agent} agent={agent} models={state.modelCatalog?.models ?? []} />
+            <ModelVisibilityPanel agent={agent} models={state.modelCatalog?.models ?? []} draft={visibility} />
             <AdvancedSettings
               state={state}
               fields={fields}
-              onNative={onNative}
-              onLaunchEnvironment={onLaunchEnvironment}
+              onNative={() => leave(onNative)}
+              onLaunchEnvironment={onLaunchEnvironment && (() => leave(onLaunchEnvironment))}
             />
           </>
         )}
       </div>
-      <SettingsFooter state={state} />
+      <SettingsFooter state={state} dirty={dirty} save={() => void save()} reread={() => leave(state.reread)} />
     </div>
   );
 }

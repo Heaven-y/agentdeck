@@ -1,14 +1,33 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ProductSettingsSchema } from '@agentdeck/shared/settings';
-import { ModelVisibilityPanel } from '../../../src/features/settings/ModelVisibilityPanel';
-import { settingsApi } from '../../../src/features/settings/api';
+import { ModelSettingsPanel } from '../../../src/features/settings/ModelSettingsPanel';
+import { settingsApi, settingsKeys } from '../../../src/features/settings/api';
+import { modelSettingsApi } from '../../../src/features/settings/model-settings-api';
 import { useChat } from '../../../src/features/chat/chat-store';
 import { queryClient } from '../../../src/lib/query-client';
-import { settingsKeys } from '../../../src/features/settings/api';
 
-async function checkbox(name: string) {
+const models = [
+  { id: 'one', label: 'one' },
+  { id: 'two', label: 'two' },
+];
+
+function nativeDocument() {
+  return {
+    agent: 'claude' as const,
+    revision: 'a'.repeat(64),
+    displayPath: 'settings.json',
+    fields: [{ key: 'model', label: '默认模型', value: '', group: 'model' as const }],
+    warnings: [],
+  };
+}
+
+function mount() {
+  return render(<ModelSettingsPanel agent="claude" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
+}
+
+async function rangeCheckbox(name: string) {
   const input = await screen.findByRole<HTMLInputElement>('checkbox', { name });
   await waitFor(() => expect(input.disabled).toBe(false));
   return input;
@@ -20,85 +39,99 @@ afterEach(() => {
   vi.restoreAllMocks();
   useChat.setState(useChat.getInitialState(), true);
 });
-it('旧面板保存响应迟到时不覆盖新面板已保存的模型范围', async () => {
-  let document = { settings: ProductSettingsSchema.parse({}), revision: 'a'.repeat(64) };
-  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => document);
-  let complete!: (result: typeof document) => void;
-  let previous: typeof document;
-  vi.spyOn(settingsApi, 'saveProductSettings')
-    .mockImplementationOnce((input) => {
-      document = { settings: input.settings, revision: 'b'.repeat(64) };
-      previous = document;
-      return new Promise((resolve) => {
-        complete = resolve;
-      });
-    })
-    .mockImplementationOnce(async (input) => {
-      document = { settings: input.settings, revision: 'c'.repeat(64) };
-      return document;
-    });
-  const models = [
-    { id: 'one', label: 'one' },
-    { id: 'two', label: 'two' },
-  ];
-  const first = render(<ModelVisibilityPanel agent="claude" models={models} />);
-  fireEvent.click(await checkbox('显示 two'));
-  await waitFor(() => expect(complete).toBeDefined());
-  first.unmount();
-  render(<ModelVisibilityPanel agent="claude" models={models} />);
-  fireEvent.click(await checkbox('显示 one'));
-  await waitFor(() => expect(useChat.getState().defaults.modelVisibility?.claude).toEqual([]));
-  await act(async () => complete(previous));
-  expect(useChat.getState().defaults.modelVisibility?.claude).toEqual([]);
-  expect(queryClient.getQueryData(settingsKeys.productSettings)).toEqual(document);
-});
-it('设置勾选保存工作台范围并立即应用，保留其他 CLI 与原生配置，重开和刷新不重选', async () => {
-  let document = {
-    settings: ProductSettingsSchema.parse({ modelVisibility: { codex: ['gpt'] } }),
-    revision: 'a'.repeat(64),
-  };
-  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => document);
+
+it('勾选模型只改草稿，点保存配置才写入显示范围', async () => {
+  let product = { settings: ProductSettingsSchema.parse({}), revision: 'b'.repeat(64) };
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
   const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
-    document = { settings: input.settings, revision: 'b'.repeat(64) };
-    return document;
+    product = { settings: input.settings, revision: 'c'.repeat(64) };
+    return product;
   });
-  const models = [
-    { id: 'one', label: 'one' },
-    { id: 'two', label: 'two' },
-  ];
-  const view = render(<ModelVisibilityPanel agent="claude" models={models} />);
-  fireEvent.click(await checkbox('显示 two'));
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue(nativeDocument());
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models, entries: [], warnings: [] } as never);
+  mount();
+
+  const two = await rangeCheckbox('显示 two');
+  fireEvent.click(two);
+  expect(save).not.toHaveBeenCalled();
+  expect(screen.getByText('保存设置后生效')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '保存配置' })).toHaveProperty('disabled', false);
+
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  await waitFor(() => expect(useChat.getState().defaults.modelVisibility).toEqual({ codex: ['gpt'], claude: ['one'] }));
-  view.unmount();
-  render(<ModelVisibilityPanel agent="claude" models={[...models, { id: 'new', label: 'new' }]} />);
-  expect((await checkbox('显示 two')).checked).toBe(false);
-  expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '显示 new' }).checked).toBe(false);
-  fireEvent.click(screen.getByRole('button', { name: '恢复全部模型' }));
-  await waitFor(() => expect(useChat.getState().defaults.modelVisibility).toEqual({ codex: ['gpt'] }));
+  expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ claude: ['one'] });
+  await waitFor(() => expect(useChat.getState().defaults.modelVisibility).toEqual({ claude: ['one'] }));
+  expect(await screen.findByText('当前已保存')).toBeTruthy();
 });
-it('Antigravity 的原生别名只列一行，勾选保存的仍是可发送的原生 id', async () => {
-  let document = { settings: ProductSettingsSchema.parse({}), revision: 'a'.repeat(64) };
-  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => document);
+
+it('恢复全部模型保存时删除该 CLI 的范围，不影响其他 CLI', async () => {
+  let product = {
+    settings: ProductSettingsSchema.parse({ modelVisibility: { codex: ['gpt'], claude: ['one'] } }),
+    revision: 'b'.repeat(64),
+  };
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
   const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
-    document = { settings: input.settings, revision: 'b'.repeat(64) };
-    return document;
+    product = { settings: input.settings, revision: 'c'.repeat(64) };
+    return product;
   });
-  const models = [
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue(nativeDocument());
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models, entries: [], warnings: [] } as never);
+  mount();
+
+  await rangeCheckbox('显示 two');
+  expect((await rangeCheckbox('显示 two')).checked).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '恢复全部模型' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ codex: ['gpt'] });
+});
+
+it('显示范围的草稿与原生表单一起受未保存保护', async () => {
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => ({
+    settings: ProductSettingsSchema.parse({}),
+    revision: 'b'.repeat(64),
+  }));
+  vi.spyOn(settingsApi, 'saveProductSettings').mockResolvedValue({
+    settings: ProductSettingsSchema.parse({}),
+    revision: 'c'.repeat(64),
+  });
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue(nativeDocument());
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models, entries: [], warnings: [] } as never);
+  vi.spyOn(window, 'confirm').mockReturnValue(false);
+  const leave = vi.fn();
+  const guard: { current: (action: () => void) => void } = { current: (action) => action() };
+  render(<ModelSettingsPanel agent="claude" guardRef={guard} onNative={vi.fn()} />);
+
+  const two = await rangeCheckbox('显示 two');
+  fireEvent.click(two);
+  guard.current(leave);
+  expect(leave).not.toHaveBeenCalled();
+  vi.mocked(window.confirm).mockReturnValue(true);
+  guard.current(leave);
+  expect(leave).toHaveBeenCalledOnce();
+});
+
+it('Antigravity 的原生别名只列一行，保存的仍是可发送的原生 id', async () => {
+  let product = { settings: ProductSettingsSchema.parse({}), revision: 'b'.repeat(64) };
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
+  const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
+    product = { settings: input.settings, revision: 'c'.repeat(64) };
+    return product;
+  });
+  const aliases = [
     { id: 'gemini-4-argon-high', label: 'Gemini 4 Argon (High)' },
     { id: 'agentdeck', label: 'Gemini 4 Argon (High)', modelId: 'Gemini 4 Argon (High)' },
     { id: 'gemini-4-argon-low', label: 'Gemini 4 Argon (Low)' },
   ];
-  render(<ModelVisibilityPanel agent="antigravity" models={models} />);
-  await checkbox('显示 gemini-4-argon-high');
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue({ ...nativeDocument(), agent: 'antigravity' });
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models: aliases, entries: [], warnings: [] } as never);
+  render(<ModelSettingsPanel agent="antigravity" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
+
+  await rangeCheckbox('显示 gemini-4-argon-high');
   expect(screen.queryByRole('checkbox', { name: '显示 agentdeck' })).toBeNull();
-  expect(screen.getAllByRole('checkbox')).toHaveLength(2);
   fireEvent.click(screen.getByRole('checkbox', { name: '显示 gemini-4-argon-low' }));
-  await waitFor(() =>
-    expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        settings: expect.objectContaining({ modelVisibility: { antigravity: ['gemini-4-argon-high'] } }),
-      }),
-    ),
-  );
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ antigravity: ['gemini-4-argon-high'] });
+  expect(queryClient.getQueryData(settingsKeys.productSettings)).toEqual(product);
 });

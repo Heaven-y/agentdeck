@@ -3,16 +3,14 @@ import type { AgentCapabilities, AgentKind } from '@agentdeck/shared/conversatio
 import type { NativeModelSettingsDocument, NativeModelSettingsInput } from '@agentdeck/shared/settings';
 
 export const modelSettingsApi = {
-  catalog: (agent: AgentKind, projectId?: string, signal?: AbortSignal) =>
-    request<AgentCapabilities>(
-      `/api/settings/models/${agent}/catalog${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`,
-      { signal, cache: 'no-store' },
-    ),
-  refreshCatalog: (agent: AgentKind, projectId?: string, signal?: AbortSignal) =>
-    request<AgentCapabilities>(
-      `/api/settings/models/${agent}/catalog${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`,
-      { method: 'POST', signal, cache: 'no-store' },
-    ),
+  catalog: (agent: AgentKind, signal?: AbortSignal) =>
+    request<AgentCapabilities>(`/api/settings/models/${agent}/catalog`, { signal, cache: 'no-store' }),
+  refreshCatalog: (agent: AgentKind, signal?: AbortSignal) =>
+    request<AgentCapabilities>(`/api/settings/models/${agent}/catalog`, {
+      method: 'POST',
+      signal,
+      cache: 'no-store',
+    }),
   read: (agent: AgentKind, signal?: AbortSignal) =>
     request<NativeModelSettingsDocument>(`/api/settings/models/${agent}`, { signal, cache: 'no-store' }),
   save: (agent: AgentKind, input: NativeModelSettingsInput, signal?: AbortSignal) =>

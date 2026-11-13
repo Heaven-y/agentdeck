@@ -224,7 +224,7 @@ it('缓存模型可直接选择，显式获取先保存修改，参数和高级�
   render(<ProductSettingsDialog onClose={vi.fn()} onNative={vi.fn()} />);
   const model = await screen.findByLabelText<HTMLInputElement>('默认模型');
   await screen.findByRole('button', { name: '重新获取' });
-  expect(modelSettingsApi.catalog).toHaveBeenCalledWith('claude', undefined, expect.any(AbortSignal));
+  expect(modelSettingsApi.catalog).toHaveBeenCalledWith('claude', expect.any(AbortSignal));
   expect(modelSettingsApi.refreshCatalog).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '展开默认模型选项' }));
   const options = await screen.findByRole('listbox', { name: '默认模型选项' });
@@ -241,7 +241,7 @@ it('缓存模型可直接选择，显式获取先保存修改，参数和高级�
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存并获取模型' }).disabled).toBe(true);
   await act(async () => saveResult.resolve(saved));
   await waitFor(() => expect(modelSettingsApi.refreshCatalog).toHaveBeenCalledOnce());
-  expect(modelSettingsApi.refreshCatalog).toHaveBeenCalledWith('claude', undefined, expect.any(AbortSignal));
+  expect(modelSettingsApi.refreshCatalog).toHaveBeenCalledWith('claude', expect.any(AbortSignal));
 });
 
 it('Codex窗口与压缩阈值分别保存，保存失败时保留草稿且不继续获取模型', async () => {

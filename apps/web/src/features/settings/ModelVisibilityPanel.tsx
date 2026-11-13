@@ -1,100 +1,40 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { AgentKind, AgentModel } from '@agentdeck/shared/conversation';
-import type { ProductSettingsDocument } from '@agentdeck/shared/settings';
-import { queryClient } from '../../lib/query-client';
 import { buttonClass, inputClass } from '../../ui/styles';
-import { useChat } from '../chat/chat-store';
 import { matchingModels, visibilityCandidates } from '../chat/model-candidates';
 import { modelDisplay } from '../../cli/shared/model-identity';
-import { settingsApi, settingsKeys } from './api';
-import { nativeSettingsError } from './native-resource-labels';
+import type { VisibilitySelection, useVisibilityDraft } from './use-visibility-draft';
 
-/** 只改本机产品偏好，保留各 CLI 的原生目录及默认模型。 */
-function useModelVisibility(agent: AgentKind) {
-  const [document, setDocument] = useState<ProductSettingsDocument>();
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [reload, setReload] = useState(0);
-  const mounted = useRef(false);
-  const lock = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    const controller = new AbortController();
-    void settingsApi
-      .readProductSettings(controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setDocument(result);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(nativeSettingsError(reason));
-      });
-    return () => {
-      mounted.current = false;
-      controller.abort();
-    };
-  }, [agent, reload]);
-  const visible = document?.settings.modelVisibility?.[agent];
-  const save = async (ids?: string[]) => {
-    if (!document || lock.current) return;
-    lock.current = true;
-    setSaving(true);
-    setError('');
-    const modelVisibility = { ...document.settings.modelVisibility };
-    if (ids) modelVisibility[agent] = ids;
-    else delete modelVisibility[agent];
-    try {
-      await settingsApi.saveProductSettings({
-        revision: document.revision,
-        settings: { ...document.settings, modelVisibility },
-      });
-      await queryClient.cancelQueries({ queryKey: settingsKeys.productSettings });
-      // 保存响应可能晚于其他窗口的新修改；重读最新版本，不能发布旧快照。
-      const result = await queryClient.fetchQuery({
-        queryKey: settingsKeys.productSettings,
-        queryFn: ({ signal }) => settingsApi.readProductSettings(signal),
-        staleTime: 0,
-      });
-      useChat.getState().setDefaults(result.settings);
-      if (mounted.current) setDocument(result);
-    } catch (reason) {
-      if (mounted.current) setError(nativeSettingsError(reason));
-    } finally {
-      lock.current = false;
-      if (mounted.current) setSaving(false);
-    }
-  };
-  return {
-    visible,
-    ready: !!document,
-    saving,
-    error,
-    save,
-    reload() {
-      setDocument(undefined);
-      setError('');
-      setReload(reload + 1);
-    },
-  };
-}
-
-export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; models: AgentModel[] }) {
-  const { visible, ready, saving, error, save, reload } = useModelVisibility(agent);
+/**
+ * 只改本机产品偏好草稿；范围与模型表单一起由设置页底部“保存配置”提交。
+ * 清单与对话菜单共用同一身份合并，原生别名不重复占行。
+ */
+export function ModelVisibilityPanel({
+  agent,
+  models,
+  draft,
+}: {
+  agent: AgentKind;
+  models: AgentModel[];
+  draft: ReturnType<typeof useVisibilityDraft>;
+}) {
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(50);
-  // 与对话菜单共用同一身份合并：原生别名不重复占一行，保存的仍是可发送的原生 id。
   const choices = visibilityCandidates(agent, models);
-  const selected = new Set(visible ?? choices.map((model) => model.id));
+  const checked = (id: string) => draft.selected === 'all' || draft.selected.includes(id);
   const matches = matchingModels(choices, query);
+  const disabled = !draft.ready;
+  const update = (selection: VisibilitySelection) => draft.change(selection);
   return (
     <section aria-label="对话菜单中的模型" className="space-y-3 border-t border-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-[13px] font-medium">对话菜单中的模型</h4>
         <span role="status" className="text-xs text-muted-foreground">
-          {saving ? '正在保存…' : '勾选后自动保存'}
+          {draft.dirty ? '保存设置后生效' : '当前已保存'}
         </span>
       </div>
       <p className="text-xs leading-5 text-muted-foreground">选择日常使用的型号；当前会话使用的模型始终保留。</p>
-      {models.length > 0 ? (
+      {choices.length > 0 ? (
         <>
           <input
             aria-label="筛选模型显示列表"
@@ -115,13 +55,12 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
                 <input
                   type="checkbox"
                   aria-label={`显示 ${modelDisplay(model.id, model)}`}
-                  checked={selected.has(model.id)}
-                  disabled={!ready || saving}
+                  checked={checked(model.id)}
+                  disabled={disabled}
                   onChange={(event) => {
-                    const next = new Set(selected);
-                    if (event.target.checked) next.add(model.id);
-                    else next.delete(model.id);
-                    void save([...next]);
+                    const base = draft.selected === 'all' ? choices.map((entry) => entry.id) : [...draft.selected];
+                    const next = event.target.checked ? [...base, model.id] : base.filter((id) => id !== model.id);
+                    update([...new Set(next)]);
                   }}
                 />
                 <span className="min-w-0 truncate" title={model.id}>
@@ -137,20 +76,10 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
             </button>
           )}
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={buttonClass('ghost')}
-              disabled={!ready || saving}
-              onClick={() => void save([])}
-            >
+            <button type="button" className={buttonClass('ghost')} disabled={disabled} onClick={() => update([])}>
               全部隐藏
             </button>
-            <button
-              type="button"
-              className={buttonClass('ghost')}
-              disabled={!ready || saving || visible === undefined}
-              onClick={() => void save()}
-            >
+            <button type="button" className={buttonClass('ghost')} disabled={disabled} onClick={() => update('all')}>
               恢复全部模型
             </button>
           </div>
@@ -158,10 +87,10 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
       ) : (
         <p className="text-xs text-muted-foreground">获取模型后可选择显示范围。</p>
       )}
-      {error && (
+      {draft.error && (
         <div className="text-xs text-destructive-foreground">
-          <p role="alert">{error}</p>
-          <button type="button" className={buttonClass('ghost')} disabled={saving} onClick={reload}>
+          <p role="alert">{draft.error}</p>
+          <button type="button" className={buttonClass('ghost')} onClick={draft.reload}>
             重新读取显示设置
           </button>
         </div>
