@@ -145,11 +145,6 @@ export function Composer() {
             busy={busy}
             placeholder={placeholder(connected, selection?.argumentHint)}
           />
-          {(running || queued) && (
-            <p className="px-4 text-xs leading-5 text-muted-foreground">
-              继续输入会排队为下一轮；引导本轮仅在原生运行时支持时可用。
-            </p>
-          )}
           {restriction && <p className="px-4 text-xs leading-5 text-warning">{restriction}</p>}
           <SessionReferencePreview text={text} />
           <div role="group" aria-label="消息选项" className="composer-toolbar">

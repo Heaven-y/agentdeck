@@ -73,6 +73,9 @@ function mount() {
 it('运行中默认排队、显式引导与独立停止，IME确认不会排队', async () => {
   emit({ type: 'followup.state', snapshot: state() });
   mount();
+  expect(screen.queryByText('继续输入会排队为下一轮；引导本轮仅在原生运行时支持时可用。')).toBeNull();
+  expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '引导本轮' })).toBeTruthy();
   const input = screen.getByLabelText('输入消息');
   fireEvent.change(input, { target: { value: '输入法消息' } });
   fireEvent.compositionStart(input);
