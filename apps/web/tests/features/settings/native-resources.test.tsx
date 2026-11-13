@@ -4,6 +4,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest';
 import { ProductSettingsSchema, type NativeResourceCatalog } from '@agentdeck/shared/settings';
 import SettingsDialog from '../../../src/features/settings/SettingsDialog';
+import NativeResourcesDialog from '../../../src/features/settings/NativeResourcesDialog';
+import {
+  SettingsNavigationContext,
+  guardSettingsNavigation,
+  type SettingsNavigation,
+} from '../../../src/features/settings/settings-navigation';
 import { queryClient } from '../../../src/lib/query-client';
 
 const project = { id: 'demo', name: '演示项目', dir: '~/projects/demo' };
@@ -47,6 +53,7 @@ function edit(content: string) {
   act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } }));
 }
 async function openCatalog() {
+  fireEvent.click(await screen.findByRole('button', { name: '模型与连接' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Antigravity' }));
   fireEvent.click(await screen.findByText('高级设置'));
   fireEvent.click(await screen.findByRole('button', { name: '编辑 Antigravity 配置文件' }));
@@ -57,12 +64,6 @@ beforeEach(() => {
     getClientRects: { configurable: true, value: () => [] },
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
-  HTMLDialogElement.prototype.showModal = function () {
-    this.open = true;
-  };
-  HTMLDialogElement.prototype.close = function () {
-    this.open = false;
-  };
   requests.length = 0;
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = input as string;
@@ -135,7 +136,15 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
   expect(JSON.parse(save[1]?.body as string)).toEqual({ content: '# 我的规则\n', revision: 'original' });
   fireEvent.click(screen.getByRole('button', { name: '重新读取文件' }));
   expect(requests.filter(({ url }) => url.includes('/open'))).toHaveLength(1);
-  fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+  for (const name of ['通用设置', 'Codex']) {
+    fireEvent.click(screen.getByRole('button', { name }));
+    expect(editor().state.doc.toString()).toBe('# 我的规则\n');
+  }
+  fireEvent.change(screen.getByLabelText('资源范围'), { target: { value: '' } });
+  expect(screen.getByLabelText<HTMLSelectElement>('资源范围').value).toBe(project.id);
+  expect(editor().state.doc.toString()).toBe('# 我的规则\n');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '关闭设置' }));
   expect(close).not.toHaveBeenCalled();
   vi.mocked(window.confirm).mockReturnValue(true);
   fireEvent.click(screen.getByRole('button', { name: '关闭设置' }));
@@ -143,7 +152,52 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
   expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
 });
 
-it('离开取消请求并忽略迟到的敏感内容', async () => {
+it('嵌入资源页使用外部分类，只显示所选资源且不重复显示导航和关闭入口', async () => {
+  render(
+    <NativeResourcesDialog
+      agent="antigravity"
+      project={project}
+      category="custom"
+      embedded
+      onBack={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  await screen.findByText(resource.displayPath);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('navigation', { name: '原生资源分类' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '返回模型设置' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '在项目 Skills中新建 Skill' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 项目规则' }));
+  await screen.findByRole('textbox', { name: '原生文件内容' });
+  expect(screen.getByRole('heading', { name: '项目规则' })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: '项目规则' }));
+  expect(screen.getByRole('button', { name: '返回资源目录' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
+});
+
+it('创建资源的草稿接入统一导航，取消保留填写内容，确认离开后清除', async () => {
+  const navigation: SettingsNavigation = new Map();
+  const leave = vi.fn();
+  render(
+    <SettingsNavigationContext.Provider value={navigation}>
+      <NativeResourcesDialog agent="antigravity" project={project} embedded onBack={vi.fn()} onClose={vi.fn()} />
+    </SettingsNavigationContext.Provider>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: '在项目 Skills中新建 Skill' }));
+  const name = await screen.findByLabelText<HTMLInputElement>('Skill 名称');
+  fireEvent.change(name, { target: { value: 'unsaved-skill' } });
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).not.toHaveBeenCalled();
+  expect(name.value).toBe('unsaved-skill');
+  vi.mocked(window.confirm).mockReturnValue(true);
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).toHaveBeenCalledTimes(1);
+  expect(name.value).toBe('');
+});
+
+it('切换 CLI 取消正文请求并忽略旧上下文迟到的敏感内容', async () => {
   const handle = fetchMock.getMockImplementation()!;
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementation(async (input, init) =>
@@ -153,12 +207,13 @@ it('离开取消请求并忽略迟到的敏感内容', async () => {
         })
       : handle(input, init),
   );
-  const mounted = render(<SettingsDialog project={project} onClose={vi.fn()} />);
+  render(<SettingsDialog project={project} onClose={vi.fn()} />);
   await openCatalog();
   fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 项目规则' }));
   await screen.findByText('正在读取文件…');
   const open = fetchMock.mock.calls.find(([url]) => (url as string).includes('/open?'))!;
-  mounted.unmount();
+  fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
+  await screen.findByRole('heading', { name: '原生配置与扩展 · Codex' });
   expect(open[1]?.signal?.aborted).toBe(true);
   await act(async () => resolve(Response.json({ resource, content: 'late-sensitive-content', revision: 'late' })));
   expect(screen.queryByRole('textbox')).toBeNull();

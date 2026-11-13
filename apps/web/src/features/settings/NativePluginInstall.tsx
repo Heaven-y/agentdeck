@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { NativePluginCatalog, NativePluginPrepareInput } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
+import { confirmNativeDiscard } from './native-resource-labels';
+import { useSettingsLeave } from './settings-navigation';
 export function NativePluginInstall({
   catalog,
   busy,
@@ -13,6 +15,10 @@ export function NativePluginInstall({
   const [source, setSource] = useState('');
   const [scope, setScope] = useState<'user' | 'project' | 'local'>('user');
   const [market, setMarket] = useState(false);
+  const dirty = source !== '' || market || scope !== 'user';
+  useSettingsLeave((action) => {
+    if (confirmNativeDiscard(dirty)) action();
+  }, dirty);
   return (
     <form
       className="space-y-3 rounded-xl border border-border p-4"

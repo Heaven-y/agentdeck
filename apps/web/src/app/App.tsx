@@ -1,6 +1,6 @@
 import { projectsApi, projectsKeys } from '../features/projects/api';
 import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, type MutableRefObject } from 'react';
 import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { useChat } from '../features/chat/chat-store';
@@ -15,6 +15,8 @@ import { Sidebar } from './Sidebar';
 import { SessionPane } from './SessionPane';
 import { ConversationSidebar } from './ConversationSidebar';
 import { WorkspaceLayout } from './WorkspaceLayout';
+import { SettingsWorkspace, useSettingsWorkspace } from './SettingsWorkspace';
+import type { SettingsLeave } from '../features/settings/use-model-settings';
 import { useProjectNavigation } from './use-project-navigation';
 import { useOtherSessions, useProjectSessions } from '../features/projects/use-project-sessions';
 import { useConversationSidebar } from './use-conversation-sidebar';
@@ -78,19 +80,27 @@ function OpenPalette({
   );
 }
 
-function OpenSettings({ opened, project, close }: { opened: boolean; project?: Workspace; close(): void }) {
+function OpenSettings({
+  project,
+  projects,
+  guardRef,
+  close,
+}: {
+  project?: Workspace;
+  projects?: Workspace[];
+  guardRef: MutableRefObject<SettingsLeave>;
+  close(): void;
+}) {
   return (
-    opened && (
-      <Suspense
-        fallback={
-          <p role="status" className="absolute right-4 top-14 z-50 rounded-md border border-border bg-card p-3 text-sm">
-            正在打开设置…
-          </p>
-        }
-      >
-        <SettingsDialog key={project?.id ?? 'none'} project={project} onClose={close} />
-      </Suspense>
-    )
+    <Suspense
+      fallback={
+        <p role="status" className="p-6 text-sm">
+          正在打开设置…
+        </p>
+      }
+    >
+      <SettingsDialog project={project} projects={projects} guardRef={guardRef} onClose={close} />
+    </Suspense>
   );
 }
 
@@ -130,18 +140,20 @@ export function App() {
   useEffect(() => {
     if (productSettings.data) setDefaults(productSettings.data.settings);
   }, [productSettings.data, setDefaults]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const plugins = usePluginPages();
   const activePlugin = plugins.active;
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const showPlugin = (id?: string) => {
-    setArchiveOpen(false);
-    plugins.show(id);
-  };
-  const showArchive = () => {
-    plugins.show(undefined);
-    setArchiveOpen(true);
-  };
+  const settings = useSettingsWorkspace(!activePlugin && !archiveOpen);
+  const showPlugin = (id?: string) =>
+    settings.navigate(() => {
+      setArchiveOpen(false);
+      plugins.show(id);
+    });
+  const showArchive = () =>
+    settings.navigate(() => {
+      plugins.show(undefined);
+      setArchiveOpen(true);
+    });
   const closeArchive = () => {
     setArchiveOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="更多"]')?.focus());
@@ -151,7 +163,7 @@ export function App() {
   // 绑定服务器要拿到具体的项目对象，不能只记一个开关。
   const [bindingProject, setBindingProject] = useState<Workspace | undefined>(undefined);
   const dock = useConversationSidebar();
-  const conversationVisible = !activePlugin && !archiveOpen;
+  const conversationVisible = settings.conversationVisible;
   const conversationId = useChat((s) => s.conversationId);
   useEffect(() => {
     useChat.setState({ conversationVisible, ...(conversationVisible ? { unread: false } : {}) });
@@ -176,25 +188,28 @@ export function App() {
   } = useProjectSessions(projects.data, sessionSearch);
   const [showOtherSessions, setShowOtherSessions] = useState(false);
   const others = useOtherSessions(showOtherSessions, sessionSearch);
-  const openConversation = (id: string) => {
-    setArchiveOpen(false);
-    plugins.show(undefined);
-    useChat.getState().openConversation(id);
-  };
-  const openSession = (targetProject: string, session: SessionSummary) => {
-    setArchiveOpen(false);
-    plugins.show(undefined);
-    if (useChat.getState().workspaceId !== targetProject)
-      useChat.getState().selectWorkspace(targetProject, { restore: false });
-    void useChat.getState().openSession(session);
-  };
-  const startSession = (targetProject: string, agent: AgentKind) => {
-    setArchiveOpen(false);
-    plugins.show(undefined);
-    const chat = useChat.getState();
-    if (chat.workspaceId !== targetProject) chat.selectWorkspace(targetProject, { restore: false });
-    useChat.getState().newSession(agent);
-  };
+  const openConversation = (id: string) =>
+    settings.navigate(() => {
+      setArchiveOpen(false);
+      plugins.show(undefined);
+      useChat.getState().openConversation(id);
+    });
+  const openSession = (targetProject: string, session: SessionSummary) =>
+    settings.navigate(() => {
+      setArchiveOpen(false);
+      plugins.show(undefined);
+      if (useChat.getState().workspaceId !== targetProject)
+        useChat.getState().selectWorkspace(targetProject, { restore: false });
+      void useChat.getState().openSession(session);
+    });
+  const startSession = (targetProject: string, agent?: AgentKind) =>
+    settings.navigate(() => {
+      setArchiveOpen(false);
+      plugins.show(undefined);
+      const chat = useChat.getState();
+      if (chat.workspaceId !== targetProject) chat.selectWorkspace(targetProject, { restore: false });
+      useChat.getState().newSession(agent);
+    });
 
   return (
     <div className="flex h-full min-w-[800px] flex-col">
@@ -216,119 +231,135 @@ export function App() {
         actions={{
           plugins: plugins.commands.map((command) => ({
             ...command,
-            run: () => {
-              if (!command.run()) return false;
-              setArchiveOpen(false);
-              return true;
-            },
+            run: () =>
+              settings.navigate(() => {
+                if (!command.run()) return false;
+                setArchiveOpen(false);
+                return true;
+              }),
           })),
-          conversation: () => {
-            setArchiveOpen(false);
-            plugins.show(undefined);
-            return true;
-          },
+          conversation: () =>
+            settings.navigate(() => {
+              setArchiveOpen(false);
+              plugins.show(undefined);
+            }),
+          newSession: () => (current ? startSession(current.id) : false),
+          openSession: (session) => (current ? openSession(current.id, session) : false),
+          selectWorkspace: (id) =>
+            settings.navigate(() => {
+              setArchiveOpen(false);
+              plugins.show(undefined);
+              useChat.getState().selectWorkspace(id, { restore: false });
+            }),
           settings: () => {
-            setSettingsOpen(true);
+            // 命令面板先卸载并恢复其触发点，再记录设置页的返回焦点。
+            requestAnimationFrame(settings.open);
             return true;
           },
         }}
       />
-      <OpenSettings opened={settingsOpen} project={current} close={() => setSettingsOpen(false)} />
-      <WorkspaceLayout
-        dockOpen={sidebarVisible}
-        dock={
-          <ConversationSidebar
-            workspace={current}
-            open={sidebarVisible}
-            close={dock.hide}
-            settings={() => setSettingsOpen(true)}
-          />
-        }
-        navigation={
-          <Sidebar
-            pages={
-              <PluginNavigation
-                plugins={plugins.list}
-                selected={plugins.selected}
-                open={showPlugin}
-                manage={() => plugins.setManagerOpen(true)}
-              />
-            }
-            search={sessionSearch}
-            onSearch={setSessionSearch}
-            sessionPages={{ hasMore, loadingMore, more }}
-            otherPages={others}
-            projects={projects.data ?? []}
-            sessionsByProject={sessionsByProject}
-            sessionErrorsByProject={errorsByProject}
-            onRetrySessions={retryProject}
-            otherSessions={others.sessions}
-            loadingOtherSessions={others.loading}
-            otherSessionsError={others.error}
-            onShowOtherSessions={setShowOtherSessions}
-            loadingSessions={sessionsLoading}
-            currentProjectId={current?.id}
-            onAddProject={(initial) => setAddingProject(initial ?? {})}
-            onManageProject={(project, action) => setManagingProject({ project, action })}
-            onNewSession={startSession}
-            onOpenConversation={openConversation}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenCommands={palette.open}
-            onOpenArchive={showArchive}
-            onSelectSession={openSession}
-            onBindServer={setBindingProject}
+      <SettingsWorkspace
+        opened={settings.opened}
+        settings={
+          <OpenSettings
+            project={current}
+            projects={projects.data}
+            guardRef={settings.guardRef}
+            close={settings.close}
           />
         }
       >
-        <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
-          <ConversationTabs projects={projects.data ?? []} visible={conversationVisible} onOpen={openConversation} />
-          <div className="min-h-0 flex-1">
-            <div
-              hidden={!conversationVisible}
-              inert={!conversationVisible}
-              className={conversationVisible ? 'flex h-full min-h-0 flex-col' : 'hidden'}
-            >
-              <div
-                id="conversation-panel"
-                role="tabpanel"
-                aria-label="会话内容"
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <TopBar workspace={current} sidebarOpen={dock.open} onToggleSidebar={dock.toggle} />
-                <EnvironmentSummary onOpenSettings={() => setSettingsOpen(true)} />
-                <SessionPane
-                  project={current}
-                  pending={projects.isPending}
-                  error={projects.error}
-                  onAddProject={() => setAddingProject({})}
+        <WorkspaceLayout
+          dockOpen={sidebarVisible}
+          dock={
+            <ConversationSidebar workspace={current} open={sidebarVisible} close={dock.hide} settings={settings.open} />
+          }
+          navigation={
+            <Sidebar
+              pages={
+                <PluginNavigation
+                  plugins={plugins.list}
+                  selected={plugins.selected}
+                  open={showPlugin}
+                  manage={() => plugins.setManagerOpen(true)}
                 />
-              </div>
-            </div>
-            <PluginWorkspace
-              plugin={activePlugin}
-              builtinPlugins={plugins.builtinPlugins}
-              project={current}
-              close={() => plugins.show(undefined)}
-              command={plugins.command}
+              }
+              search={sessionSearch}
+              onSearch={setSessionSearch}
+              sessionPages={{ hasMore, loadingMore, more }}
+              otherPages={others}
+              projects={projects.data ?? []}
+              sessionsByProject={sessionsByProject}
+              sessionErrorsByProject={errorsByProject}
+              onRetrySessions={retryProject}
+              otherSessions={others.sessions}
+              loadingOtherSessions={others.loading}
+              otherSessionsError={others.error}
+              onShowOtherSessions={setShowOtherSessions}
+              loadingSessions={sessionsLoading}
+              currentProjectId={current?.id}
+              onAddProject={(initial) => setAddingProject(initial ?? {})}
+              onManageProject={(project, action) => setManagingProject({ project, action })}
+              onNewSession={startSession}
+              onOpenConversation={openConversation}
+              onOpenSettings={settings.open}
+              onOpenCommands={palette.open}
+              onOpenArchive={showArchive}
+              onSelectSession={openSession}
+              onBindServer={setBindingProject}
             />
-            {archiveOpen && (
-              <Suspense
-                fallback={
-                  <p role="status" className="p-4">
-                    正在打开归档会话…
-                  </p>
-                }
+          }
+        >
+          <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
+            <ConversationTabs projects={projects.data ?? []} visible={conversationVisible} onOpen={openConversation} />
+            <div className="min-h-0 flex-1">
+              <div
+                hidden={!conversationVisible}
+                inert={!conversationVisible}
+                className={conversationVisible ? 'flex h-full min-h-0 flex-col' : 'hidden'}
               >
-                <ArchivedSessionsPage
-                  projects={projects.data ?? []}
-                  close={closeArchive}
-                  addProject={setAddingProject}
-                />
-              </Suspense>
-            )}
+                <div
+                  id="conversation-panel"
+                  role="tabpanel"
+                  aria-label="会话内容"
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <TopBar workspace={current} sidebarOpen={dock.open} onToggleSidebar={dock.toggle} />
+                  <EnvironmentSummary onOpenSettings={settings.open} />
+                  <SessionPane
+                    project={current}
+                    pending={projects.isPending}
+                    error={projects.error}
+                    onAddProject={() => setAddingProject({})}
+                  />
+                </div>
+              </div>
+              <PluginWorkspace
+                plugin={activePlugin}
+                builtinPlugins={plugins.builtinPlugins}
+                project={current}
+                close={() => showPlugin(undefined)}
+                command={plugins.command}
+              />
+              {archiveOpen && (
+                <Suspense
+                  fallback={
+                    <p role="status" className="p-4">
+                      正在打开归档会话…
+                    </p>
+                  }
+                >
+                  <ArchivedSessionsPage
+                    projects={projects.data ?? []}
+                    close={closeArchive}
+                    addProject={setAddingProject}
+                  />
+                </Suspense>
+              )}
+            </div>
           </div>
-        </div>
-      </WorkspaceLayout>
+        </WorkspaceLayout>
+      </SettingsWorkspace>
       <NativeInteractionInbox />
     </div>
   );

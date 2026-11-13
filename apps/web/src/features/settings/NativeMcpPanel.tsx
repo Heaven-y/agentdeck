@@ -6,6 +6,7 @@ import { nativeScopeNames, nativeSettingsError } from './native-resource-labels'
 import NativeMcpEditor from './NativeMcpEditor';
 import { McpOAuthCard } from './NativeMcpRuntime';
 import { NativeMcpRow } from './NativeMcpRow';
+import { useGuardedSettingsNavigation } from './settings-navigation';
 type Editor = { entry?: NativeMcpEntry; source: NativeMcpSource };
 function Sources({
   catalog,
@@ -158,6 +159,7 @@ export default function NativeMcpPanel({
   onChanged(): void;
 }) {
   const [instanceId, setInstanceId] = useState('');
+  const leave = useGuardedSettingsNavigation();
   const { catalog, error, setError } = useCatalog(context, reload, instanceId);
   const current = catalog && (catalog.instanceId ?? '') === instanceId;
   return (
@@ -170,7 +172,7 @@ export default function NativeMcpPanel({
           {error}
         </p>
       )}
-      {catalog && <Instances catalog={catalog} id={instanceId} setId={setInstanceId} />}
+      {catalog && <Instances catalog={catalog} id={instanceId} setId={(id) => leave(() => setInstanceId(id))} />}
       {current ? (
         <CatalogBody
           key={instanceId}

@@ -6,6 +6,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { NativeConfigAgent, NativeResourceDocument } from '@agentdeck/shared/settings';
 import NativeResourceEditor from '../../../src/features/settings/NativeResourceEditor';
+import {
+  SettingsNavigationContext,
+  guardSettingsNavigation,
+  type SettingsNavigation,
+} from '../../../src/features/settings/settings-navigation';
 
 function missing(agent: NativeConfigAgent = 'claude'): NativeResourceDocument {
   return {
@@ -46,12 +51,6 @@ beforeEach(() => {
     getClientRects: { configurable: true, value: () => [] },
     getBoundingClientRect: { configurable: true, value: () => new DOMRect() },
   });
-  HTMLDialogElement.prototype.showModal = function () {
-    this.open = true;
-  };
-  HTMLDialogElement.prototype.close = function () {
-    this.open = false;
-  };
   vi.spyOn(settingsApi, 'openNativeResource').mockImplementation(async ({ agent }) =>
     missing(agent as NativeConfigAgent),
   );
@@ -72,6 +71,7 @@ it('空配置模板只修改草稿，明确保存才创建文件，成功后以�
   const mounted = mount();
   fireEvent.click(await screen.findByRole('button', { name: '插入最小模板' }));
   expect(JSON.parse(editor().state.doc.toString())).toEqual({});
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(settingsApi.saveNativeResource).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '关闭设置' }));
   expect(mounted.close).not.toHaveBeenCalled();
@@ -85,6 +85,31 @@ it('空配置模板只修改草稿，明确保存才创建文件，成功后以�
   );
   expect(screen.queryByRole('button', { name: '插入最小模板' })).toBeNull();
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存文件' }).disabled).toBe(true);
+});
+
+it('原生正文通过统一导航保护草稿，取消离开保留正文，确认后清除敏感内容', async () => {
+  const navigation: SettingsNavigation = new Map();
+  const leave = vi.fn();
+  render(
+    <SettingsNavigationContext.Provider value={navigation}>
+      <NativeResourceEditor
+        context={{ agent: 'claude' }}
+        resource={missing().resource}
+        onClose={vi.fn()}
+        onBack={vi.fn()}
+      />
+    </SettingsNavigationContext.Provider>,
+  );
+  await screen.findByRole('textbox', { name: '原生文件内容' });
+  edit('{"env":{"SYNTHETIC_VALUE":"草稿"}}');
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).not.toHaveBeenCalled();
+  expect(editor().state.doc.toString()).toContain('草稿');
+  expect(window.confirm).toHaveBeenCalledTimes(1);
+  vi.mocked(window.confirm).mockReturnValue(true);
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
 });
 
 it('Codex使用注释模板；非空配置与已填写草稿不可被模板覆盖', async () => {

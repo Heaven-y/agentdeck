@@ -56,3 +56,20 @@ export type NativeResourceSaveInput = { content: string; revision: string };
 export type NativeResourceCreateInput = { rootId: string; name: string; content: string };
 /** 保存不回显正文，避免常规变更响应再次携带敏感值。 */
 export type NativeResourceSaved = { resource: NativeResource; revision: string };
+
+/** Claude Auto Memory 只返回设置状态，不把含凭据的原生 settings.json 传给前端。 */
+export type ClaudeAutoMemoryState =
+  | {
+      scope: 'user';
+      enabled: boolean;
+      override: boolean | null;
+      localOverride: null;
+      userEnabled: boolean;
+    }
+  | {
+      scope: 'project';
+      enabled: boolean;
+      override: boolean | null;
+      localOverride: boolean | null;
+      userEnabled: boolean;
+    };

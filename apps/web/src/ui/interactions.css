@@ -85,11 +85,6 @@ dialog::backdrop {
   background: #10182842;
   backdrop-filter: blur(3px);
 }
-.settings-dialog {
-  box-shadow:
-    0 24px 80px #11182730,
-    0 4px 16px #1118270d;
-}
 .settings-navigation {
   background: var(--color-sidebar);
 }

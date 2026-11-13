@@ -13,6 +13,7 @@ import { nativeSettingsError } from './native-resource-labels';
 import { NativePluginOperation, pluginTaskActive, pluginScopeLabel } from './NativePluginOperation';
 import { NativePluginInstall } from './NativePluginInstall';
 import { NativePluginDetails } from './NativePluginDetails';
+import { useGuardedSettingsNavigation } from './settings-navigation';
 type DetailSelection = { entry: NativePluginEntry; operationId?: string };
 const visibleDetail = (detail: DetailSelection | undefined, configuration?: Operation) =>
   configuration?.status === 'succeeded' ? undefined : detail?.entry;
@@ -85,6 +86,7 @@ export default function NativePluginsPanel({
   onChanged(): void;
 }) {
   const { agent, projectId } = context;
+  const leave = useGuardedSettingsNavigation();
   const [catalog, setCatalog] = useState<NativePluginCatalog>();
   const [operations, setOperations] = useState<Operation[]>([]);
   const [error, setError] = useState('');
@@ -255,11 +257,9 @@ export default function NativePluginsPanel({
                 entry={entry}
                 busy={locked}
                 onPrepare={prepare}
-                onDetail={() =>
-                  setDetail((current) =>
-                    current?.entry.id === entry.id && configuration?.status !== 'succeeded' ? current : { entry },
-                  )
-                }
+                onDetail={() => {
+                  if (visibleEntry?.id !== entry.id) leave(() => setDetail({ entry }));
+                }}
               />
             ))}
             {!catalog.entries.length && <p className="text-sm text-muted-foreground">此范围没有发现已安装插件。</p>}

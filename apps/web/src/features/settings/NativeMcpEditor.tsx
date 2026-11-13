@@ -7,7 +7,8 @@ import type {
 } from '@agentdeck/shared/settings';
 import { inputClass, buttonClass } from '../../ui/styles';
 import { nativeMcpApi } from './native-mcp-api';
-import { nativeSettingsError } from './native-resource-labels';
+import { confirmNativeDiscard, nativeSettingsError } from './native-resource-labels';
+import { useSettingsLeave } from './settings-navigation';
 type Secret = NonNullable<NativeMcpConfigInput['url']>;
 type SecretMap = NonNullable<NativeMcpConfigInput['env']>;
 function SecretField({ name, value, onChange }: { name: string; value: Secret; onChange(value: Secret): void }) {
@@ -142,6 +143,11 @@ export default function NativeMcpEditor({
   const [headers, setHeaders] = useState<SecretMap>(initial.headers);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const leave = (action: () => void) => {
+    if (!busy && confirmNativeDiscard(dirty)) action();
+  };
+  useSettingsLeave(leave, dirty || busy);
   async function save() {
     setBusy(true);
     setError('');
@@ -167,6 +173,8 @@ export default function NativeMcpEditor({
   return (
     <form
       className="space-y-4 rounded-lg border border-border p-4"
+      // 字段名称和切回“保留”的秘密仍可能含有尚未提交的本地草稿。
+      onChangeCapture={() => setDirty(true)}
       onSubmit={(e) => {
         e.preventDefault();
         void save();
@@ -241,7 +249,7 @@ export default function NativeMcpEditor({
         <button className={buttonClass('primary')} disabled={busy}>
           {busy ? '正在保存…' : '保存 MCP 配置'}
         </button>
-        <button type="button" className={buttonClass('outline')} disabled={busy} onClick={onClose}>
+        <button type="button" className={buttonClass('outline')} disabled={busy} onClick={() => leave(onClose)}>
           取消编辑
         </button>
       </div>

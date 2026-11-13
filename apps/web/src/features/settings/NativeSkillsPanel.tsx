@@ -10,8 +10,9 @@ import type {
 } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { nativeManagementApi } from './native-management-api';
-import { nativeScopeNames, nativeSettingsError } from './native-resource-labels';
+import { confirmNativeDiscard, nativeScopeNames, nativeSettingsError } from './native-resource-labels';
 import { NativeSkillImport } from './NativeSkillImport';
+import { useGuardedSettingsNavigation, useSettingsLeave } from './settings-navigation';
 
 const states: Record<NativeSkillState, string> = {
   inherit: '默认继承',
@@ -62,6 +63,7 @@ function useSkillDraft(entry: NativeSkillEntry) {
     revision: draft?.revision ?? entry.revision,
     setValue,
     clear,
+    dirty: Object.keys(drafts).length > 0,
     outdated: !!draft && draft.revision !== entry.revision,
   };
 }
@@ -81,6 +83,11 @@ function SkillRow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const leave = (action: () => void) => {
+    if (!busy && confirmNativeDiscard(draft.dirty)) action();
+  };
+  useSettingsLeave(leave, draft.dirty || busy);
+  const navigate = useGuardedSettingsNavigation(leave);
   async function change(input: Omit<NativeSkillChangeInput, 'id' | 'revision'>) {
     setError('');
     setSaved(false);
@@ -166,7 +173,7 @@ function SkillRow({
             type="button"
             className={buttonClass('outline')}
             disabled={busy}
-            onClick={() => onEdit(entry.resourceId!)}
+            onClick={() => navigate(() => onEdit(entry.resourceId!))}
           >
             编辑 SKILL.md
           </button>
@@ -239,6 +246,7 @@ export default function NativeSkillsPanel({
   onCreate(root: NativeResourceRoot): void;
   onChanged(): void;
 }) {
+  const leave = useGuardedSettingsNavigation();
   const [catalog, setCatalog] = useState<NativeSkillsCatalog>();
   const [error, setError] = useState('');
   const [generation, setGeneration] = useState(0);
@@ -289,7 +297,12 @@ export default function NativeSkillsPanel({
             {catalog.roots
               .filter((root) => root.editable)
               .map((root) => (
-                <button key={root.id} className={buttonClass('outline')} type="button" onClick={() => onCreate(root)}>
+                <button
+                  key={root.id}
+                  className={buttonClass('outline')}
+                  type="button"
+                  onClick={() => leave(() => onCreate(root))}
+                >
                   新建 Skill · {nativeScopeNames[root.scope]}
                 </button>
               ))}
