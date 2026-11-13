@@ -34,6 +34,71 @@ afterEach(async () => {
 });
 
 describe('CLI 原生资源目录与编辑', () => {
+  it('切换 Claude Auto Memory 时保留其他原生设置且默认启用', async () => {
+    const { homeDir, service, saved } = await fixture();
+    const file = path.join(homeDir, '.claude', 'settings.json');
+    await write(file, '{\r\n  "apiKey": "private-token",\r\n  "other": { "enabled": true }\r\n}\r\n');
+    expect(await service.readAutoMemory()).toEqual({
+      scope: 'user',
+      enabled: true,
+      override: null,
+      localOverride: null,
+      userEnabled: true,
+    });
+
+    expect(await service.setAutoMemory(false)).toMatchObject({ scope: 'user', enabled: false, override: false });
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
+      apiKey: 'private-token',
+      other: { enabled: true },
+      autoMemoryEnabled: false,
+    });
+    await service.setAutoMemory(false);
+    expect(saved).toEqual(['claude']);
+    expect(await service.setAutoMemory(true)).toMatchObject({ enabled: true, override: true });
+    expect(saved).toEqual(['claude', 'claude']);
+  });
+
+  it('项目记忆可覆盖或继承用户值，不回传原生配置正文', async () => {
+    const { homeDir, project, service } = await fixture();
+    await write(path.join(homeDir, '.claude', 'settings.json'), '{"autoMemoryEnabled":false}');
+    const file = path.join(project.dir, '.claude', 'settings.json');
+    await write(file, '{"customSetting":"keep"}');
+    expect(await service.readAutoMemory(project)).toEqual({
+      scope: 'project',
+      enabled: false,
+      override: null,
+      localOverride: null,
+      userEnabled: false,
+    });
+
+    const enabled = await service.setAutoMemory(true, project);
+    expect(enabled).toMatchObject({ scope: 'project', enabled: true, override: true, userEnabled: false });
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
+      customSetting: 'keep',
+      autoMemoryEnabled: true,
+    });
+    expect(await service.setAutoMemory(false, project, 'local')).toMatchObject({
+      enabled: false,
+      override: true,
+      localOverride: false,
+    });
+    expect(await service.setAutoMemory(null, project, 'local')).toMatchObject({
+      enabled: true,
+      override: true,
+      localOverride: null,
+    });
+    const inherited = await service.setAutoMemory(null, project);
+    expect(inherited).toMatchObject({ scope: 'project', enabled: false, override: null, userEnabled: false });
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ customSetting: 'keep' });
+    await expect(service.setAutoMemory(null)).rejects.toMatchObject({ code: 'invalid_request' });
+  });
+
+  it('拒绝把非法记忆设置值解释成已启用或关闭', async () => {
+    const { homeDir, service } = await fixture();
+    await write(path.join(homeDir, '.claude', 'settings.json'), '{"autoMemoryEnabled":"false"}');
+    await expect(service.readAutoMemory()).rejects.toMatchObject({ code: 'invalid_json' });
+  });
+
   it('Antigravity 显示真实全局设置和项目 MCP，目录只返回元数据', async () => {
     const { homeDir, project, service } = await fixture();
     await write(path.join(homeDir, '.gemini', 'antigravity-cli', 'settings.json'), '{"secret":"sentinel-private"}');

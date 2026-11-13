@@ -2,6 +2,8 @@
 
 以各 CLI 的原生文件与加载规则为准。常用模型设置通过表单直接修改用户原生文件，完整文件仍可从高级入口编辑；是否信任项目、是否启动 MCP、如何合并规则和权限仍由 CLI 决定。
 
+Claude Code 2.1.234+ 的 Auto Memory 默认启用，可在用户 `settings.json` 设置 `autoMemoryEnabled`，或在项目 `.claude/settings.json` 覆盖。本机 `.claude/settings.local.json` 也可单独覆盖该项目值，AgentDeck 按本机项目、共享项目、用户默认显示并控制三层。记忆页只返回开关状态，并通过原生文件事务更新所选层字段，其他配置保留且正文不进入前端；项目各层都可继承上一级。记忆内容由 Claude 按 Git 仓库保存在本机，使用原生 `/memory` 查看和整理；环境变量与管理员策略仍可能改变实际生效状态。Codex 与 Antigravity 当前适配器没有确认可单独控制的等价自动记忆开关，其原生指令文件继续归“原生文件”管理。依据：[Claude Code memory](https://code.claude.com/docs/en/memory)。
+
 Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环境变量名和原生认证。直接填写会写入原生配置中的明文令牌；环境变量只配置变量名，值由 CLI 启动环境提供；原生认证沿用 Codex 的 ChatGPT 或 API Key 登录。`requires_openai_auth = true` 时原生忽略 `env_key`，表单也按这一优先级显示，普通模型修改不清除两者原文。凭据命令、网关 OAuth、AWS 或 Authorization 请求头继续走高级配置保护。依据：[认证说明](https://learn.chatgpt.com/docs/auth#alternative-model-providers)、[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 
 ## 配置入口

@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi, type MockInstance } from 'vitest';
 import { ProductSettingsSchema, type LaunchEnvironmentDocument } from '@agentdeck/shared/settings';
 import SettingsDialog from '../../../src/features/settings/SettingsDialog';
+import LaunchEnvironmentPanel from '../../../src/features/settings/LaunchEnvironmentPanel';
+import {
+  SettingsNavigationContext,
+  guardSettingsNavigation,
+  type SettingsNavigation,
+} from '../../../src/features/settings/settings-navigation';
 import { queryClient } from '../../../src/lib/query-client';
 
 const environment: LaunchEnvironmentDocument = {
@@ -32,6 +38,7 @@ async function openEnvironment() {
       <SettingsDialog onClose={vi.fn()} />
     </QueryClientProvider>,
   );
+  fireEvent.click(await screen.findByRole('button', { name: '模型与连接' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Codex' }));
   fireEvent.click(await screen.findByText('高级设置'));
   fireEvent.click(await screen.findByRole('button', { name: 'CLI 环境变量' }));
@@ -39,12 +46,6 @@ async function openEnvironment() {
   return screen.findByLabelText('API 密钥模式');
 }
 beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = function () {
-    this.open = true;
-  };
-  HTMLDialogElement.prototype.close = function () {
-    this.open = false;
-  };
   response = environment;
   conflict = false;
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -77,6 +78,7 @@ afterEach(async () => {
 
 it('启动环境只显示来源，新值显式保存且保存后清空；重启由单独操作触发', async () => {
   await openEnvironment();
+  expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.getByText('工作台设置')).toBeTruthy();
   expect(screen.getByText('继承进程环境')).toBeTruthy();
   const secret = screen.getByLabelText<HTMLInputElement>('API 密钥新值');
@@ -117,6 +119,27 @@ it('停用和恢复继承不发送旧密钥；冲突保留新值与未保存保�
   expect(screen.getByRole('heading', { name: 'CLI 环境变量 · Codex' })).toBeTruthy();
   expect(window.confirm).toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('API 密钥模式'), { target: { value: 'inherit' } });
+  expect(screen.queryByLabelText('API 密钥新值')).toBeNull();
+});
+
+it('环境变量新值接入统一导航，取消离开保留草稿，确认离开后清除', async () => {
+  const navigation: SettingsNavigation = new Map();
+  const leave = vi.fn();
+  render(
+    <SettingsNavigationContext.Provider value={navigation}>
+      <LaunchEnvironmentPanel agent="codex" embedded onBack={vi.fn()} onClose={vi.fn()} />
+    </SettingsNavigationContext.Provider>,
+  );
+  const secret = await screen.findByLabelText<HTMLInputElement>('API 密钥新值');
+  fireEvent.change(secret, { target: { value: 'synthetic-sensitive-draft' } });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).not.toHaveBeenCalled();
+  expect(secret.value).toBe('synthetic-sensitive-draft');
+  vi.mocked(window.confirm).mockReturnValue(true);
+  act(() => guardSettingsNavigation(navigation, leave));
+  expect(leave).toHaveBeenCalledTimes(1);
   expect(screen.queryByLabelText('API 密钥新值')).toBeNull();
 });
 

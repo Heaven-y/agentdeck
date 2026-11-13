@@ -12,6 +12,9 @@ import { useUiPreferences } from '../ui/ui-preferences';
 
 export type PaletteActions = {
   conversation?(): boolean;
+  newSession?(): boolean;
+  openSession?(session: SessionSummary): boolean;
+  selectWorkspace?(id: string): boolean;
   plugins?: Array<{ id: string; label: string; run(): boolean }>;
   terminal?(): boolean;
   settings(): boolean;
@@ -28,6 +31,7 @@ function commonActions(actions: PaletteActions, id: string): Action[] {
       label: '新会话',
       workspace: true,
       run: () => {
+        if (actions.newSession) return actions.newSession();
         if (actions.conversation?.() === false) return false;
         useChat.getState().newSession();
         return true;
@@ -157,6 +161,7 @@ export default function CommandPalette({
       label: session.title,
       workspace: true,
       run: () => {
+        if (actions.openSession) return actions.openSession(session);
         if (actions.conversation?.() === false) return false;
         void useChat.getState().openSession(session);
         return true;
@@ -202,8 +207,12 @@ export default function CommandPalette({
                     setError('项目已移除。');
                     return;
                   }
-                  if (actions.conversation?.() === false) return;
-                  useChat.getState().selectWorkspace(target.id, { restore: false });
+                  if (actions.selectWorkspace) {
+                    if (!actions.selectWorkspace(target.id)) return;
+                  } else {
+                    if (actions.conversation?.() === false) return;
+                    useChat.getState().selectWorkspace(target.id, { restore: false });
+                  }
                   close();
                 }}
               >

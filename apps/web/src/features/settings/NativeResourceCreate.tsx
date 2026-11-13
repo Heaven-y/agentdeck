@@ -6,12 +6,14 @@ import type { NativeResourceRoot, NativeResourceSaved } from '@agentdeck/shared/
 import { CodeEditor } from '../../ui/CodeEditor';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { SettingsDetailDialog } from './SettingsDetailDialog';
+import { useSettingsLeave } from './settings-navigation';
 import { confirmNativeDiscard, nativeSettingsError } from './native-resource-labels';
 import { invalidateNativeCapabilities } from '../../cli/shared/capability-cache';
 
 type CreateProps = {
   context: NativeResourceContext;
   root: NativeResourceRoot;
+  embedded?: boolean;
   onBack(): void;
   onClose(): void;
 };
@@ -86,13 +88,15 @@ function useNativeResourceCreate({ context, root }: Pick<CreateProps, 'context' 
 }
 type CreateState = ReturnType<typeof useNativeResourceCreate>;
 
-export default function NativeResourceCreate({ context, root, onBack, onClose }: CreateProps) {
+export default function NativeResourceCreate({ context, root, embedded, onBack, onClose }: CreateProps) {
   const state = useNativeResourceCreate({ context, root });
+  useSettingsLeave(state.leave);
   return (
     <SettingsDetailDialog
       title={`新建${state.isSkill ? ' Skill' : root.kind === 'agents' ? '代理定义' : '规则'} · ${root.label}`}
       backLabel="返回资源目录"
       busy={state.saving}
+      embedded={embedded}
       onBack={() => state.leave(onBack)}
       onClose={() => state.leave(onClose)}
       footer={<CreateFooter state={state} editable={root.editable} />}

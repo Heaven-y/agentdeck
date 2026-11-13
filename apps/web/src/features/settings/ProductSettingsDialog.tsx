@@ -1,183 +1,140 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { MonitorCheck, Settings2, SlidersHorizontal, Sparkles, X } from 'lucide-react';
-import type { AgentKind } from '@agentdeck/shared/conversation';
-import { AgentIcon } from '../../ui/BrandIcons';
-import { buttonClass } from '../../ui/styles';
+import { lazy, Suspense, useLayoutEffect, useRef } from 'react';
+import { ArrowLeft, Settings2 } from 'lucide-react';
+import { buttonClass, inputClass } from '../../ui/styles';
 import { EnvironmentReport } from './EnvironmentReport';
 import { GeneralSettingsPanel } from './GeneralSettingsPanel';
+import { NativeMemorySettings } from './NativeMemorySettings';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
-import { nativeAgentNames } from './native-resource-labels';
-import type { SettingsLeave } from './use-model-settings';
+import { SettingsNavigationContext } from './settings-navigation';
+import { SettingsNavigation, AgentNavigation } from './SettingsPageNavigation';
+import {
+  isModelPage,
+  resourceCategory,
+  useSettingsPage,
+  type SettingsPageProps,
+  type SettingsPageState,
+} from './use-settings-page';
+export type { SettingsPage } from './use-settings-page';
+const NativeResources = lazy(() => import('./NativeResourcesDialog'));
+const LaunchEnvironment = lazy(() => import('./LaunchEnvironmentPanel'));
 
-export type SettingsPage = AgentKind | 'general' | 'environment';
-const agentPages: AgentKind[] = ['claude', 'codex', 'antigravity'];
-const isModelPage = (page: SettingsPage): page is AgentKind => page !== 'general' && page !== 'environment';
-const navigationClass = (selected: boolean) =>
-  `settings-navigation-item flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`;
-
-function SettingsNavigation({
-  page,
-  select,
-  openModels,
-}: {
-  page: SettingsPage;
-  select(page: SettingsPage): void;
-  openModels(): void;
-}) {
+function ResourceScope({ state, label = '资源范围' }: { state: SettingsPageState; label?: string }) {
   return (
-    <nav
-      aria-label="设置分类"
-      className="settings-navigation flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-sidebar p-3 sm:w-44 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-4"
-    >
-      <button
-        type="button"
-        aria-current={page === 'general' ? 'page' : undefined}
-        className={navigationClass(page === 'general')}
-        onClick={() => select('general')}
+    <label className="flex shrink-0 flex-wrap items-center gap-3 text-sm">
+      <span>{label}</span>
+      <select
+        aria-label={label}
+        className={`${inputClass} max-w-sm`}
+        value={state.selectedProject?.id ?? ''}
+        onChange={(event) => {
+          const scope = event.target.value;
+          state.leave(() => state.setScope(scope));
+        }}
       >
-        <SlidersHorizontal aria-hidden className="size-4 shrink-0" />
-        <span className="whitespace-nowrap">通用设置</span>
-      </button>
-      <button
-        type="button"
-        aria-current={isModelPage(page) ? 'page' : undefined}
-        className={navigationClass(isModelPage(page))}
-        onClick={openModels}
-      >
-        <Sparkles aria-hidden className="size-4 shrink-0" />
-        <span className="whitespace-nowrap">模型与连接</span>
-      </button>
-      <button
-        type="button"
-        aria-current={page === 'environment' ? 'page' : undefined}
-        className={navigationClass(page === 'environment')}
-        onClick={() => select('environment')}
-      >
-        <MonitorCheck aria-hidden className="size-4 shrink-0" />
-        <span className="whitespace-nowrap">运行环境</span>
-      </button>
-    </nav>
-  );
-}
-
-function ModelNavigation({ page, select }: { page: AgentKind; select(page: SettingsPage): void }) {
-  return (
-    <header className="mb-5 shrink-0">
-      <h3 className="mb-4 text-sm font-semibold">模型与连接</h3>
-      <div
-        role="group"
-        aria-label="模型来源"
-        className="settings-model-tabs flex flex-wrap gap-1.5 border-b border-border pb-4"
-      >
-        {agentPages.map((agent) => (
-          <button
-            key={agent}
-            type="button"
-            aria-pressed={page === agent}
-            onClick={() => select(agent)}
-            className={`settings-model-tab flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${page === agent ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-          >
-            <AgentIcon agent={agent} className="size-4" />
-            <span>{nativeAgentNames[agent]}</span>
-          </button>
+        <option value="">全局 / 用户配置</option>
+        {state.choices.map((entry) => (
+          <option key={entry.id} value={entry.id}>
+            {entry.name}
+          </option>
         ))}
-      </div>
-    </header>
+      </select>
+    </label>
   );
 }
-
-/** 常用设置保持同一个侧栏；敏感表单离开分类即卸载。 */
-export default function ProductSettingsDialog({
-  onClose,
-  onNative,
-  onLaunchEnvironment,
-  page: controlledPage,
-  onPageChange,
-  initialPage = 'claude',
-  projectId,
-}: {
-  onClose(): void;
-  onNative(agent: AgentKind): void;
-  onLaunchEnvironment?(agent: AgentKind): void;
-  page?: SettingsPage;
-  onPageChange?(page: SettingsPage): void;
-  initialPage?: SettingsPage;
-  projectId?: string;
-}) {
-  const id = useId();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const guardRef = useRef<SettingsLeave>((action) => action());
-  const [localPage, setLocalPage] = useState<SettingsPage>(initialPage);
-  const page = controlledPage ?? localPage;
-  const modelPage = isModelPage(page);
-  const lastModel = useRef<AgentKind>(modelPage ? page : 'claude');
-  useEffect(() => {
-    if (isModelPage(page)) lastModel.current = page;
-  }, [page]);
-  const select = (next: SettingsPage) => {
-    if (next === page) return;
-    guardRef.current(() => {
-      setLocalPage(next);
-      onPageChange?.(next);
-    });
-  };
-  useEffect(() => {
-    const element = dialog.current;
-    const trigger = document.activeElement;
-    element?.showModal();
-    return () => {
-      element?.close();
-      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
-    };
-  }, []);
+function SettingsDetailContent({ state, props }: { state: SettingsPageState; props: SettingsPageProps }) {
+  const { page, currentAgent, selectedProject } = state;
+  if (page === 'environment') return <EnvironmentReport disabled={false} />;
+  if (page === 'memory')
+    return (
+      <NativeMemorySettings
+        agent={currentAgent}
+        projectId={selectedProject?.id}
+        onOpenFiles={() => state.select('files')}
+      />
+    );
+  const category = resourceCategory[page as keyof typeof resourceCategory];
+  const back = () => state.changePage(currentAgent);
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby={id}
-      onCancel={(event) => {
-        event.preventDefault();
-        guardRef.current(onClose);
-      }}
-      className="settings-dialog m-auto h-[min(720px,calc(100dvh-40px))] max-h-[calc(100dvh-40px)] w-[min(920px,calc(100vw-32px))] max-w-none overflow-hidden rounded-2xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/50"
-    >
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <h2 id={id} className="flex items-center gap-2 text-sm font-semibold">
-            <Settings2 aria-hidden className="size-4" />
-            设置
-          </h2>
+    <Suspense fallback={<p role="status">正在读取设置…</p>}>
+      {page === 'launch' ? (
+        <LaunchEnvironment key={currentAgent} embedded agent={currentAgent} onBack={back} onClose={props.onClose} />
+      ) : (
+        category && (
+          <NativeResources
+            key={JSON.stringify([currentAgent, selectedProject?.id, category])}
+            embedded
+            category={category}
+            agent={currentAgent}
+            project={selectedProject}
+            onBack={back}
+            onClose={props.onClose}
+          />
+        )
+      )}
+    </Suspense>
+  );
+}
+function SettingsContent({ state, props }: { state: SettingsPageState; props: SettingsPageProps }) {
+  if (state.page === 'general') return <GeneralSettingsPanel guardRef={state.formGuardRef} />;
+  if (isModelPage(state.page))
+    return (
+      <ModelSettingsPanel
+        key={state.page}
+        agent={state.page}
+        projectId={props.project?.id ?? props.projectId}
+        guardRef={state.formGuardRef}
+        onNative={state.openNative}
+        onLaunchEnvironment={state.openLaunch}
+      />
+    );
+  return <SettingsDetailContent state={state} props={props} />;
+}
+/** 设置占用应用工作区；表单离开统一经过保护，敏感内容不跨分类保留。 */
+export default function ProductSettingsDialog(props: SettingsPageProps) {
+  const state = useSettingsPage(props);
+  const scrollport = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollport.current) scrollport.current.scrollTop = 0;
+  }, [state.page, state.currentAgent, state.selectedProject?.id]);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+  const hasAgent = state.page !== 'general' && state.page !== 'environment';
+  const category = resourceCategory[state.page as keyof typeof resourceCategory];
+  const hasScope = !!category || state.page === 'memory';
+  return (
+    <SettingsNavigationContext.Provider value={state.guards}>
+      <section
+        aria-label="设置页面"
+        className="settings-page flex h-full min-h-0 w-full flex-1 flex-col bg-background text-foreground"
+      >
+        <header className="flex shrink-0 items-center gap-4 border-b border-border px-5 py-3">
           <button
             type="button"
             className={buttonClass('ghost')}
             aria-label="关闭设置"
-            onClick={() => guardRef.current(onClose)}
+            onClick={() => state.leave(props.onClose)}
           >
-            <X aria-hidden className="size-4" />
+            <ArrowLeft aria-hidden className="size-4" />
+            返回工作台
           </button>
+          <h1 ref={headingRef} tabIndex={-1} className="flex items-center gap-2 text-sm font-semibold outline-none">
+            <Settings2 aria-hidden className="size-4" />
+            设置
+          </h1>
         </header>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-          <SettingsNavigation page={page} select={select} openModels={() => select(lastModel.current)} />
-          <main
-            className={`settings-main flex min-h-0 min-w-0 flex-1 flex-col p-5 sm:p-6 ${modelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
-          >
-            {modelPage && <ModelNavigation page={page} select={select} />}
-            {page === 'general' ? (
-              <GeneralSettingsPanel guardRef={guardRef} />
-            ) : page === 'environment' ? (
-              <EnvironmentReport disabled={false} />
-            ) : (
-              <ModelSettingsPanel
-                key={page}
-                agent={page}
-                projectId={projectId}
-                guardRef={guardRef}
-                onNative={() => onNative(page)}
-                onLaunchEnvironment={onLaunchEnvironment ? () => onLaunchEnvironment(page) : undefined}
-              />
-            )}
-          </main>
+          <SettingsNavigation page={state.page} select={state.select} agent={state.currentAgent} />
+          <div className="settings-main flex min-h-0 min-w-0 flex-1 flex-col gap-5 p-5 sm:p-7">
+            {hasAgent && <AgentNavigation agent={state.currentAgent} select={state.selectAgent} />}
+            {hasScope && <ResourceScope state={state} label={state.page === 'memory' ? '记忆范围' : undefined} />}
+            <div ref={scrollport} className="min-h-0 flex-1 overflow-y-auto">
+              <SettingsContent state={state} props={props} />
+            </div>
+          </div>
         </div>
-      </div>
-    </dialog>
+      </section>
+    </SettingsNavigationContext.Provider>
   );
 }

@@ -28,6 +28,57 @@ afterEach(async () => {
 });
 
 describe('原生资源 HTTP 接口', () => {
+  it('Claude Auto Memory 接口只返回状态并支持项目覆盖', async () => {
+    const { app, homeDir, project } = await setup();
+    const userFile = path.join(homeDir, '.claude', 'settings.json');
+    await fs.mkdir(path.dirname(userFile), { recursive: true });
+    await fs.writeFile(userFile, '{"apiKey":"private-token"}');
+
+    const user = await app.inject({ method: 'GET', url: '/api/settings/claude-memory' });
+    expect(user.statusCode).toBe(200);
+    expect(user.json()).toMatchObject({ scope: 'user', enabled: true, override: null });
+    expect(user.body).not.toContain('private-token');
+    const projectState = await app.inject({
+      method: 'GET',
+      url: `/api/settings/claude-memory?projectId=${project.id}`,
+    });
+    expect(projectState.json()).toMatchObject({ scope: 'project', enabled: true, override: null });
+
+    const changed = await app.inject({
+      method: 'PUT',
+      url: `/api/settings/claude-memory?projectId=${project.id}`,
+      payload: { scope: 'project', override: 'disabled' },
+    });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json()).toMatchObject({ scope: 'project', enabled: false, override: false });
+    expect(changed.body).not.toContain('private-token');
+    expect(JSON.parse(await fs.readFile(path.join(project.dir, '.claude', 'settings.json'), 'utf8'))).toEqual({
+      autoMemoryEnabled: false,
+    });
+
+    const localChanged = await app.inject({
+      method: 'PUT',
+      url: `/api/settings/claude-memory?projectId=${project.id}`,
+      payload: { scope: 'local', override: 'enabled' },
+    });
+    expect(localChanged.json()).toMatchObject({
+      scope: 'project',
+      enabled: true,
+      override: false,
+      localOverride: true,
+    });
+    expect(JSON.parse(await fs.readFile(path.join(project.dir, '.claude', 'settings.local.json'), 'utf8'))).toEqual({
+      autoMemoryEnabled: true,
+    });
+
+    const invalid = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/claude-memory',
+      payload: { scope: 'user', override: 'inherit' },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
+
   it('普通目录不带正文，显式打开返回正文，保存只返回修订且全程禁止缓存', async () => {
     const { app, homeDir } = await setup();
     const directory = path.join(homeDir, '.claude');

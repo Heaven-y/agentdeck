@@ -7,7 +7,8 @@ import type {
 } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { nativePluginsApi } from './native-plugins-api';
-import { nativeSettingsError } from './native-resource-labels';
+import { confirmNativeDiscard, nativeSettingsError } from './native-resource-labels';
+import { useSettingsLeave } from './settings-navigation';
 export function NativePluginDetails({
   context,
   entry,
@@ -27,6 +28,11 @@ export function NativePluginDetails({
   const [error, setError] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const dirty = Object.values(values).some(Boolean);
+  const leave = (action: () => void) => {
+    if (confirmNativeDiscard(dirty)) action();
+  };
+  useSettingsLeave(leave, dirty);
   useEffect(() => {
     let current = true;
     void nativePluginsApi
@@ -48,7 +54,7 @@ export function NativePluginDetails({
     <section aria-label={`${entry.name} 插件详情`} className="space-y-3 rounded-xl border border-border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong className="break-all">{entry.selector}</strong>
-        <button type="button" className={buttonClass('ghost')} onClick={onClose}>
+        <button type="button" className={buttonClass('ghost')} onClick={() => leave(onClose)}>
           关闭详情
         </button>
       </div>

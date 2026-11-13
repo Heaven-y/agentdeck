@@ -6,6 +6,7 @@ import type { LaunchEnvironmentDocument } from '@agentdeck/shared/settings';
 
 import { buttonClass } from '../../ui/styles';
 import { SettingsDetailDialog } from './SettingsDetailDialog';
+import { useSettingsLeave } from './settings-navigation';
 import { confirmNativeDiscard, nativeAgentNames, nativeSettingsError } from './native-resource-labels';
 import { invalidateNativeCapabilities } from '../../cli/shared/capability-cache';
 import {
@@ -121,18 +122,22 @@ type LaunchState = ReturnType<typeof useLaunchEnvironment>;
 
 export default function LaunchEnvironmentPanel({
   agent,
+  embedded,
   onBack,
   onClose,
 }: {
   agent: AgentKind;
+  embedded?: boolean;
   onBack(): void;
   onClose(): void;
 }) {
   const state = useLaunchEnvironment(agent);
+  useSettingsLeave(state.leave);
   return (
     <SettingsDetailDialog
       title={`CLI 环境变量 · ${nativeAgentNames[agent]}`}
       busy={!!state.operation}
+      embedded={embedded}
       onBack={() => state.leave(onBack)}
       onClose={() => state.leave(onClose)}
       footer={<LaunchFooter state={state} />}

@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import type { NativeManagementContext, NativeResourceRoot, NativeSkillImportInput } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { nativeManagementApi } from './native-management-api';
-import { nativeSettingsError, nativeScopeNames } from './native-resource-labels';
+import { confirmNativeDiscard, nativeSettingsError, nativeScopeNames } from './native-resource-labels';
+import { useSettingsLeave } from './settings-navigation';
 
 async function encodeFiles(files: File[]): Promise<NativeSkillImportInput['files']> {
   if (
@@ -36,6 +37,10 @@ export function NativeSkillImport({
   const [rootId, setRootId] = useState(() => initialRoot(roots));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const dirty = files.length > 0 || name !== '';
+  useSettingsLeave((action) => {
+    if (!busy && confirmNativeDiscard(dirty)) action();
+  }, dirty || busy);
   async function save() {
     setBusy(true);
     setError('');

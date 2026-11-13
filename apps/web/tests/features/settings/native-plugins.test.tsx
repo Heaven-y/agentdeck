@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import NativePluginsPanel from '../../../src/features/settings/NativePluginsPanel';
+import { NativePluginDetails } from '../../../src/features/settings/NativePluginDetails';
+import { NativePluginInstall } from '../../../src/features/settings/NativePluginInstall';
+import {
+  guardSettingsNavigation,
+  SettingsNavigationContext,
+  type SettingsNavigation,
+} from '../../../src/features/settings/settings-navigation';
 import type { NativePluginCatalog, NativePluginOperation, NativePluginEntry } from '@agentdeck/shared/settings';
 const task: NativePluginOperation = {
   operationId: 'op',
@@ -44,6 +51,97 @@ const configuredEntry: NativePluginEntry = {
   components: [],
   actions: ['configure'],
 };
+it('切换插件详情先确认当前配置草稿，取消保留秘密而不发新详情请求', async () => {
+  const guards: SettingsNavigation = new Map();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if ((input as string).includes('/detail'))
+      return Response.json({
+        options: [{ key: 'token', title: '令牌', description: '', sensitive: true, required: true, configured: false }],
+      });
+    return Response.json({
+      ...catalog,
+      entries: [configuredEntry, { ...configuredEntry, id: 'other', name: 'other' }],
+      operations: [],
+    });
+  });
+  render(
+    <SettingsNavigationContext value={guards}>
+      <NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />
+    </SettingsNavigationContext>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: '详情 · demo' }));
+  fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), {
+    target: { value: 'synthetic-private-draft' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '详情 · other' }));
+  expect(screen.getByLabelText<HTMLInputElement>('令牌（必填） · 未配置').value).toBe('synthetic-private-draft');
+  expect(fetch.mock.calls.filter(([url]) => (url as string).includes('/detail'))).toHaveLength(1);
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '详情 · other' }));
+  expect((await screen.findByLabelText<HTMLInputElement>('令牌（必填） · 未配置')).value).toBe('');
+});
+it('空白安装表单不覆盖插件密钥草稿保护，统一导航与关闭详情均确认放弃', async () => {
+  const guards: SettingsNavigation = new Map();
+  const navigate = vi.fn();
+  const close = vi.fn();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({
+      entry: configuredEntry,
+      options: [{ key: 'token', title: '令牌', description: '', sensitive: true, required: true, configured: false }],
+      configurationRevision: 'configuration',
+    }),
+  );
+  render(
+    <SettingsNavigationContext value={guards}>
+      <NativePluginDetails
+        context={{ agent: 'claude' }}
+        entry={configuredEntry}
+        busy={false}
+        onPrepare={vi.fn()}
+        onClose={close}
+      />
+      <NativePluginInstall catalog={catalog} busy={false} onPrepare={vi.fn()} />
+    </SettingsNavigationContext>,
+  );
+  fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), { target: { value: 'synthetic-secret' } });
+  act(() => guardSettingsNavigation(guards, navigate));
+  fireEvent.click(screen.getByRole('button', { name: '关闭详情' }));
+  expect(navigate).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  expect(confirm).toHaveBeenCalledTimes(2);
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '关闭详情' }));
+  expect(close).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText('安装来源'), { target: { value: 'demo@fixture' } });
+  confirm.mockReset().mockReturnValueOnce(true).mockReturnValueOnce(false);
+  act(() => guardSettingsNavigation(guards, navigate));
+  expect(navigate).not.toHaveBeenCalled();
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(screen.getByLabelText<HTMLInputElement>('令牌（必填） · 未配置').value).toBe('synthetic-secret');
+  expect(screen.getByLabelText<HTMLInputElement>('安装来源').value).toBe('demo@fixture');
+});
+it('安装来源草稿拒绝放弃时保留，后台原生任务不会永久锁住设置导航', () => {
+  const guards: SettingsNavigation = new Map();
+  const navigate = vi.fn();
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  render(
+    <SettingsNavigationContext value={guards}>
+      <NativePluginInstall catalog={catalog} busy={true} onPrepare={vi.fn()} />
+    </SettingsNavigationContext>,
+  );
+  act(() => guardSettingsNavigation(guards, navigate));
+  expect(navigate).toHaveBeenCalledOnce();
+  fireEvent.change(screen.getByLabelText('安装来源'), { target: { value: 'demo@fixture' } });
+  act(() => guardSettingsNavigation(guards, navigate));
+  expect(navigate).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText<HTMLInputElement>('安装来源').value).toBe('demo@fixture');
+  expect(confirm).toHaveBeenCalledOnce();
+  confirm.mockReturnValue(true);
+  act(() => guardSettingsNavigation(guards, navigate));
+  expect(navigate).toHaveBeenCalledTimes(2);
+});
 it('配置预览后开始冲突保留原草稿和两个 revision，并同步失败任务', async () => {
   const calls: Array<{ url: string; body?: unknown }> = [];
   const prepared: NativePluginOperation = { ...task, action: 'configure', status: 'prepared', shownCommand: undefined };

@@ -1,0 +1,72 @@
+import { Blocks, Brain, FileCode2, MonitorCheck, Plug, SlidersHorizontal, Sparkles, WandSparkles } from 'lucide-react';
+import type { AgentKind } from '@agentdeck/shared/conversation';
+import { AgentIcon } from '../../ui/BrandIcons';
+import { nativeAgentNames } from './native-resource-labels';
+import { agents, isModelPage, type SettingsPage } from './use-settings-page';
+
+const navigation = [
+  { page: 'general', label: '通用设置', icon: SlidersHorizontal },
+  { page: 'models', label: '模型与连接', icon: Sparkles },
+  { page: 'skills', label: 'Skills', icon: WandSparkles },
+  { page: 'mcp', label: 'MCP', icon: Plug },
+  { page: 'plugins', label: '原生插件', icon: Blocks },
+  { page: 'files', label: '原生文件', icon: FileCode2 },
+  { page: 'memory', label: '记忆', icon: Brain },
+  { page: 'environment', label: '运行环境', icon: MonitorCheck },
+] as const;
+export function SettingsNavigation({
+  page,
+  select,
+  agent,
+}: {
+  page: SettingsPage;
+  select(page: SettingsPage): void;
+  agent: AgentKind;
+}) {
+  return (
+    <nav
+      aria-label="设置分类"
+      className="settings-navigation flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-sidebar p-3 sm:w-48 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-4"
+    >
+      {navigation.map((item) => {
+        const target = item.page === 'models' ? agent : item.page;
+        const selected = item.page === 'models' ? isModelPage(page) || page === 'launch' : page === target;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.page}
+            type="button"
+            aria-current={selected ? 'page' : undefined}
+            onClick={() => select(target)}
+            className={`settings-navigation-item flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+          >
+            <Icon aria-hidden className="size-4 shrink-0" />
+            <span className="whitespace-nowrap">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+export function AgentNavigation({ agent, select }: { agent: AgentKind; select(agent: AgentKind): void }) {
+  return (
+    <div
+      role="group"
+      aria-label="CLI 来源"
+      className="settings-model-tabs flex shrink-0 flex-wrap gap-1.5 border-b border-border pb-4"
+    >
+      {agents.map((item) => (
+        <button
+          key={item}
+          type="button"
+          aria-pressed={agent === item}
+          onClick={() => select(item)}
+          className={`settings-model-tab flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${agent === item ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+        >
+          <AgentIcon agent={item} className="size-4" />
+          <span>{nativeAgentNames[item]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}

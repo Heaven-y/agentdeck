@@ -6,6 +6,7 @@ import type { NativeResource, NativeResourceDocument } from '@agentdeck/shared/s
 import { CodeEditor } from '../../ui/CodeEditor';
 import { buttonClass } from '../../ui/styles';
 import { SettingsDetailDialog } from './SettingsDetailDialog';
+import { useSettingsLeave } from './settings-navigation';
 import { NativeConfigHelp } from './NativeConfigHelp';
 import { confirmNativeDiscard, nativeSettingsError } from './native-resource-labels';
 import { invalidateNativeCapabilities } from '../../cli/shared/capability-cache';
@@ -44,6 +45,7 @@ function ConfigHelp({
 type EditorProps = {
   context: NativeResourceContext;
   resource: NativeResource;
+  embedded?: boolean;
   onClose(): void;
   onBack(): void;
 };
@@ -130,13 +132,15 @@ function useNativeResourceEditor({ context, resource }: Pick<EditorProps, 'conte
 type EditorState = ReturnType<typeof useNativeResourceEditor>;
 
 /** 只有显式打开此视图才请求正文；敏感正文与撤销历史仅随编辑器存活。 */
-export default function NativeResourceEditor({ context, resource, onClose, onBack }: EditorProps) {
+export default function NativeResourceEditor({ context, resource, embedded, onClose, onBack }: EditorProps) {
   const state = useNativeResourceEditor({ context, resource });
+  useSettingsLeave(state.leave);
   return (
     <SettingsDetailDialog
       title={resource.label}
       backLabel="返回资源目录"
       busy={state.saving}
+      embedded={embedded}
       onBack={() => state.leave(onBack)}
       onClose={() => state.leave(onClose)}
       footer={<EditorFooter state={state} />}

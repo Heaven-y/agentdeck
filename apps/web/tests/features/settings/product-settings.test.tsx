@@ -132,7 +132,7 @@ it('设置侧栏按用途分类，通用偏好保存后可查看本机环境', a
   render(<ProductSettingsDialog initialPage="general" onClose={vi.fn()} onNative={vi.fn()} />, { wrapper });
   const agent = await screen.findByLabelText('默认 Agent');
   const navigation = screen.getByRole('navigation', { name: '设置分类' });
-  expect(within(navigation).getAllByRole('button')).toHaveLength(3);
+  expect(within(navigation).getAllByRole('button')).toHaveLength(7);
   expect(within(navigation).getByRole('button', { name: '模型与连接' })).toBeTruthy();
   expect(screen.queryByLabelText(/资源检查间隔/)).toBeNull();
   expect(readEnvironment).not.toHaveBeenCalled();
@@ -149,7 +149,7 @@ it('设置侧栏按用途分类，通用偏好保存后可查看本机环境', a
   await waitFor(() => expect(detect).toHaveBeenCalledTimes(1));
 });
 
-it('跨分类保存冲突保留草稿，关闭、原生视图、重读与Esc均保留未保存保护', async () => {
+it('跨分类保存冲突保留草稿，关闭、分类与重读均保留未保存保护', async () => {
   const read = vi.spyOn(settingsApi, 'readProductSettings').mockResolvedValue(document);
   vi.spyOn(settingsApi, 'saveProductSettings').mockRejectedValue(new ApiError(409, '产品设置已变化，请重新读取'));
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -163,8 +163,8 @@ it('跨分类保存冲突保留草稿，关闭、原生视图、重读与Esc均�
   fireEvent.click(screen.getByRole('button', { name: '关闭设置' }));
   fireEvent.click(screen.getByRole('button', { name: '模型与连接' }));
   fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
-  fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
-  expect(confirm).toHaveBeenCalledTimes(4);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(confirm).toHaveBeenCalledTimes(3);
   expect(close).not.toHaveBeenCalled();
   expect(native).not.toHaveBeenCalled();
   expect(read).toHaveBeenCalledTimes(1);
