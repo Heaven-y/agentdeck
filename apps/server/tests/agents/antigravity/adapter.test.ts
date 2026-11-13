@@ -63,6 +63,26 @@ describe('Antigravity 原生对话运行器', () => {
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
   });
 
+  it('stderr 的服务超时在完整答复与正常退出后不再变成错误', async () => {
+    const f = await setup();
+    f.init();
+    f.child.stderr.write('Error: request failed with status 524\n');
+    f.finish();
+    await f.handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+  });
+
+  it('stderr 的服务超时在确实没有结果时仍作为错误上报', async () => {
+    const f = await setup();
+    f.init();
+    f.child.stderr.write('Error: request failed with status 524\n');
+    f.child.emit('close', 1);
+    await f.handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
+  });
+
   it('auto 的原生回退提示只显示一次且不改参数或成功结果', async () => {
     const f = await setup(undefined, async () => undefined, undefined, { agent: 'antigravity', mode: 'auto' });
     const warning =

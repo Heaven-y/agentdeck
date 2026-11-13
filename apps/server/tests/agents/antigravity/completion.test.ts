@@ -180,14 +180,26 @@ it.each(['interrupt', 'dispose'] as const)('进程退出后%s仍能取消终态�
   expect(f.events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
 });
 
-it.each(['stderr', 'current-error', 'cancelled', 'multiple-input', 'denied', 'exit', 'cleanup'])(
+it('stderr 的 524 只是可重试的服务故障，完整答复与自然退出后不再判为失败', async () => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '本轮完成。' });
+  f.child.stderr.write('error: Error 524, Status: 524 unknown\n');
+  f.result();
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+it.each(['current-error', 'cancelled', 'multiple-input', 'denied', 'exit', 'cleanup'])(
   '%s 已确认失败或边界不可信时不发起原生复核',
   async (scenario) => {
     if (scenario === 'cleanup') vi.useFakeTimers();
     const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
     const f = await resumedTurn(true, read);
     f.step(4, 'user_input');
-    if (scenario === 'stderr') f.child.stderr.write('error: Error 524\n');
     if (scenario === 'current-error') f.step(5, 'error_message');
     if (scenario === 'cancelled') f.step(5, 'tool', 'CANCELLED');
     if (scenario === 'multiple-input') f.step(5, 'user_input');

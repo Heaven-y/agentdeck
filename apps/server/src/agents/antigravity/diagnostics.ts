@@ -31,7 +31,7 @@ function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEven
 
 /** 网关或模型服务的临时故障：原生常自行重试，出现它不代表本轮没有产出。 */
 export const serviceFailure = (value: string): boolean =>
-  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*50[034]\b/i.test(stripVTControlCharacters(value));
+  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:500|503|524)\b/i.test(stripVTControlCharacters(value));
 
 /** 只识别明确的原生错误或模式变化；固定文案不拼接诊断中的 URL、参数或凭据。 */
 export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'run'): DiagnosticEvent | undefined {

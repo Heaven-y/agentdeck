@@ -7,7 +7,7 @@ import { AntigravityMapper } from './mapper';
 import { AntigravityLines } from './lines';
 import { antigravityDefaultModel } from './model-catalog';
 import { AntigravityInvocationError, antigravityInvocationText } from './commands';
-import { antigravityDiagnostic } from './diagnostics';
+import { antigravityDiagnostic, serviceFailure } from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
 import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
@@ -64,6 +64,8 @@ class AntigravityTurn {
   private readonly notices = new Set<string>();
   private reportedError = false;
   private nativeFailure = false;
+  /** 服务型故障先暂存：原生可能已自行重试成功，本轮结束前不写成永久错误。 */
+  private pendingService?: Extract<AgentEvent, { type: 'error' }>;
   /** 原生结果已经确认时，进程清理与模型回合成功是两个独立状态。 */
   private closingAfterResult = false;
   private cleanupSignalSent = false;
@@ -152,6 +154,11 @@ class AntigravityTurn {
 
   private diagnostic(line: string): void {
     const event = antigravityDiagnostic(line);
+    // 服务型故障不代表本轮一定失败：先暂存，等回合结束再按是否有结果决定报不报。
+    if (event?.type === 'error' && serviceFailure(line)) {
+      this.pendingService ??= event;
+      return;
+    }
     this.nativeFailure ||=
       event?.type === 'error' || /^(?:error\s*:|AGY_ERROR\s*:)/i.test(stripVTControlCharacters(line).trim());
     if (event) this.notice(event);
@@ -218,17 +225,23 @@ class AntigravityTurn {
   private finishTurn(code: number | null): void {
     const result = this.mapper.result;
     const isError = this.failed || !result || result.isError || this.abnormalExit(code);
-    // stdout 与 stderr 顺序不固定；排空后才兜底，避免覆盖稍后到达的具体原因。
-    if (!this.failed && !this.reportedError && isError)
-      this.notice({
-        type: 'error',
-        message: result
-          ? 'Antigravity 未成功完成本轮，请检查原生 CLI 的运行状态与配置。'
-          : 'Antigravity 在返回完整结果前退出，请重新读取原生会话后核对。',
-      });
+    if (isError) this.reportFailure(result);
     this.input.emit({
       ...(result ?? { type: 'turn_end' as const }),
       isError,
+    });
+  }
+
+  private reportFailure(result: Extract<AgentEvent, { type: 'turn_end' }> | undefined): void {
+    // 暂存的服务故障只在确实失败时报出，具体原因优先于下面的泛化文案。
+    if (this.pendingService) this.notice(this.pendingService);
+    // stdout 与 stderr 顺序不固定；排空后才兜底，避免覆盖稍后到达的具体原因。
+    if (this.failed || this.reportedError) return;
+    this.notice({
+      type: 'error',
+      message: result
+        ? 'Antigravity 未成功完成本轮，请检查原生 CLI 的运行状态与配置。'
+        : 'Antigravity 在返回完整结果前退出，请重新读取原生会话后核对。',
     });
   }
 
