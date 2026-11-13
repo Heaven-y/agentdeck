@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput, TurnRunner } from '../../../src/agents/contracts';
 import { createAntigravityAcpRunner } from '../../../src/agents/antigravity/acp/runtime';
+import { AcpError } from '../../../src/agents/antigravity/acp/types';
 import type { AcpConnection, AcpRecord, AcpRequest } from '../../../src/agents/antigravity/acp/types';
 import { AntigravityAcpMapper } from '../../../src/agents/antigravity/acp/mapper';
 
@@ -17,6 +18,7 @@ afterEach(async () => {
 function fakeClient() {
   let settleClose!: () => void;
   let settlePrompt: ((value: AcpRecord) => void) | undefined;
+  let failPrompt: ((error: Error) => void) | undefined;
   const closed = new Promise<void>((resolve) => {
     settleClose = resolve;
   });
@@ -59,8 +61,9 @@ function fakeClient() {
         return { sessionId: 'native-1', configOptions: options };
       if (method === 'session/set_config_option') return { configOptions: options };
       if (method === 'session/prompt')
-        return new Promise<AcpRecord>((resolve) => {
+        return new Promise<AcpRecord>((resolve, reject) => {
           settlePrompt = resolve;
+          failPrompt = reject;
         });
       return {};
     }),
@@ -77,6 +80,7 @@ function fakeClient() {
   return {
     client,
     finish: (value: AcpRecord = { stopReason: 'end_turn' }) => settlePrompt?.(value),
+    failPrompt: (error: Error) => failPrompt?.(error),
     update: (update: AcpRecord, sessionId = 'native-1') =>
       client.onNotification('session/update', { sessionId, update }),
   };
@@ -482,5 +486,47 @@ describe('ACP 原生事件投影', () => {
     ).toContainEqual(expect.objectContaining({ type: 'activity', name: '计划' }));
     expect(mapper.update({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '历史' } })).toEqual([]);
     expect(mapper.update({ sessionUpdate: 'private', signature: 'hidden' })).toEqual([]);
+  });
+});
+
+describe('AGY 原生服务临时故障', () => {
+  const timeout = new AcpError(
+    'native',
+    'Antigravity 的模型服务响应超时（HTTP 524），本轮未完成。请稍后重试或检查原生模型服务。',
+    true,
+  );
+  it('本轮已产出正文时只留一条可折叠记录，不标记失败', async () => {
+    const f = setup();
+    const handle = f.run();
+    await started(f.client);
+    f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '已生成的正文' } });
+    f.failPrompt(timeout);
+    await handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+    expect(f.events).toContainEqual(
+      expect.objectContaining({ type: 'activity', id: 'agy-service-retry', status: 'completed' }),
+    );
+  });
+
+  it('没有任何正文时仍作为错误上报并标记失败', async () => {
+    const f = setup();
+    const handle = f.run();
+    await started(f.client);
+    f.failPrompt(timeout);
+    await handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  });
+
+  it('不可重试的原生错误即使已产出正文仍然报错', async () => {
+    const f = setup();
+    const handle = f.run();
+    await started(f.client);
+    f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '已生成的正文' } });
+    f.failPrompt(new AcpError('native', 'Antigravity 认证失败或凭据无效，请检查原生登录状态与当前模型服务的凭据。'));
+    await handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
   });
 });
