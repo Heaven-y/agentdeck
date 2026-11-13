@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { ClientMessage, FollowupSnapshot, RecoveryNotice, ServerMessage } from '@agentdeck/shared/conversation';
 import { sessionsApi } from '../../../src/features/sessions/api';
 import { startChatConnection, useChat } from '../../../src/features/chat/chat-store';
+import { queueHasPending } from '../../../src/features/chat/followup-state';
 
 const queueId = '00000000-0000-4000-8000-000000000001';
 const sent: ClientMessage[] = [];
@@ -368,4 +369,16 @@ it('会话身份相同的快照挂回存活视图而不是另建一条', () => {
   expect(state.conversationId).toBe(origin);
   expect(state.queueId).toBe(queueId);
   expect(state.followups[queueId]?.snapshot.revision).toBe(5);
+});
+
+it('后台入口只在队列仍有未完成项时保留', () => {
+  running();
+  const view = useChat.getState();
+  const queued = (status: 'queued' | 'accepted', id = 'one'): FollowupSnapshot['items'] => [
+    { clientMessageId: id, revision: 0, mode: 'queue', status, text: '待发', content: { text: '待发' } },
+  ];
+  emit({ type: 'followup.state', snapshot: { ...snapshot(queued('queued')), revision: 2 } });
+  expect(queueHasPending(useChat.getState().followups, view)).toBe(true);
+  emit({ type: 'followup.state', snapshot: { ...snapshot(queued('accepted')), revision: 3 } });
+  expect(queueHasPending(useChat.getState().followups, view)).toBe(false);
 });

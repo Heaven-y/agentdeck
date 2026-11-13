@@ -18,6 +18,9 @@ export type LocalFollowupQueue = {
 };
 export const pendingFollowups = (queue?: LocalFollowupQueue) =>
   queue?.snapshot.items.filter((item) => !['accepted', 'cancelled'].includes(item.status)) ?? [];
+/** 后台入口只在真有未完成待发项时保留；历史队列不能永久占住列表。 */
+export const queueHasPending = (queues: ChatState['followups'], view: ConversationView): boolean =>
+  pendingFollowups(view.queueId ? queues[view.queueId] : undefined).length > 0;
 export function viewQueue(state: ChatState, view: ConversationView = state) {
   return view.queueId
     ? state.followups[view.queueId]
