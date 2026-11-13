@@ -71,3 +71,17 @@ it('历史压缩完成不替代当前上下文，结果只在详情中出现', a
   expect(button.textContent).toContain('100 / 200,000');
   expect(button.textContent).not.toContain('压缩');
 });
+
+it('Antigravity 没有用量报告时说明是原生未提供，而不是笼统的空态', async () => {
+  useChat.setState({ agent: 'antigravity', contextUsage: undefined });
+  render(<ComposerStatus />);
+  fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
+  expect(await screen.findByText(/Antigravity 尚未报告上下文用量/)).toBeTruthy();
+});
+
+it('其他 CLI 保持原有的空态文案', async () => {
+  useChat.setState({ agent: 'claude', contextUsage: undefined });
+  render(<ComposerStatus />);
+  fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
+  expect(await screen.findByText('此会话尚无可用的上下文用量与窗口报告。')).toBeTruthy();
+});
