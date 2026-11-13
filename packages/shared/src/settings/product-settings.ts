@@ -9,9 +9,28 @@ export const DEFAULT_SPOTLIGHT: SpotlightSettings = {
   enabled: true,
 };
 
+export const ConversationWidthPresetSchema = z.enum(['small', 'medium', 'large', 'custom']);
+/** 三档预设的像素宽度；自定义值单独存在 width.custom。 */
+export const CONVERSATION_WIDTHS = { small: 720, medium: 860, large: 1040 } as const;
+export const AppearanceSettingsSchema = z.strictObject({
+  /** 侧栏每个项目默认展开的会话行数。 */
+  sessionLimit: z.number().int().min(1).max(20).default(5),
+  width: z
+    .strictObject({
+      preset: ConversationWidthPresetSchema.default('medium'),
+      custom: z.number().int().min(480).max(1400).default(860),
+    })
+    .default({ preset: 'medium', custom: 860 }),
+});
+export type AppearanceSettings = z.infer<typeof AppearanceSettingsSchema>;
+export const DEFAULT_APPEARANCE: AppearanceSettings = { sessionLimit: 5, width: { preset: 'medium', custom: 860 } };
+export const conversationWidth = (width: AppearanceSettings['width']): number =>
+  width.preset === 'custom' ? width.custom : CONVERSATION_WIDTHS[width.preset];
+
 export const ProductSettingsSchema = z.strictObject({
   defaultAgent: AgentKindSchema.default('claude'),
   spotlight: SpotlightSettingsSchema.default(DEFAULT_SPOTLIGHT),
+  appearance: AppearanceSettingsSchema.default(DEFAULT_APPEARANCE),
   /** 未配置时展示目录，显式空数组只保留当前会话的型号。 */
   modelVisibility: z
     .partialRecord(

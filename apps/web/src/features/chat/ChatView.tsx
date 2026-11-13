@@ -1,6 +1,9 @@
 import { CircleAlert, X } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import type { Workspace } from '@agentdeck/shared/projects';
+import { conversationWidth } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../ui/styles';
+import { useProductSettings } from '../settings/use-product-settings';
 import { useChat } from './chat-store';
 import { Composer } from './Composer';
 import { ChatTimeline } from './ChatTimeline';
@@ -113,8 +116,13 @@ function Messages({ view }: { view: 'chat' | 'trajectory' }) {
 export function ChatView({ workspace }: { workspace: Workspace }) {
   const version = useChat((s) => s.conversationVersion);
   const view = useChat((s) => s.view);
+  const appearance = useProductSettings().data?.settings.appearance;
+  // 只在拿到设置后覆盖容器默认值，读不到时沿用 CSS 里的自适应宽度。
+  const style = appearance
+    ? ({ '--conversation-width': `${conversationWidth(appearance.width)}px` } as CSSProperties)
+    : undefined;
   return (
-    <section className="conversation" aria-label={`${workspace.name}会话`}>
+    <section className="conversation" aria-label={`${workspace.name}会话`} style={style}>
       <Banner />
       <HistoryFailure />
       <RecoveredHistory />

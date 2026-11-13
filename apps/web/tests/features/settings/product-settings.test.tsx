@@ -196,6 +196,9 @@ const productDraft = {
   defaultAgent: 'codex' as const,
   resourceInterval: '7',
   resourceTimeout: '9',
+  sessionLimit: '5',
+  widthPreset: 'medium' as const,
+  customWidth: '860',
 };
 
 it('产品草稿保存只输出现行偏好，不包含同步分类字段与已退休模型字段', () => {
@@ -205,8 +208,34 @@ it('产品草稿保存只输出现行偏好，不包含同步分类字段与已�
   expect(result.data).toMatchObject({
     defaultAgent: 'codex',
     resources: { intervalSeconds: 7, timeoutSeconds: 9 },
+    appearance: { sessionLimit: 5, width: { preset: 'medium', custom: 860 } },
   });
   expect(result.data).not.toHaveProperty('defaultModels');
+});
+
+it('外观草稿拒绝越界的条数与自定义宽度', () => {
+  for (const patch of [
+    { sessionLimit: '0' },
+    { sessionLimit: '21' },
+    { sessionLimit: '5.5' },
+    { widthPreset: 'custom' as const, customWidth: '479' },
+    { widthPreset: 'custom' as const, customWidth: '1401' },
+  ])
+    expect(parseSettingsDraft({ ...productDraft, ...patch }).success).toBe(false);
+  expect(parseSettingsDraft({ ...productDraft, widthPreset: 'custom', customWidth: '1000' }).success).toBe(true);
+});
+
+it('外观设置可以修改每项目会话条数与对话区宽度', () => {
+  const change = vi.fn();
+  render(<ProductSettingsForm draft={productDraft} disabled={false} change={change} />);
+  fireEvent.change(screen.getByLabelText('每个项目显示的会话条数'), { target: { value: '8' } });
+  expect(change).toHaveBeenCalledWith({ sessionLimit: '8' });
+  fireEvent.click(screen.getByRole('button', { name: '大' }));
+  expect(change).toHaveBeenCalledWith({ widthPreset: 'large' });
+  expect(screen.queryByLabelText(/自定义宽度/)).toBeNull();
+  render(<ProductSettingsForm draft={{ ...productDraft, widthPreset: 'custom' }} disabled={false} change={change} />);
+  fireEvent.change(screen.getByLabelText(/自定义宽度/), { target: { value: '1000' } });
+  expect(change).toHaveBeenCalledWith({ customWidth: '1000' });
 });
 
 it('对话分类保留默认Agent，不再提供网页默认模型输入', () => {
