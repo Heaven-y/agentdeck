@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
+﻿import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
 import { MAX_CONFIG_BYTES } from '../platform/files/safe-file';
@@ -18,9 +18,7 @@ const Query = z.object({ projectId: z.string().min(1).max(128).optional() }).str
 const OpenBody = z.object({}).strict().optional();
 const SaveBody = z.object({ content: z.string(), revision: z.string().regex(/^(?:missing|[a-f0-9]{64})$/) }).strict();
 const CreateBody = z.object({ rootId: Id, name: z.string().min(1).max(100), content: z.string() }).strict();
-const AutoMemoryBody = z
-  .object({ scope: z.enum(['user', 'project', 'local']), override: z.enum(['inherit', 'enabled', 'disabled']) })
-  .strict();
+const AutoMemoryBody = z.object({ override: z.enum(['inherit', 'enabled', 'disabled']) }).strict();
 
 async function requestContext(req: FastifyRequest, deps: NativeResourceRoutesDeps) {
   const params = Params.safeParse(req.params);
@@ -29,14 +27,6 @@ async function requestContext(req: FastifyRequest, deps: NativeResourceRoutesDep
   const project = query.data.projectId ? await deps.store.get(query.data.projectId) : undefined;
   if (query.data.projectId && !project) throw new NativeResourceError('project_missing');
   return { ...params.data, project };
-}
-
-async function requestProject(req: FastifyRequest, deps: NativeResourceRoutesDeps) {
-  const query = Query.safeParse(req.query);
-  if (!query.success) throw new NativeResourceError('invalid_request');
-  const project = query.data.projectId ? await deps.store.get(query.data.projectId) : undefined;
-  if (query.data.projectId && !project) throw new NativeResourceError('project_missing');
-  return project;
 }
 
 async function respond(reply: FastifyReply, operation: () => Promise<unknown>) {
@@ -84,24 +74,16 @@ export function registerNativeResourceRoutes(app: FastifyInstance, deps: NativeR
       return deps.service.list(agent, project);
     }),
   );
-  app.get('/api/settings/claude-memory', options, (req, reply) =>
-    respond(reply, async () => deps.service.readAutoMemory(await requestProject(req, deps))),
+  app.get('/api/settings/claude-memory', options, (_req, reply) =>
+    respond(reply, async () => deps.service.readAutoMemory()),
   );
   app.put('/api/settings/claude-memory', options, (req, reply) =>
-    respond(reply, () =>
-      writeInProject(req, deps, async () => {
-        const project = await requestProject(req, deps);
-        const input = AutoMemoryBody.safeParse(req.body);
-        if (
-          !input.success ||
-          (input.data.scope === 'user') !== !project ||
-          (input.data.scope === 'user' && input.data.override === 'inherit')
-        )
-          throw new NativeResourceError('invalid_request');
-        const override = input.data.override === 'inherit' ? null : input.data.override === 'enabled';
-        return deps.service.setAutoMemory(override, project, input.data.scope);
-      }),
-    ),
+    respond(reply, async () => {
+      const input = AutoMemoryBody.safeParse(req.body);
+      if (!input.success) throw new NativeResourceError('invalid_request');
+      const override = input.data.override === 'inherit' ? null : input.data.override === 'enabled';
+      return deps.service.setAutoMemory(override);
+    }),
   );
   app.post('/api/native-resources/:agent/:resourceId/open', options, (req, reply) =>
     respond(reply, async () => {

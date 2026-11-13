@@ -1,4 +1,4 @@
-import type { AgentKind } from '../conversation/agents';
+﻿import type { AgentKind } from '../conversation/agents';
 
 export type NativeResourceKind = 'settings' | 'rules' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'agents';
 export type NativeResourceScope = 'user' | 'project' | 'local' | 'directory' | 'managed';
@@ -57,19 +57,10 @@ export type NativeResourceCreateInput = { rootId: string; name: string; content:
 /** 保存不回显正文，避免常规变更响应再次携带敏感值。 */
 export type NativeResourceSaved = { resource: NativeResource; revision: string };
 
-/** Claude Auto Memory 只返回设置状态，不把含凭据的原生 settings.json 传给前端。 */
-export type ClaudeAutoMemoryState =
-  | {
-      scope: 'user';
-      enabled: boolean;
-      override: boolean | null;
-      localOverride: null;
-      userEnabled: boolean;
-    }
-  | {
-      scope: 'project';
-      enabled: boolean;
-      override: boolean | null;
-      localOverride: boolean | null;
-      userEnabled: boolean;
-    };
+/** Claude Auto Memory 只返回用户级设置状态，不把含凭据的原生 settings.json 传给前端。 */
+export type ClaudeAutoMemoryState = {
+  /** 按用户设置计算的实际启用状态；未显式设置时遵循 Claude 默认。 */
+  enabled: boolean;
+  /** null 表示用户设置未显式指定，项目级覆盖仍由各自原生设置管理。 */
+  override: boolean | null;
+};

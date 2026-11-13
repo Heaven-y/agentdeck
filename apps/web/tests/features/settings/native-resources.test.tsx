@@ -12,30 +12,28 @@ import {
 } from '../../../src/features/settings/settings-navigation';
 import { queryClient } from '../../../src/lib/query-client';
 
-const project = { id: 'demo', name: '演示项目', dir: '~/projects/demo' };
 const resource = {
-  id: 'project-rules',
+  id: 'user-rules',
   agent: 'antigravity',
   kind: 'rules',
-  scope: 'project',
-  label: '项目规则',
-  displayPath: '~/projects/demo/.agents/rules/main.md',
+  scope: 'user',
+  label: '用户规则',
+  displayPath: '~/.agents/rules/main.md',
   format: 'markdown',
   exists: true,
   editable: true,
-  description: '该项目的原生规则。',
+  description: '用户级原生规则。',
 } as const;
 const catalog: NativeResourceCatalog = {
   agent: 'antigravity',
-  projectId: project.id,
   entries: [resource],
   roots: [
     {
-      id: 'project-skills',
+      id: 'user-skills',
       kind: 'skills',
-      scope: 'project',
-      label: '项目 Skills',
-      displayPath: '~/projects/demo/.agents/skills',
+      scope: 'user',
+      label: '用户 Skills',
+      displayPath: '~/.agents/skills',
       editable: true,
     },
   ],
@@ -79,7 +77,7 @@ beforeEach(() => {
         warnings: [],
       });
     if (init?.method === 'PUT') return Response.json({ resource, revision: 'next' });
-    if (url.includes('/open?'))
+    if (url.includes('/open'))
       return Response.json({ resource, content: '# synthetic-private-rule\n', revision: 'original' });
     if (url.startsWith('/api/native-resources/')) return Response.json(catalog);
     throw new Error(`未声明的测试接口：${url}`);
@@ -95,19 +93,19 @@ afterEach(async () => {
   Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
 });
 
-it('三个 CLI 共用资源入口，目录只取当前项目元数据，显式打开才读取正文且不缓存', async () => {
-  render(<SettingsDialog project={project} onClose={vi.fn()} />);
+it('三个 CLI 共用资源入口，只读取全局原生资源，显式打开才读取正文且不缓存', async () => {
+  render(<SettingsDialog onClose={vi.fn()} />);
   await openCatalog();
   await screen.findByText(resource.displayPath);
-  expect(requests.some(({ url }) => url === '/api/native-resources/antigravity?projectId=demo')).toBe(true);
+  expect(requests.some(({ url }) => url === '/api/native-resources/antigravity')).toBe(true);
   expect(requests.some(({ url }) => url.includes('/open'))).toBe(false);
   expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
   expect(screen.getByText('antigravity plugin list')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 项目规则' }));
+  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
   expect(editor().state.doc.toString()).toBe('# synthetic-private-rule\n');
   expect(requests.find(({ url }) => url.includes('/open'))).toMatchObject({
-    url: '/api/native-resources/antigravity/project-rules/open?projectId=demo',
+    url: '/api/native-resources/antigravity/user-rules/open',
     init: { method: 'POST', cache: 'no-store' },
   });
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-private-rule');
@@ -124,9 +122,9 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
       ? Response.json({ message: '文件已变化，请重新读取。' }, { status: 409 })
       : handle(input, init),
   );
-  render(<SettingsDialog project={project} onClose={close} />);
+  render(<SettingsDialog onClose={close} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 项目规则' }));
+  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
   edit('# 我的规则\n');
   fireEvent.click(screen.getByRole('button', { name: '保存文件' }));
@@ -140,8 +138,7 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
     fireEvent.click(screen.getByRole('button', { name }));
     expect(editor().state.doc.toString()).toBe('# 我的规则\n');
   }
-  fireEvent.change(screen.getByLabelText('资源范围'), { target: { value: '' } });
-  expect(screen.getByLabelText<HTMLSelectElement>('资源范围').value).toBe(project.id);
+  expect(screen.queryByLabelText('资源范围')).toBeNull();
   expect(editor().state.doc.toString()).toBe('# 我的规则\n');
   expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '关闭设置' }));
@@ -153,26 +150,17 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
 });
 
 it('嵌入资源页使用外部分类，只显示所选资源且不重复显示导航和关闭入口', async () => {
-  render(
-    <NativeResourcesDialog
-      agent="antigravity"
-      project={project}
-      category="custom"
-      embedded
-      onBack={vi.fn()}
-      onClose={vi.fn()}
-    />,
-  );
+  render(<NativeResourcesDialog agent="antigravity" category="custom" embedded onBack={vi.fn()} onClose={vi.fn()} />);
   await screen.findByText(resource.displayPath);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('navigation', { name: '原生资源分类' })).toBeNull();
   expect(screen.queryByRole('button', { name: '返回模型设置' })).toBeNull();
   expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '在项目 Skills中新建 Skill' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 项目规则' }));
+  expect(screen.queryByRole('button', { name: '在用户 Skills中新建 Skill' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
-  expect(screen.getByRole('heading', { name: '项目规则' })).toBeTruthy();
-  expect(document.activeElement).toBe(screen.getByRole('heading', { name: '项目规则' }));
+  expect(screen.getByRole('heading', { name: '用户规则' })).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: '用户规则' }));
   expect(screen.getByRole('button', { name: '返回资源目录' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
 });
@@ -182,10 +170,10 @@ it('创建资源的草稿接入统一导航，取消保留填写内容，确认�
   const leave = vi.fn();
   render(
     <SettingsNavigationContext.Provider value={navigation}>
-      <NativeResourcesDialog agent="antigravity" project={project} embedded onBack={vi.fn()} onClose={vi.fn()} />
+      <NativeResourcesDialog agent="antigravity" embedded onBack={vi.fn()} onClose={vi.fn()} />
     </SettingsNavigationContext.Provider>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: '在项目 Skills中新建 Skill' }));
+  fireEvent.click(await screen.findByRole('button', { name: '在用户 Skills中新建 Skill' }));
   const name = await screen.findByLabelText<HTMLInputElement>('Skill 名称');
   fireEvent.change(name, { target: { value: 'unsaved-skill' } });
   act(() => guardSettingsNavigation(navigation, leave));
@@ -201,17 +189,17 @@ it('切换 CLI 取消正文请求并忽略旧上下文迟到的敏感内容', as
   const handle = fetchMock.getMockImplementation()!;
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementation(async (input, init) =>
-    (input as string).includes('/open?')
+    (input as string).includes('/open')
       ? new Promise((done) => {
           resolve = done;
         })
       : handle(input, init),
   );
-  render(<SettingsDialog project={project} onClose={vi.fn()} />);
+  render(<SettingsDialog onClose={vi.fn()} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 项目规则' }));
+  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 用户规则' }));
   await screen.findByText('正在读取文件…');
-  const open = fetchMock.mock.calls.find(([url]) => (url as string).includes('/open?'))!;
+  const open = fetchMock.mock.calls.find(([url]) => (url as string).includes('/open'))!;
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
   await screen.findByRole('heading', { name: '原生配置与扩展 · Codex' });
   expect(open[1]?.signal?.aborted).toBe(true);
@@ -224,21 +212,21 @@ it('切换 CLI 取消正文请求并忽略旧上下文迟到的敏感内容', as
 it('只在服务端给出的Skill目录创建；正文带用户填写的元信息，创建成功不重复提交', async () => {
   const handle = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation(async (input, init) =>
-    init?.method === 'POST' && !(input as string).includes('/open?')
+    init?.method === 'POST' && !(input as string).includes('/open')
       ? Response.json({
           resource: {
             ...resource,
             id: 'new-skill',
             kind: 'skills',
-            displayPath: '~/projects/demo/.agents/skills/demo-skill/SKILL.md',
+            displayPath: '~/.agents/skills/demo-skill/SKILL.md',
           },
           revision: 'saved',
         })
       : handle(input, init),
   );
-  render(<SettingsDialog project={project} onClose={vi.fn()} />);
+  render(<SettingsDialog onClose={vi.fn()} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '在项目 Skills中新建 Skill' }));
+  fireEvent.click(await screen.findByRole('button', { name: '在用户 Skills中新建 Skill' }));
   const name = await screen.findByLabelText('Skill 名称');
   fireEvent.change(screen.getByLabelText('Skill 用途'), { target: { value: '检查演示项目' } });
   const view = EditorView.findFromDOM(screen.getByRole('textbox', { name: 'Skill 使用说明' }))!;
@@ -255,9 +243,9 @@ it('只在服务端给出的Skill目录创建；正文带用户填写的元信�
   const created = fetchMock.mock.calls.find(
     ([url, init]) => (url as string).startsWith('/api/native-resources/') && init?.method === 'POST',
   )!;
-  expect(created[0]).toBe('/api/native-resources/antigravity?projectId=demo');
+  expect(created[0]).toBe('/api/native-resources/antigravity');
   expect(JSON.parse(created[1]?.body as string)).toEqual({
-    rootId: 'project-skills',
+    rootId: 'user-skills',
     name: 'demo-skill',
     content: '---\nname: "demo-skill"\ndescription: "检查演示项目"\n---\n\n# 检查要求\n先阅读项目说明。',
   });

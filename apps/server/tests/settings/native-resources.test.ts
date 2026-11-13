@@ -1,4 +1,4 @@
-import * as fs from 'node:fs/promises';
+﻿import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -38,15 +38,9 @@ describe('CLI 原生资源目录与编辑', () => {
     const { homeDir, service, saved } = await fixture();
     const file = path.join(homeDir, '.claude', 'settings.json');
     await write(file, '{\r\n  "apiKey": "private-token",\r\n  "other": { "enabled": true }\r\n}\r\n');
-    expect(await service.readAutoMemory()).toEqual({
-      scope: 'user',
-      enabled: true,
-      override: null,
-      localOverride: null,
-      userEnabled: true,
-    });
+    expect(await service.readAutoMemory()).toEqual({ enabled: true, override: null });
 
-    expect(await service.setAutoMemory(false)).toMatchObject({ scope: 'user', enabled: false, override: false });
+    expect(await service.setAutoMemory(false)).toEqual({ enabled: false, override: false });
     expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
       apiKey: 'private-token',
       other: { enabled: true },
@@ -58,39 +52,21 @@ describe('CLI 原生资源目录与编辑', () => {
     expect(saved).toEqual(['claude', 'claude']);
   });
 
-  it('项目记忆可覆盖或继承用户值，不回传原生配置正文', async () => {
+  it('记忆开关只改用户原生设置字段，保留其他配置且项目设置不受影响', async () => {
     const { homeDir, project, service } = await fixture();
-    await write(path.join(homeDir, '.claude', 'settings.json'), '{"autoMemoryEnabled":false}');
-    const file = path.join(project.dir, '.claude', 'settings.json');
+    const file = path.join(homeDir, '.claude', 'settings.json');
     await write(file, '{"customSetting":"keep"}');
-    expect(await service.readAutoMemory(project)).toEqual({
-      scope: 'project',
-      enabled: false,
-      override: null,
-      localOverride: null,
-      userEnabled: false,
-    });
+    const projectFile = path.join(project.dir, '.claude', 'settings.json');
+    await write(projectFile, '{"autoMemoryEnabled":false}');
+    expect(await service.readAutoMemory()).toEqual({ enabled: true, override: null });
 
-    const enabled = await service.setAutoMemory(true, project);
-    expect(enabled).toMatchObject({ scope: 'project', enabled: true, override: true, userEnabled: false });
-    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
-      customSetting: 'keep',
-      autoMemoryEnabled: true,
-    });
-    expect(await service.setAutoMemory(false, project, 'local')).toMatchObject({
-      enabled: false,
-      override: true,
-      localOverride: false,
-    });
-    expect(await service.setAutoMemory(null, project, 'local')).toMatchObject({
-      enabled: true,
-      override: true,
-      localOverride: null,
-    });
-    const inherited = await service.setAutoMemory(null, project);
-    expect(inherited).toMatchObject({ scope: 'project', enabled: false, override: null, userEnabled: false });
+    const enabled = await service.setAutoMemory(true);
+    expect(enabled).toEqual({ enabled: true, override: true });
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ customSetting: 'keep', autoMemoryEnabled: true });
+    expect(JSON.parse(await fs.readFile(projectFile, 'utf8'))).toEqual({ autoMemoryEnabled: false });
+
+    expect(await service.setAutoMemory(null)).toEqual({ enabled: true, override: null });
     expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({ customSetting: 'keep' });
-    await expect(service.setAutoMemory(null)).rejects.toMatchObject({ code: 'invalid_request' });
   });
 
   it('拒绝把非法记忆设置值解释成已启用或关闭', async () => {

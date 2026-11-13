@@ -1,4 +1,4 @@
-import type { AgentKind } from '@agentdeck/shared/conversation';
+﻿import type { AgentKind } from '@agentdeck/shared/conversation';
 import type {
   ClaudeAutoMemoryState,
   NativeResourceCatalog,
@@ -11,12 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
-import {
-  makeResourceTarget,
-  projectBase,
-  userBase,
-  type ResourceTarget,
-} from '../agents/common/configuration/resources';
+import { makeResourceTarget, userBase, type ResourceTarget } from '../agents/common/configuration/resources';
 import {
   assertDirectoryUnchanged,
   contentRevision,
@@ -103,24 +98,12 @@ export function createNativeResourcesService(deps: Deps = {}) {
       throw resourceError(error);
     });
   }
-  function claudeSettingsTarget(
-    project?: NativeResourceProject,
-    settingsScope: 'user' | 'project' | 'local' = project ? 'project' : 'user',
-  ): ResourceTarget {
-    if (settingsScope === 'user')
-      return makeResourceTarget(
-        'claude',
-        userBase({ agent: 'claude', homeDir, env }, '.claude', env.CLAUDE_CONFIG_DIR),
-        'settings.json',
-        { kind: 'settings', description: 'Claude 用户原生设置。' },
-      );
-    const base = projectBase({ agent: 'claude', homeDir, env, project });
-    if (!base) throw new NativeResourceError('project_missing');
+  function claudeSettingsTarget(): ResourceTarget {
     return makeResourceTarget(
       'claude',
-      settingsScope === 'local' ? { ...base, scope: 'local' } : base,
-      settingsScope === 'local' ? '.claude/settings.local.json' : '.claude/settings.json',
-      { kind: 'settings', description: 'Claude 项目原生设置；修改后由 CLI 决定加载时机。' },
+      userBase({ agent: 'claude', homeDir, env }, '.claude', env.CLAUDE_CONFIG_DIR),
+      'settings.json',
+      { kind: 'settings', description: 'Claude 用户原生设置。' },
     );
   }
   function parseClaudeSettings(content: string): Record<string, unknown> {
@@ -144,27 +127,10 @@ export function createNativeResourcesService(deps: Deps = {}) {
       return parseClaudeSettings(snapshot.content);
     });
   }
-  async function readAutoMemory(project?: NativeResourceProject): Promise<ClaudeAutoMemoryState> {
-    const userResource = claudeSettingsTarget();
-    const userSettings = await readClaudeSettings(userResource);
-    const userOverride = typeof userSettings.autoMemoryEnabled === 'boolean' ? userSettings.autoMemoryEnabled : null;
-    const userEnabled = userOverride ?? true;
-    if (!project)
-      return { scope: 'user', enabled: userEnabled, override: userOverride, localOverride: null, userEnabled };
-    const projectResource = claudeSettingsTarget(project);
-    const projectSettings = await readClaudeSettings(projectResource);
-    const projectOverride =
-      typeof projectSettings.autoMemoryEnabled === 'boolean' ? projectSettings.autoMemoryEnabled : null;
-    const localResource = claudeSettingsTarget(project, 'local');
-    const localSettings = await readClaudeSettings(localResource);
-    const localOverride = typeof localSettings.autoMemoryEnabled === 'boolean' ? localSettings.autoMemoryEnabled : null;
-    return {
-      scope: 'project',
-      enabled: localOverride ?? projectOverride ?? userEnabled,
-      override: projectOverride,
-      localOverride,
-      userEnabled,
-    };
+  async function readAutoMemory(): Promise<ClaudeAutoMemoryState> {
+    const settings = await readClaudeSettings(claudeSettingsTarget());
+    const override = typeof settings.autoMemoryEnabled === 'boolean' ? settings.autoMemoryEnabled : null;
+    return { enabled: override ?? true, override };
   }
   function nextAutoMemoryContent(previous: string, override: boolean | null): string | undefined {
     const settings = parseClaudeSettings(previous);
@@ -195,19 +161,12 @@ export function createNativeResourcesService(deps: Deps = {}) {
     });
     return changed;
   }
-  async function setAutoMemory(
-    override: boolean | null,
-    project?: NativeResourceProject,
-    settingsScope: 'user' | 'project' | 'local' = project ? 'project' : 'user',
-  ) {
-    if ((settingsScope === 'user') !== !project || (!project && override === null))
-      throw new NativeResourceError('invalid_request');
+  async function setAutoMemory(override: boolean | null) {
     const update = async () => {
-      const resource = claudeSettingsTarget(project, settingsScope);
-      if (await writeAutoMemory(resource, override)) await deps.onSaved?.('claude');
-      return readAutoMemory(project);
+      if (await writeAutoMemory(claudeSettingsTarget(), override)) await deps.onSaved?.('claude');
+      return readAutoMemory();
     };
-    return deps.withWrite ? deps.withWrite('claude', project, update) : update();
+    return deps.withWrite ? deps.withWrite('claude', undefined, update) : update();
   }
   async function saveTarget(
     resource: ResourceTarget,

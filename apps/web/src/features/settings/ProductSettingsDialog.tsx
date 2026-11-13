@@ -1,6 +1,6 @@
 import { lazy, Suspense, useLayoutEffect, useRef } from 'react';
 import { ArrowLeft, Settings2 } from 'lucide-react';
-import { buttonClass, inputClass } from '../../ui/styles';
+import { buttonClass } from '../../ui/styles';
 import { EnvironmentReport } from './EnvironmentReport';
 import { GeneralSettingsPanel } from './GeneralSettingsPanel';
 import { NativeMemorySettings } from './NativeMemorySettings';
@@ -18,40 +18,10 @@ export type { SettingsPage } from './use-settings-page';
 const NativeResources = lazy(() => import('./NativeResourcesDialog'));
 const LaunchEnvironment = lazy(() => import('./LaunchEnvironmentPanel'));
 
-function ResourceScope({ state, label = '资源范围' }: { state: SettingsPageState; label?: string }) {
-  return (
-    <label className="flex shrink-0 flex-wrap items-center gap-3 text-sm">
-      <span>{label}</span>
-      <select
-        aria-label={label}
-        className={`${inputClass} max-w-sm`}
-        value={state.selectedProject?.id ?? ''}
-        onChange={(event) => {
-          const scope = event.target.value;
-          state.leave(() => state.setScope(scope));
-        }}
-      >
-        <option value="">全局 / 用户配置</option>
-        {state.choices.map((entry) => (
-          <option key={entry.id} value={entry.id}>
-            {entry.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
 function SettingsDetailContent({ state, props }: { state: SettingsPageState; props: SettingsPageProps }) {
-  const { page, currentAgent, selectedProject } = state;
+  const { page, currentAgent } = state;
   if (page === 'environment') return <EnvironmentReport disabled={false} />;
-  if (page === 'memory')
-    return (
-      <NativeMemorySettings
-        agent={currentAgent}
-        projectId={selectedProject?.id}
-        onOpenFiles={() => state.select('files')}
-      />
-    );
+  if (page === 'memory') return <NativeMemorySettings agent={currentAgent} onOpenFiles={() => state.select('files')} />;
   const category = resourceCategory[page as keyof typeof resourceCategory];
   const back = () => state.changePage(currentAgent);
   return (
@@ -61,11 +31,10 @@ function SettingsDetailContent({ state, props }: { state: SettingsPageState; pro
       ) : (
         category && (
           <NativeResources
-            key={JSON.stringify([currentAgent, selectedProject?.id, category])}
+            key={JSON.stringify([currentAgent, category])}
             embedded
             category={category}
             agent={currentAgent}
-            project={selectedProject}
             onBack={back}
             onClose={props.onClose}
           />
@@ -81,7 +50,6 @@ function SettingsContent({ state, props }: { state: SettingsPageState; props: Se
       <ModelSettingsPanel
         key={state.page}
         agent={state.page}
-        projectId={props.project?.id ?? props.projectId}
         guardRef={state.formGuardRef}
         onNative={state.openNative}
         onLaunchEnvironment={state.openLaunch}
@@ -89,20 +57,18 @@ function SettingsContent({ state, props }: { state: SettingsPageState; props: Se
     );
   return <SettingsDetailContent state={state} props={props} />;
 }
-/** 设置占用应用工作区；表单离开统一经过保护，敏感内容不跨分类保留。 */
+/** 设置占用应用工作区；只管理全局/用户配置，表单离开统一经过保护，敏感内容不跨分类保留。 */
 export default function ProductSettingsDialog(props: SettingsPageProps) {
   const state = useSettingsPage(props);
   const scrollport = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (scrollport.current) scrollport.current.scrollTop = 0;
-  }, [state.page, state.currentAgent, state.selectedProject?.id]);
+  }, [state.page, state.currentAgent]);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     headingRef.current?.focus();
   }, []);
   const hasAgent = state.page !== 'general' && state.page !== 'environment';
-  const category = resourceCategory[state.page as keyof typeof resourceCategory];
-  const hasScope = !!category || state.page === 'memory';
   return (
     <SettingsNavigationContext.Provider value={state.guards}>
       <section
@@ -128,7 +94,6 @@ export default function ProductSettingsDialog(props: SettingsPageProps) {
           <SettingsNavigation page={state.page} select={state.select} agent={state.currentAgent} />
           <div className="settings-main flex min-h-0 min-w-0 flex-1 flex-col gap-5 p-5 sm:p-7">
             {hasAgent && <AgentNavigation agent={state.currentAgent} select={state.selectAgent} />}
-            {hasScope && <ResourceScope state={state} label={state.page === 'memory' ? '记忆范围' : undefined} />}
             <div ref={scrollport} className="min-h-0 flex-1 overflow-y-auto">
               <SettingsContent state={state} props={props} />
             </div>

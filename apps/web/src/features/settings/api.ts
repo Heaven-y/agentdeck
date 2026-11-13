@@ -1,4 +1,4 @@
-import type { AgentKind } from '@agentdeck/shared/conversation';
+﻿import type { AgentKind } from '@agentdeck/shared/conversation';
 import type {
   ClaudeAutoMemoryState,
   NativeConfigAgent,
@@ -24,22 +24,14 @@ function nativeResourceUrl(context: NativeResourceContext, suffix = '') {
 }
 
 export const settingsApi = {
-  readClaudeAutoMemory: (projectId?: string, signal?: AbortSignal) => {
-    const query = projectId ? `?${new URLSearchParams({ projectId })}` : '';
-    return request<ClaudeAutoMemoryState>(`/api/settings/claude-memory${query}`, { signal, cache: 'no-store' });
-  },
-  saveClaudeAutoMemory: (
-    projectId: string | undefined,
-    scope: 'user' | 'project' | 'local',
-    override: 'inherit' | 'enabled' | 'disabled',
-  ) => {
-    const query = projectId ? `?${new URLSearchParams({ projectId })}` : '';
-    return request<ClaudeAutoMemoryState>(`/api/settings/claude-memory${query}`, {
+  readClaudeAutoMemory: (signal?: AbortSignal) =>
+    request<ClaudeAutoMemoryState>('/api/settings/claude-memory', { signal, cache: 'no-store' }),
+  saveClaudeAutoMemory: (override: 'inherit' | 'enabled' | 'disabled') =>
+    request<ClaudeAutoMemoryState>('/api/settings/claude-memory', {
       method: 'PUT',
-      body: JSON.stringify({ scope, override }),
+      body: JSON.stringify({ override }),
       cache: 'no-store',
-    });
-  },
+    }),
   listNativeResources: (context: NativeResourceContext, signal?: AbortSignal) =>
     request<NativeResourceCatalog>(nativeResourceUrl(context), { signal, cache: 'no-store' }),
   /** 正文只在用户显式打开时获取，不能放入查询缓存。 */

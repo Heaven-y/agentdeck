@@ -1,10 +1,9 @@
-import { settingsApi } from './api';
+﻿import { settingsApi } from './api';
 
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { NativeResourceCatalog as Catalog } from '@agentdeck/shared/settings';
-import type { Workspace } from '@agentdeck/shared/projects';
 
 import { buttonClass } from '../../ui/styles';
 import { SettingsDetailDialog } from './SettingsDetailDialog';
@@ -22,7 +21,6 @@ const NativePluginsPanel = lazy(() => import('./NativePluginsPanel'));
 export type NativeResourceCategory = 'all' | 'skills' | 'mcp' | 'plugins' | 'custom';
 type ResourcesProps = {
   agent: AgentKind;
-  project?: Workspace;
   category?: NativeResourceCategory;
   embedded?: boolean;
   onClose(): void;
@@ -30,18 +28,16 @@ type ResourcesProps = {
 };
 
 export default function NativeResourcesDialog(props: ResourcesProps) {
-  return <NativeResourcesContent key={JSON.stringify([props.agent, props.project?.id, props.category])} {...props} />;
+  return <NativeResourcesContent key={JSON.stringify([props.agent, props.category])} {...props} />;
 }
 
 function NativeResourcesContent({
   agent,
-  project,
   onClose,
   onBack,
   category: controlledCategory,
   embedded = false,
 }: ResourcesProps) {
-  const projectId = project?.id;
   const leave = useGuardedSettingsNavigation();
   const [catalog, setCatalog] = useState<Catalog>();
   const [error, setError] = useState('');
@@ -52,7 +48,7 @@ function NativeResourcesContent({
   useEffect(() => {
     const controller = new AbortController();
     void settingsApi
-      .listNativeResources({ agent, projectId }, controller.signal)
+      .listNativeResources({ agent }, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setCatalog(result);
       })
@@ -60,7 +56,7 @@ function NativeResourcesContent({
         if (!controller.signal.aborted) setError(nativeSettingsError(reason));
       });
     return () => controller.abort();
-  }, [agent, projectId, reload]);
+  }, [agent, reload]);
   const refresh = () => {
     setCatalog(undefined);
     setError('');
@@ -75,7 +71,7 @@ function NativeResourcesContent({
       <Suspense fallback={<p role="status">正在打开文件编辑器…</p>}>
         {'resource' in target ? (
           <NativeResourceEditor
-            context={{ agent, projectId }}
+            context={{ agent }}
             resource={target.resource}
             embedded={embedded}
             onBack={returnToCatalog}
@@ -83,7 +79,7 @@ function NativeResourcesContent({
           />
         ) : (
           <NativeResourceCreate
-            context={{ agent, projectId }}
+            context={{ agent }}
             root={target.root}
             embedded={embedded}
             onBack={returnToCatalog}
@@ -101,7 +97,6 @@ function NativeResourcesContent({
       onClose={onClose}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <ResourceProject project={project} />
         <button
           type="button"
           className={buttonClass('outline')}
@@ -120,7 +115,6 @@ function NativeResourcesContent({
       {!embedded && <ResourceCategories category={category} select={setCategory} />}
       <ResourceCategoryContent
         agent={agent}
-        projectId={projectId}
         catalog={catalog}
         category={category}
         error={error}
@@ -138,7 +132,6 @@ function NativeResourcesContent({
 
 function ResourceCategoryContent({
   agent,
-  projectId,
   catalog,
   category,
   error,
@@ -148,7 +141,6 @@ function ResourceCategoryContent({
   onChanged,
 }: {
   agent: AgentKind;
-  projectId?: string;
   catalog?: Catalog;
   category: NativeResourceCategory;
   error: string;
@@ -160,8 +152,8 @@ function ResourceCategoryContent({
   return category === 'skills' ? (
     <Suspense fallback={<p role="status">正在打开 Skills 管理…</p>}>
       <NativeSkillsPanel
-        key={JSON.stringify([agent, projectId])}
-        context={{ agent, projectId }}
+        key={agent}
+        context={{ agent }}
         reload={reload}
         onEdit={(id) => {
           const resource = catalog?.entries.find((entry) => entry.id === id);
@@ -174,21 +166,11 @@ function ResourceCategoryContent({
     </Suspense>
   ) : category === 'mcp' ? (
     <Suspense fallback={<p role="status">正在打开 MCP 管理…</p>}>
-      <NativeMcpPanel
-        key={JSON.stringify([agent, projectId])}
-        context={{ agent, projectId }}
-        reload={reload}
-        onChanged={onChanged}
-      />
+      <NativeMcpPanel key={agent} context={{ agent }} reload={reload} onChanged={onChanged} />
     </Suspense>
   ) : category === 'plugins' ? (
     <Suspense fallback={<p role="status">正在打开原生插件管理…</p>}>
-      <NativePluginsPanel
-        key={JSON.stringify([agent, projectId])}
-        context={{ agent, projectId }}
-        reload={reload}
-        onChanged={onChanged}
-      />
+      <NativePluginsPanel key={agent} context={{ agent }} reload={reload} onChanged={onChanged} />
     </Suspense>
   ) : catalog ? (
     <NativeResourceCatalog catalog={filteredCatalog(catalog, category)} select={select} />
@@ -232,14 +214,6 @@ function ResourceCategories({
   );
 }
 const catalogLoading = (catalog: Catalog | undefined, error: string) => !catalog && !error;
-function ResourceProject({ project }: { project?: Workspace }) {
-  return (
-    <div className="min-w-0 flex-1 space-y-1 text-sm text-muted-foreground">
-      <p>{project ? `当前项目：${project.name}` : '尚未选择项目，显示当前可用的原生入口。'}</p>
-      {project && <p className="break-all font-mono text-xs">{project.dir}</p>}
-    </div>
-  );
-}
 
 function filteredCatalog(catalog: Catalog, category: string): Catalog {
   if (category === 'all') return catalog;
