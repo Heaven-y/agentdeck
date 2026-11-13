@@ -1363,3 +1363,37 @@ it('权限只作用于当前会话，运行中锁定，新建和跨CLI选择不�
   useChat.getState().send('清除覆盖');
   expect(JSON.parse(JSON.stringify(sent.at(-1)))).not.toHaveProperty('permission');
 });
+
+it('错误条目可以手动关闭，且只移除目标条目', () => {
+  useChat.setState({
+    items: [
+      { kind: 'error', id: 'error-1', message: '服务超时' },
+      { kind: 'assistant', id: 'a1', text: '正文', streaming: false },
+      { kind: 'error', id: 'error-2', message: '另一条错误' },
+    ],
+  });
+  useChat.getState().dismissNotice('error-1');
+  expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
+  useChat.getState().dismissNotice('missing');
+  expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
+});
+
+it('后台会话里的错误也能关闭，不动当前会话正文', () => {
+  startTurn('后台任务');
+  const origin = useChat.getState().conversationId;
+  useChat.getState().newSession('codex');
+  const background = useChat.getState().background[origin]!;
+  useChat.setState({
+    background: {
+      ...useChat.getState().background,
+      [origin]: {
+        ...background,
+        items: [{ kind: 'error', id: 'bg-error', message: '服务超时' }, ...background.items],
+      },
+    },
+  });
+  useChat.getState().dismissNotice('bg-error');
+  const state = useChat.getState();
+  expect(state.background[origin]?.items.some((item) => item.kind === 'error')).toBe(false);
+  expect(state.items).toEqual([]);
+});
