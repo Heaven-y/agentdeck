@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -11,23 +11,15 @@ afterEach(() => {
   queryClient.clear();
   vi.restoreAllMocks();
 });
-const project = { id: 'demo', name: '演示项目', dir: '~/projects/demo' };
 function requestUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
   if (input instanceof URL) return input.href;
   return input.url;
 }
-function mockMemoryResponse(url: string, init?: RequestInit): Response {
-  const project = url.includes('projectId=demo');
+function mockMemoryResponse(init?: RequestInit): Response {
   const payload = typeof init?.body === 'string' ? (JSON.parse(init.body) as { override: Override }) : undefined;
   const override = payload?.override === 'enabled' ? true : payload?.override === 'disabled' ? false : null;
-  return Response.json({
-    scope: project ? 'project' : 'user',
-    enabled: override ?? true,
-    override,
-    localOverride: null,
-    userEnabled: true,
-  });
+  return Response.json({ scope: 'user', enabled: override ?? true, override, localOverride: null, userEnabled: true });
 }
 type Override = 'inherit' | 'enabled' | 'disabled';
 function mockApi() {
@@ -39,7 +31,7 @@ function mockApi() {
   };
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = requestUrl(input);
-    if (url.includes('/claude-memory')) return mockMemoryResponse(url, init);
+    if (url.includes('/claude-memory')) return mockMemoryResponse(init);
     if (url.includes('/product'))
       return Response.json({ settings: ProductSettingsSchema.parse({}), revision: 'missing' });
     if (url.includes('/native-resources/'))
@@ -51,11 +43,11 @@ function mockApi() {
     return Response.json({ agent: 'claude', revision: 'missing', fields: [], warnings: [] });
   });
 }
-it('设置直接展示管理分类，选择CLI与项目后进入对应管理页且不用弹窗', async () => {
+it('设置直接展示管理分类，切换 CLI 后进入对应管理页且不用弹窗，只管理全局配置', async () => {
   const fetch = mockApi();
   render(
     <QueryClientProvider client={queryClient}>
-      <SettingsDialog project={project} projects={[project]} onClose={vi.fn()} />
+      <SettingsDialog onClose={vi.fn()} />
     </QueryClientProvider>,
   );
   await screen.findByLabelText('默认 Agent');
@@ -65,22 +57,15 @@ it('设置直接展示管理分类，选择CLI与项目后进入对应管理页�
     expect(within(nav).getByRole('button', { name })).toBeTruthy();
   fireEvent.click(within(nav).getByRole('button', { name: 'Skills' }));
   await waitFor(() =>
-    expect(
-      fetch.mock.calls.some(([url]) => (url as string).includes('/native-management/claude/skills?projectId=demo')),
-    ).toBe(true),
+    expect(fetch.mock.calls.some(([url]) => (url as string) === '/api/native-management/claude/skills')).toBe(true),
   );
+  expect(screen.queryByLabelText('资源范围')).toBeNull();
   const scrollport = screen
     .getByRole('region', { name: '设置页面' })
     .querySelector<HTMLElement>('.settings-main > div:last-child')!;
   scrollport.scrollTop = 720;
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
   await waitFor(() => expect(scrollport.scrollTop).toBe(0));
-  await waitFor(() =>
-    expect(
-      fetch.mock.calls.some(([url]) => (url as string).includes('/native-management/codex/skills?projectId=demo')),
-    ).toBe(true),
-  );
-  fireEvent.change(screen.getByLabelText('资源范围'), { target: { value: '' } });
   await waitFor(() =>
     expect(fetch.mock.calls.some(([url]) => (url as string) === '/api/native-management/codex/skills')).toBe(true),
   );
@@ -89,36 +74,31 @@ it('设置直接展示管理分类，选择CLI与项目后进入对应管理页�
     expect(fetch.mock.calls.some(([url]) => (url as string) === '/api/native-management/codex/mcp')).toBe(true),
   );
 });
-it('记忆页按原生范围切换 Claude Auto Memory，其他 CLI 链接到原生文件', async () => {
+it('记忆页只控制全局 Claude Auto Memory，其他 CLI 链接到原生文件', async () => {
   const fetch = mockApi();
   render(
     <QueryClientProvider client={queryClient}>
-      <SettingsDialog project={project} projects={[project]} onClose={vi.fn()} />
+      <SettingsDialog onClose={vi.fn()} />
     </QueryClientProvider>,
   );
   const nav = screen.getByRole('navigation', { name: '设置分类' });
   fireEvent.click(within(nav).getByRole('button', { name: '记忆' }));
-  const scope = await screen.findByLabelText<HTMLSelectElement>('记忆范围');
-  expect(scope.value).toBe('demo');
-  const projectSetting = await screen.findByLabelText<HTMLSelectElement>('共享项目设置');
-  fireEvent.change(projectSetting, { target: { value: 'disabled' } });
+  const userSetting = await screen.findByLabelText<HTMLInputElement>('启用自动记忆');
+  expect(screen.queryByLabelText('记忆范围')).toBeNull();
+  expect(userSetting.checked).toBe(true);
+  fireEvent.click(userSetting);
+  await waitFor(() => expect(userSetting.checked).toBe(false));
   await waitFor(() =>
     expect(
       fetch.mock.calls.some(
         ([url, init]) =>
-          requestUrl(url).includes('/api/settings/claude-memory?projectId=demo') &&
+          requestUrl(url) === '/api/settings/claude-memory' &&
           init?.method === 'PUT' &&
           typeof init.body === 'string' &&
-          JSON.stringify(JSON.parse(init.body)) === JSON.stringify({ scope: 'project', override: 'disabled' }),
+          JSON.stringify(JSON.parse(init.body)) === JSON.stringify({ override: 'disabled' }),
       ),
     ).toBe(true),
   );
-
-  fireEvent.change(scope, { target: { value: '' } });
-  const userSetting = await screen.findByLabelText<HTMLInputElement>('启用自动记忆');
-  expect(userSetting.checked).toBe(true);
-  fireEvent.click(userSetting);
-  await waitFor(() => expect(userSetting.checked).toBe(false));
 
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
   expect(await screen.findByText(/没有确认可独立控制的自动记忆开关/)).toBeTruthy();

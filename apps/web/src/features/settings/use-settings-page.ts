@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
-import type { Workspace } from '@agentdeck/shared/projects';
 import type { SettingsLeave } from './use-model-settings';
 import { guardSettingsNavigation, leaveSettings } from './settings-navigation';
 
@@ -13,31 +12,21 @@ export type SettingsPageProps = {
   page?: SettingsPage;
   onPageChange?(page: SettingsPage): void;
   initialPage?: SettingsPage;
-  projectId?: string;
-  project?: Workspace;
-  projects?: Workspace[];
   guardRef?: MutableRefObject<SettingsLeave>;
 };
 export const agents: AgentKind[] = ['claude', 'codex', 'antigravity'];
 export const isModelPage = (page: SettingsPage): page is AgentKind => agents.includes(page as AgentKind);
 export const resourceCategory = { skills: 'skills', mcp: 'mcp', plugins: 'plugins', files: 'all' } as const;
-function projectChoices(props: SettingsPageProps) {
-  if (props.projects?.length) return props.projects;
-  return props.project ? [props.project] : [];
-}
 function useSelection(props: SettingsPageProps) {
   const [localPage, setPage] = useState<SettingsPage>(props.initialPage ?? 'claude');
   const page = props.page ?? localPage;
   const [agent, setAgent] = useState<AgentKind>(isModelPage(page) ? page : 'claude');
-  const [scope, setScope] = useState(props.project?.id ?? props.projectId ?? '');
-  const choices = projectChoices(props);
-  const selectedProject = choices.find((entry) => entry.id === scope);
   const currentAgent = isModelPage(page) ? page : agent;
   const changePage = (next: SettingsPage) => {
     setPage(next);
     props.onPageChange?.(next);
   };
-  return { page, currentAgent, selectedProject, choices, setScope, setAgent, changePage };
+  return { page, currentAgent, setAgent, changePage };
 }
 function usePageGuards(page: SettingsPage, outerGuardRef?: MutableRefObject<SettingsLeave>) {
   const [guards] = useState(() => new Map<symbol, SettingsLeave>());

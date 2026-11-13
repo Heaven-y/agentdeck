@@ -80,17 +80,7 @@ function OpenPalette({
   );
 }
 
-function OpenSettings({
-  project,
-  projects,
-  guardRef,
-  close,
-}: {
-  project?: Workspace;
-  projects?: Workspace[];
-  guardRef: MutableRefObject<SettingsLeave>;
-  close(): void;
-}) {
+function OpenSettings({ guardRef, close }: { guardRef: MutableRefObject<SettingsLeave>; close(): void }) {
   return (
     <Suspense
       fallback={
@@ -99,7 +89,7 @@ function OpenSettings({
         </p>
       }
     >
-      <SettingsDialog project={project} projects={projects} guardRef={guardRef} onClose={close} />
+      <SettingsDialog guardRef={guardRef} onClose={close} />
     </Suspense>
   );
 }
@@ -261,12 +251,7 @@ export function App() {
       <SettingsWorkspace
         opened={settings.opened}
         settings={
-          <OpenSettings
-            project={current}
-            projects={projects.data}
-            guardRef={settings.guardRef}
-            close={settings.close}
-          />
+          <OpenSettings guardRef={settings.guardRef} close={settings.close} />
         }
       >
         <WorkspaceLayout

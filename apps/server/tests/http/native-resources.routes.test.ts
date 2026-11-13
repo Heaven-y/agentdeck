@@ -1,4 +1,4 @@
-import * as fs from 'node:fs/promises';
+﻿import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe('原生资源 HTTP 接口', () => {
-  it('Claude Auto Memory 接口只返回状态并支持项目覆盖', async () => {
+  it('Claude Auto Memory 接口只返回全局状态并只改用户原生设置', async () => {
     const { app, homeDir, project } = await setup();
     const userFile = path.join(homeDir, '.claude', 'settings.json');
     await fs.mkdir(path.dirname(userFile), { recursive: true });
@@ -36,49 +36,40 @@ describe('原生资源 HTTP 接口', () => {
 
     const user = await app.inject({ method: 'GET', url: '/api/settings/claude-memory' });
     expect(user.statusCode).toBe(200);
-    expect(user.json()).toMatchObject({ scope: 'user', enabled: true, override: null });
+    expect(user.json()).toEqual({ enabled: true, override: null });
     expect(user.body).not.toContain('private-token');
-    const projectState = await app.inject({
-      method: 'GET',
-      url: `/api/settings/claude-memory?projectId=${project.id}`,
-    });
-    expect(projectState.json()).toMatchObject({ scope: 'project', enabled: true, override: null });
 
     const changed = await app.inject({
       method: 'PUT',
-      url: `/api/settings/claude-memory?projectId=${project.id}`,
-      payload: { scope: 'project', override: 'disabled' },
+      url: '/api/settings/claude-memory',
+      payload: { override: 'disabled' },
     });
     expect(changed.statusCode).toBe(200);
-    expect(changed.json()).toMatchObject({ scope: 'project', enabled: false, override: false });
+    expect(changed.json()).toEqual({ enabled: false, override: false });
     expect(changed.body).not.toContain('private-token');
-    expect(JSON.parse(await fs.readFile(path.join(project.dir, '.claude', 'settings.json'), 'utf8'))).toEqual({
+    expect(JSON.parse(await fs.readFile(userFile, 'utf8'))).toEqual({
+      apiKey: 'private-token',
       autoMemoryEnabled: false,
     });
+    await expect(fs.stat(path.join(project.dir, '.claude'))).rejects.toMatchObject({ code: 'ENOENT' });
 
-    const localChanged = await app.inject({
-      method: 'PUT',
-      url: `/api/settings/claude-memory?projectId=${project.id}`,
-      payload: { scope: 'local', override: 'enabled' },
-    });
-    expect(localChanged.json()).toMatchObject({
-      scope: 'project',
-      enabled: true,
-      override: false,
-      localOverride: true,
-    });
-    expect(JSON.parse(await fs.readFile(path.join(project.dir, '.claude', 'settings.local.json'), 'utf8'))).toEqual({
-      autoMemoryEnabled: true,
-    });
+    expect(
+      (
+        await app.inject({
+          method: 'PUT',
+          url: '/api/settings/claude-memory',
+          payload: { override: 'inherit' },
+        })
+      ).json(),
+    ).toEqual({ enabled: true, override: null });
 
     const invalid = await app.inject({
       method: 'PUT',
       url: '/api/settings/claude-memory',
-      payload: { scope: 'user', override: 'inherit' },
+      payload: { projectId: 'demo' },
     });
     expect(invalid.statusCode).toBe(400);
   });
-
   it('普通目录不带正文，显式打开返回正文，保存只返回修订且全程禁止缓存', async () => {
     const { app, homeDir } = await setup();
     const directory = path.join(homeDir, '.claude');

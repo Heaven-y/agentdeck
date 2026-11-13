@@ -104,7 +104,7 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
               setLimit(50);
             }}
           />
-          <div className="max-h-56 overflow-y-auto rounded-lg border border-border p-1">
+          <div className="rounded-lg border border-border p-1">
             {matches.slice(0, limit).map((model) => (
               <label
                 key={model.id}
@@ -128,12 +128,12 @@ export function ModelVisibilityPanel({ agent, models }: { agent: AgentKind; mode
               </label>
             ))}
             {!matches.length && <p className="p-2 text-xs text-muted-foreground">没有匹配的模型</p>}
-            {matches.length > limit && (
-              <button type="button" className={buttonClass('ghost')} onClick={() => setLimit(limit + 50)}>
-                显示更多
-              </button>
-            )}
           </div>
+          {matches.length > limit && (
+            <button type="button" className={`${buttonClass('ghost')} self-start`} onClick={() => setLimit(limit + 50)}>
+              显示更多（还有 {matches.length - limit} 个）
+            </button>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
