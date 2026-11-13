@@ -350,3 +350,22 @@ it('空输入、过大内容、待回执、列表满与离线均保留草稿并�
   expect(useChat.getState().sendFollowup('离线', 'queue')).toBe(false);
   expect(useChat.getState().banner).toContain('断开');
 });
+
+it('未知会话的队列快照不会在后台凭空造出草稿条目', () => {
+  running();
+  const before = Object.keys(useChat.getState().background);
+  emit({ type: 'followup.state', snapshot: { ...snapshot(), conversationId: 'gone', sessionId: undefined } });
+  expect(Object.keys(useChat.getState().background)).toEqual(before);
+  expect(useChat.getState().queueId).toBe(queueId);
+});
+
+it('会话身份相同的快照挂回存活视图而不是另建一条', () => {
+  running();
+  const origin = useChat.getState().conversationId;
+  emit({ type: 'followup.state', snapshot: { ...snapshot(), conversationId: 'unknown', revision: 5 } });
+  const state = useChat.getState();
+  expect(Object.keys(state.background)).toEqual([]);
+  expect(state.conversationId).toBe(origin);
+  expect(state.queueId).toBe(queueId);
+  expect(state.followups[queueId]?.snapshot.revision).toBe(5);
+});
