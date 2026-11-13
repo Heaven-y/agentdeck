@@ -100,7 +100,6 @@ export function Composer() {
   const attachments = useChat((s) => s.draftAttachments);
   const uploading = useChat((s) => s.attachmentsBusy);
   const setText = useChat((s) => s.setDraft);
-  const running = useChat((s) => s.running);
   const connected = useChat((s) => s.connection === 'open');
   const loading = useChat((s) => s.loadingHistory);
   const historyError = useChat((s) => s.historyError || s.permissionError);
@@ -108,7 +107,6 @@ export function Composer() {
   const permissionPending = useChat((s) => s.permissionLoading || s.permissionSaving);
   const sessionId = useChat((s) => s.sessionId);
   const managing = useChat(managementPending);
-  const queued = useChat((state) => !viewQueue(state)?.invalid && pendingFollowups(viewQueue(state)).length > 0);
   const send = useChat((s) => s.send);
   const restriction = selectionRestriction(selection, sessionId, text);
   const busy = anyBlocked([loading, managing, permissionPending]);
