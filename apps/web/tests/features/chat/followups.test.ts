@@ -382,3 +382,14 @@ it('后台入口只在队列仍有未完成项时保留', () => {
   emit({ type: 'followup.state', snapshot: { ...snapshot(queued('accepted')), revision: 3 } });
   expect(queueHasPending(useChat.getState().followups, view)).toBe(false);
 });
+
+it('视图还没绑定 queueId 时按会话身份找到待发队列，不误判为没有待发', () => {
+  running();
+  const queued: FollowupSnapshot['items'] = [
+    { clientMessageId: 'one', revision: 0, mode: 'queue', status: 'queued', text: '待发', content: { text: '待发' } },
+  ];
+  emit({ type: 'followup.state', snapshot: { ...snapshot(queued), revision: 2 } });
+  const followups = useChat.getState().followups;
+  const unbound = { ...useChat.getState(), queueId: undefined };
+  expect(queueHasPending(followups, unbound)).toBe(true);
+});
