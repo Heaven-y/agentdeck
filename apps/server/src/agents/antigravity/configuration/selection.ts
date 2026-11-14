@@ -25,7 +25,9 @@ export const nativeAntigravityModels: AntigravityModelCatalog = () =>
 
 function requestedModel(config: ConfigObject, changes: Changes): string {
   if (Object.hasOwn(changes, 'model')) return changes.model?.trim() ?? '';
-  return Object.hasOwn(changes, 'modelProvider') ? string(config.model) : '';
+  if (Object.hasOwn(changes, 'modelProvider')) return string(config.model);
+  // 只改模型名称或上下文窗口时也要落到具体模型上，否则自定义条目没有可归属的型号。
+  return ['displayName', 'contextWindow'].some((key) => Object.hasOwn(changes, key)) ? string(config.model) : '';
 }
 
 function explicitCustomConnection(config: ConfigObject, changes: Changes): boolean {
@@ -51,7 +53,8 @@ export async function antigravitySelectionChanges(
   if (!model || selectedAntigravityModel({ ...config, model })) return changes;
   const models = await availableModels(discover);
   const native = models?.find((entry) => entry.id === model || entry.label === model);
-  if (native) return { ...changes, model: native.label };
+  // 自定义条目的 modelName 必须是原生 ID；label 只用于 config.model 与展示。
+  if (native) return { ...changes, model: native.label, nativeModelId: native.id };
   if (!models && !explicitCustomConnection(config, changes)) return changes;
   return { ...changes, model, displayName: changes.displayName ?? model };
 }

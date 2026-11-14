@@ -70,6 +70,8 @@ Antigravity 接入证据基线为 CLI 1.5.1。公开 headless result.usage 有 i
 
 历史读取 generatorMetadata 最后一条 chatModel.chatStartMetadata.contextWindowMetadata，采用原生生成前估计。已用真实隔离回复验证数值存在；元数据不完整或缺字段时隐藏。内部实时 StreamAgentStateUpdates 和 TUI statusLine 尚未接入，不为每轮更新反复打开管理进程。
 
+窗口值是原生为“当时那个模型”报出的上限，与设置页里给其他模型填写的 `maxTokens` 不是同一件事。面板在用量自带型号时显示该型号，否则显示当前会话实际在跑的型号，并注明窗口来自该模型的原生报告；不把配置值当成生效值展示，也不在缺少原生报告时推算窗口。
+
 AGY 历史现可读取同次生成的 `timeToFirstToken` 和 `streamingDuration`。只有完成的单一回复、生成索引/执行身份一致、单次尝试且原生用量匹配时显示“首段”“生成”和生成平均 tok/s；多步骤共享生成或重试时隐藏。首段可含推理输出，输出 token 包含原生计入的推理，均速不代表逐 token 解码速度。真实 CLI 接本机定时响应已核对两轮约 150 ms 首段等待、200 ms 后续流式耗时及思考 token 口径。
 
 正式历史读取已复用目录、身份和空闲校验，白名单映射文字、命令、文件、MCP、通用工具、公开错误、压缩及未知活动。读取预算由[架构](architecture.md#44-历史与前端状态)定义，缺页明确失败。历史工具的模型用量可能来自生成调用的模型请求，不与工具执行时间配对计算速度。该入口仍是内部协议。

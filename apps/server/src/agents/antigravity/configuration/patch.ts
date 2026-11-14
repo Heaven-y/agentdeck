@@ -9,7 +9,8 @@ import {
 import { patchAntigravityModel } from './custom-model';
 const paths = { model: ['model'], modelProvider: ['modelProvider'] };
 export function patch(content: string, config: ConfigObject, changes: Changes): string {
-  validateKeys(changes, [...Object.keys(paths), 'displayName', 'baseUrl', 'contextWindow']);
+  // nativeModelId 由 prepare 依原生目录解析，不落到文件里；这里只放行并供自定义条目取用。
+  validateKeys(changes, [...Object.keys(paths), 'displayName', 'baseUrl', 'contextWindow', 'nativeModelId']);
   const provider = changes.modelProvider;
   if (provider && provider !== 'gemini' && provider !== config.modelProvider)
     throw new ModelSettingsError('请选择原生账号登录或 Gemini API Key 模式。');

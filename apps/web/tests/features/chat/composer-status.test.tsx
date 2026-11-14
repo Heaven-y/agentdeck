@@ -85,3 +85,32 @@ it('其他 CLI 保持原有的空态文案', async () => {
   fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
   expect(await screen.findByText('此会话尚无可用的上下文用量与窗口报告。')).toBeTruthy();
 });
+
+it('Antigravity 的窗口标明属于哪个模型，不让人误以为是设置里填的值', async () => {
+  useChat.setState({
+    agent: 'antigravity',
+    actualModel: 'Gemini 4 Carbon (High)',
+    contextUsage: { source: 'antigravity_estimate', usedTokens: 234848, windowTokens: 256000 },
+  });
+  render(<ComposerStatus />);
+  fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
+  expect(await screen.findByText(/模型：Gemini 4 Carbon \(High\)/)).toBeTruthy();
+  expect(screen.getByText(/窗口由该模型的原生报告给出/)).toBeTruthy();
+});
+
+it('用量自带模型时以原生报告的为准', async () => {
+  useChat.setState({
+    agent: 'antigravity',
+    actualModel: 'Gemini 4 Carbon (High)',
+    contextUsage: {
+      source: 'antigravity_estimate',
+      usedTokens: 100,
+      windowTokens: 200,
+      model: 'Gemini 4 Argon (High)',
+    },
+  });
+  render(<ComposerStatus />);
+  fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
+  expect(await screen.findByText(/模型：Gemini 4 Argon \(High\)/)).toBeTruthy();
+  expect(screen.queryByText(/模型：Gemini 4 Carbon/)).toBeNull();
+});

@@ -78,8 +78,13 @@ export function usageSummary(usage: ContextUsage): string {
   const window = usage.windowTokens === undefined ? undefined : tokens(usage.windowTokens);
   return `${used ?? '—'} / ${window ?? '—'}`;
 }
-export function UsageDetails({ usage }: { usage: ContextUsage }) {
+/**
+ * 窗口是原生为「当时那个模型」报的值，不是设置页里给别的模型填的窗口；
+ * 用量自带模型时以原生报告为准，否则说明当前会话实际在跑的型号。
+ */
+export function UsageDetails({ usage, model }: { usage: ContextUsage; model?: string }) {
   const percentage = contextPercentage(usage);
+  const reported = usage.model || model;
   return (
     <>
       <p>{usageSource(usage)}</p>
@@ -88,7 +93,14 @@ export function UsageDetails({ usage }: { usage: ContextUsage }) {
         {usage.windowTokens !== undefined && ` / 窗口 ${tokens(usage.windowTokens)} tokens`}
         {percentage !== undefined && ` · ${Math.round(percentage * 10) / 10}%`}
       </p>
-      {usage.model && <p className="break-all">模型：{usage.model}</p>}
+      {reported && (
+        <p className="break-all">
+          模型：{reported}
+          {usage.windowTokens !== undefined && (
+            <span className="text-muted-foreground">（窗口由该模型的原生报告给出）</span>
+          )}
+        </p>
+      )}
     </>
   );
 }
@@ -131,6 +143,7 @@ export function ContextStatus() {
   const popover = usePopoverStore({ placement: 'top-end' });
   const usage = useChat((state) => state.contextUsage);
   const agent = useChat((state) => state.agent);
+  const actualModel = useChat((state) => state.actualModel);
   const compaction = useChat((state) => state.compaction);
   const running = useChat((state) => state.running);
   const incomplete = compaction?.status === 'running' && !running;
@@ -154,7 +167,7 @@ export function ContextStatus() {
         aria-label="上下文用量详情"
         className="z-50 max-h-[min(360px,var(--popover-available-height))] w-80 max-w-[calc(100vw-32px)] space-y-2 overflow-y-auto rounded-2xl border border-border bg-card p-3 text-[13px] leading-6 text-muted-foreground shadow-lg"
       >
-        {usage ? <UsageDetails usage={usage} /> : <p>{emptyUsageMessage(agent)}</p>}
+        {usage ? <UsageDetails usage={usage} model={actualModel} /> : <p>{emptyUsageMessage(agent)}</p>}
         {compaction && <CompactionStatus state={compaction} incomplete={incomplete} />}
       </Popover>
     </>

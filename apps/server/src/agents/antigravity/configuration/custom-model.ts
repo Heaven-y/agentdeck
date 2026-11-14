@@ -11,14 +11,21 @@ function antigravitySelection(config: ConfigObject, changes: Changes, previous?:
   const rawModel = selectedModelId(changes, previous);
   const model = rawModel || string(config.model);
   if (!model) throw new Error('请填写模型 ID。');
-  const label = modelLabel(changes, previous) || model;
+  const label = modelLabel(changes, previous) || declaredLabel(changes) || model;
   return { model, label };
 }
+/** 解析出原生 ID 时，changes.model 仍是原生显示名；label 取它而不是原始 ID。 */
+function declaredLabel(changes: Changes) {
+  return owns(changes, 'nativeModelId') && owns(changes, 'model') ? (changes.model?.trim() ?? '') : '';
+}
 function selectedModelId(changes: Changes, previous?: ConfigObject) {
+  // prepare 解析出的原生 ID 才是 modelName 的可靠来源；标签只属于 config.model。
+  const resolved = string(changes.nativeModelId);
   const raw = antigravityModelId(previous?.modelName);
-  if (!owns(changes, 'model')) return raw;
+  if (!owns(changes, 'model')) return resolved || raw;
   const model = changes.model?.trim();
   if (!model) throw new Error('请先选择模型，再修改名称或上下文窗口。');
+  if (resolved) return resolved;
   return previous && [previous.key, previous.label, previous.modelName].includes(model) ? raw : model;
 }
 function modelLabel(changes: Changes, previous?: ConfigObject) {

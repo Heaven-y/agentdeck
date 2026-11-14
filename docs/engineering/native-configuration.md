@@ -72,6 +72,8 @@ Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 setti
 
 上下文窗口按实际语义显示：Codex 可写数字 token 上限，自动压缩阈值独立填写 token 数并写入原生 model_auto_compact_token_limit，留空移除该覆盖；Antigravity 自定义模型写 maxTokens；Claude 默认显示“由模型决定”。Claude 的条件性网关窗口覆盖与压缩阈值继续留在原始配置，不自动关闭压缩，也不将压缩阈值冒充模型窗口。
 
+Antigravity 的 `customModelsConfig.customModels[*].modelName` 必须是原生模型 ID（如 `gemini-4-argon-high`），而 `settings.json` 的 `model` 字段存的是显示标签。只改上下文窗口或模型名称时，工作台仍按原生目录把当前标签解析回 ID 再写入，否则原生会因“不在内置目录”而套用家族默认值；目录不可用或无法唯一匹配时不登记条目。该解析结果只来自服务端读取的原生目录，请求体里同名键一律忽略。
+
 Codex 的 provider、端点与认证放在用户配置。当前原生版本会忽略项目 .codex/config.toml 中的这些字段，不能把项目表单当作有效服务商切换。已有高级认证命令、认证请求头、云认证以及内置服务商保持原生配置；简单 Key 表单不能覆盖。TOML 使用 AST 范围修改指定字段，保留注释、未知表、换行和 BOM；不能安全修改的结构转原文编辑，不整体重新序列化。JSON 表单保留未知字段、缩进与换行习惯。
 
 `/api/settings/models/:agent` 返回允许的字段及密钥存在状态；界面用圆点占位，输入新值替换、清除按钮删除。秘密值不回填或进入模型缓存，空输入保留旧值。Claude/Codex 遵循原生文件格式；Antigravity URL/Key 从同一表单保存到启动环境，使用原生文件与环境的复合 revision，原生写入冲突时恢复本次连接改动。

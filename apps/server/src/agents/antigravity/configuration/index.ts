@@ -27,14 +27,16 @@ export const configuration: CliConfiguration = {
   }),
   advancedWarnings: () => Promise.resolve([]),
   async prepare(config, input, snapshot, services) {
-    const changes = antigravityConnectionChanges(input, config, snapshot);
-    validateUrl(changes.baseUrl);
+    // nativeModelId 只由下面按原生目录解析得出，不受请求内容影响。
+    const { nativeModelId: _ignored, ...changes } = input;
+    const connection = antigravityConnectionChanges(changes, config, snapshot);
+    validateUrl(connection.baseUrl);
     const native = await antigravitySelectionChanges(
       config,
-      nativeModelChanges(changes, snapshot),
+      nativeModelChanges(connection, snapshot),
       services.modelCatalog ?? nativeAntigravityModels,
     );
-    return { changes: native, connection: prepareModelConnection(changes, services.environment, snapshot) };
+    return { changes: native, connection: prepareModelConnection(connection, services.environment, snapshot) };
   },
   launchNote:
     'Gemini API 密钥须配合原生 settings.json 的 modelProvider="gemini"；ADC 使用 AGY_ADC_AUTH=true。保存用于新启动的 CLI，旧值不会回填。',

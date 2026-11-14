@@ -299,6 +299,37 @@ it('原生模型 ID 保存为对应 label，保持 CLI 的强度变体而不登�
   expect(catalog).toHaveBeenCalledOnce();
 });
 
+it('只改上下文窗口时，自定义条目的 modelName 用原生模型 ID 而不是显示标签', async () => {
+  const catalog = vi.fn(async () => [{ id: 'gemini-example-high', label: 'Gemini Example (High)' }]);
+  const { service, write } = await fixture(catalog);
+  // agy 的 model 字段存的是显示标签；直接回写会得到一个原生认不出的 modelName。
+  const file = await write(
+    '.gemini/antigravity-cli/settings.json',
+    '{"modelProvider":"gemini","model":"Gemini Example (High)"}',
+  );
+  const initial = await service.read('antigravity');
+  await service.save('antigravity', { revision: initial.revision, changes: { contextWindow: '1M' } });
+  const config = JSON.parse(await fs.readFile(file, 'utf8'));
+  expect(config.customModelsConfig.customModels.agentdeck).toMatchObject({
+    modelName: 'gemini-example-high',
+    label: 'Gemini Example (High)',
+    maxTokens: 1000000,
+  });
+});
+
+it('客户端伪造的解析结果不会写进 modelName', async () => {
+  const catalog = vi.fn(async () => [{ id: 'gemini-example-high', label: 'Gemini Example (High)' }]);
+  const { service, write } = await fixture(catalog);
+  const file = await write('.gemini/antigravity-cli/settings.json', '{"modelProvider":"gemini"}');
+  const initial = await service.read('antigravity');
+  await service.save('antigravity', {
+    revision: initial.revision,
+    changes: { model: 'gemini-example-high', contextWindow: '1M', nativeModelId: 'attacker-model' },
+  });
+  const config = JSON.parse(await fs.readFile(file, 'utf8'));
+  expect(config.customModelsConfig.customModels.agentdeck.modelName).toBe('gemini-example-high');
+});
+
 it('原生目录读取失败保留用户输入，显式自定义连接仍可登记', async () => {
   const { service, write } = await fixture(async () => {
     throw new Error('unavailable');
