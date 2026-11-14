@@ -32,7 +32,8 @@ function completeTurns(thread: RecordValue): RecordValue[] {
 function summary(thread: RecordValue): NativeSessionSummary {
   return {
     sessionId: text(thread.id),
-    summary: text(thread.name) || text(thread.preview) || 'Codex 会话',
+    // 原生没有可用名字时保持为空：占位文案由界面决定，服务端不编造内容。
+    summary: text(thread.name) || text(thread.preview),
     lastModified: typeof thread.updatedAt === 'number' ? thread.updatedAt * 1_000 : 0,
     ...(text(thread.model).trim() ? { nativeModel: text(thread.model).trim() } : {}),
   };

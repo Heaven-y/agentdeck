@@ -43,7 +43,8 @@ function epochMs(value: string): number {
 function nativeSummary(row: SummaryRow): NativeSessionSummary {
   return {
     sessionId: row.conversationId,
-    summary: row.title.trim() || '未命名会话',
+    // 原生尚未写入标题时保持为空：占位文案由界面决定，服务端不编造内容。
+    summary: row.title.trim(),
     lastModified: epochMs(row.lastModified),
     // 原样带出，归属裁决由上层按 workspace_uris 决定，这里不做猜测。
     workspaceUris: row.workspaceUris,

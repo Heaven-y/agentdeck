@@ -202,7 +202,7 @@ describe('Antigravity 会话提供方', () => {
     ]);
   });
 
-  it('空标题替换为占位文案', async () => {
+  it('原生标题为空时保持空串，占位文案交给界面而不是服务端编造', async () => {
     const provider = createAntigravitySessions({
       readSummaries: () => [
         {
@@ -215,7 +215,7 @@ describe('Antigravity 会话提供方', () => {
       ],
     });
     const [item] = await provider.list(dir);
-    expect(item?.summary).toBe('未命名会话');
+    expect(item?.summary).toBe('');
   });
 
   it('时间无法解析时回退为 0 而不是抛错', async () => {

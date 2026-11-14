@@ -150,10 +150,11 @@ export function updateConversation(
     ? patch
     : { background: { ...state.background, [view.conversationId]: { ...view, ...patch } } };
 }
-export function conversationTitle(view: Pick<ConversationView, 'title' | 'items' | 'draft'>): string {
+/** 只由原生标题或已发送的首条消息决定；未发送的草稿不参与，避免边打边改标题。 */
+export function conversationTitle(view: Pick<ConversationView, 'title' | 'items'>): string {
   if (view.title) return view.title;
   const first = view.items.find((item) => item.kind === 'user');
-  return first?.kind === 'user' ? first.text.slice(0, 60) : view.draft.slice(0, 60) || '新会话';
+  return first?.kind === 'user' ? first.text.slice(0, 60) : '新会话';
 }
 export const waitingPermission = (view: ConversationView) =>
   view.items.some((item) => (item.kind === 'permission' || item.kind === 'interaction') && !item.resolved);

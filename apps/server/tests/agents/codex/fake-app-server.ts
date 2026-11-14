@@ -23,14 +23,14 @@ let startedUsageTurns = 0;
 let backgroundTerminal = ['background-terminal', 'background-terminal-natural-end'].includes(
   process.env.CODEX_TEST_MODE ?? '',
 );
-const thread = (id = threadId, cwd = process.cwd()) => ({
+const thread = (id = threadId, cwd = process.cwd(), preview: string | null = '原生会话') => ({
   id,
   sessionId: 'fork-tree-root',
   forkedFromId: null,
   cwd,
   model: 'native-model',
   name: null,
-  preview: '原生会话',
+  preview,
   createdAt: 1,
   updatedAt: 10,
   source: mode === 'subagent-session' ? { subAgent: 'review' } : 'appServer',
@@ -116,7 +116,8 @@ function listThreads(message: Message): void {
     { ...thread('subagent'), parentThreadId: 'parent', source: { subAgent: {} } },
   ];
   reply(message, {
-    data: cursor ? [thread('second')] : first,
+    // 第二页的线程既没有 name 也没有 preview，用于验证标题不会退回服务端占位文案。
+    data: cursor ? [thread('second', process.cwd(), null)] : first,
     nextCursor: !cursor || mode === 'cursor-loop' ? 'page-2' : null,
   });
 }

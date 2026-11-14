@@ -183,7 +183,8 @@ it('SSH Console从左上打开中央面板，工作区只展开，点击标签�
   expect(screen.queryByRole('combobox', { name: '输入消息' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: new RegExp('^' + workspace.name) }));
   expect(screen.getByRole('region', { name: 'SSH Console页面' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('tab', { name: '留在对话' }));
+  // 未发送的草稿不参与标题，标签显示「新会话」；返回后草稿内容仍原样保留。
+  fireEvent.click(screen.getByRole('tab', { name: '新会话' }));
   expect(await screen.findByLabelText('输入消息')).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe('留在对话');
   expect(screen.queryByRole('region', { name: 'SSH Console页面' })).toBeNull();
