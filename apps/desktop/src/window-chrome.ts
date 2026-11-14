@@ -4,9 +4,13 @@ import { desktopRequestAllowed, type DesktopOwner, type DesktopRequest } from '.
 
 export const TITLE_BAR_HEIGHT = 40;
 const MENU_NAMES = new Set<AppMenuName>(['file', 'edit', 'view', 'window']);
-const TITLE_BAR_COLORS = {
-  light: { color: '#f9fafb', symbolColor: '#0f1115' },
-  dark: { color: '#1b1b1c', symbolColor: '#f9fafb' },
+/**
+ * 原生窗口按钮区由 Electron 自己绘制，取色不经过 CSS。
+ * 这里的 color 必须等于网页里的 `--color-sidebar`，否则标题栏右侧会与其余部分割裂。
+ */
+export const TITLE_BAR_COLORS = {
+  light: { color: '#f5f6f8', symbolColor: '#0f1115' },
+  dark: { color: '#15171b', symbolColor: '#f9fafb' },
 };
 
 /** 沿用 DSH 的 hidden 标题栏与原生窗口按钮；不自行实现关闭、最大化等系统行为。 */

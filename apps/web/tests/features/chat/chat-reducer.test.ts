@@ -250,3 +250,18 @@ it('无用量的失败补结束仍会标记当前统计失败，后续成功补�
   ]);
   expect(source.filter((item) => item.kind === 'statistics')).toMatchObject([{ isError: true, durationMs: 1000 }]);
 });
+
+it('删除过条目后新增的错误仍取得未使用的 id', () => {
+  // 关闭错误提示会真的移除条目，长度回退后不能把同一个 id 再发一次。
+  const original = run([
+    { type: 'error', message: '早已关闭' },
+    { type: 'user_message', text: '问' },
+    { type: 'error', message: '仍显示' },
+  ]);
+  expect(original.map((item) => item.id)).toEqual(['error-0', 'user-1', 'error-2']);
+  const remaining = original.filter((item) => item.id !== 'error-0');
+  const items = run([{ type: 'error', message: '新错误' }], remaining);
+  const ids = items.map((item) => item.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(items.filter((item) => item.kind === 'error')).toHaveLength(2);
+});

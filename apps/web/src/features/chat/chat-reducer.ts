@@ -68,8 +68,16 @@ export type ChatItem =
     }
   | { kind: 'error'; id: string; message: string };
 
-/** 条目只会追加，用位置生成 id 即可保证唯一且稳定（用作 React key） */
-const nextId = (items: ChatItem[], kind: string) => `${kind}-${items.length}`;
+/**
+ * 用位置生成 id：追加时天然唯一且稳定（用作 React key）。
+ * 条目可被关闭删除，长度会回退，因此还要跳过仍在使用的位置，避免 id 重复。
+ */
+function nextId(items: ChatItem[], kind: string): string {
+  const used = new Set(items.map((item) => item.id));
+  let index = items.length;
+  while (used.has(`${kind}-${index}`)) index += 1;
+  return `${kind}-${index}`;
+}
 
 function canAppendAssistant(
   item: ChatItem | undefined,
