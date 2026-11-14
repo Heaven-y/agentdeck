@@ -28,18 +28,25 @@ it('标签跨项目切换、关闭和重新打开保留草稿，不产生重复�
   const second = useChat.getState().conversationId;
   render(<ConversationTabs projects={projects} />);
   expect(screen.getAllByRole('tab')).toHaveLength(2);
-  fireEvent.click(screen.getByRole('tab', { name: '待处理草稿' }));
+  // 未发送的草稿不参与标题，两个新会话都显示「新会话」，按位置区分。
+  const [firstTab, secondTab] = screen.getAllByRole('tab');
+  expect(firstTab?.textContent).toContain('新会话');
+  expect(secondTab?.textContent).toContain('新会话');
+  fireEvent.click(firstTab!);
   expect(useChat.getState()).toMatchObject({ workspaceId: 'one', conversationId: first, draft: '待处理草稿' });
-  fireEvent.click(screen.getByRole('button', { name: '关闭标签“待处理草稿”' }));
+  fireEvent.click(screen.getAllByRole('button', { name: '关闭标签“新会话”' })[0]!);
   expect(useChat.getState().conversationId).toBe(second);
   expect(useChat.getState().background[first]?.draft).toBe('待处理草稿');
   act(() => {
     useChat.getState().openConversation(first);
     useChat.getState().openConversation(first);
   });
-  await waitFor(() =>
-    expect(screen.getByRole('tab', { name: '待处理草稿' }).getAttribute('aria-selected')).toBe('true'),
-  );
+  await waitFor(() => {
+    const selected = screen.getAllByRole('tab').filter((tab) => tab.getAttribute('aria-selected') === 'true');
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.textContent).toContain('新会话');
+  });
+  expect(useChat.getState().conversationId).toBe(first);
   expect(screen.getAllByRole('tab')).toHaveLength(2);
 });
 

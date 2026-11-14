@@ -1,5 +1,27 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, it, vi } from 'vitest';
-import { applicationMenuTemplate, createWindowChrome, desktopChromeOptions } from '../src/window-chrome';
+import {
+  applicationMenuTemplate,
+  createWindowChrome,
+  desktopChromeOptions,
+  TITLE_BAR_COLORS,
+} from '../src/window-chrome';
+
+const stylesheet = readFileSync(fileURLToPath(new URL('../../web/src/styles.css', import.meta.url)), 'utf8');
+/**
+ * 取某主题下生效的 CSS 变量值，避免两份颜色各自漂移。
+ * 暗色沿用 `@theme` 的默认值，浅色在 `:root:not([data-theme='dark'])` 里覆盖。
+ */
+function token(theme: 'light' | 'dark', name: string): string {
+  const scope =
+    theme === 'dark'
+      ? stylesheet.slice(stylesheet.indexOf('@theme'), stylesheet.indexOf(":root[data-theme='dark']"))
+      : stylesheet.slice(stylesheet.indexOf(":root:not([data-theme='dark'])"));
+  const matched = scope.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
+  if (!matched?.[1]) throw new Error(`未找到 ${name}`);
+  return matched[1].toLowerCase();
+}
 
 const url = 'http://127.0.0.1:4317/';
 function setup() {
@@ -83,6 +105,11 @@ it('同一时间只弹出一个菜单，关闭后可再次打开；主题只接�
   await chrome.showMenu(request, 'view', { x: 1, y: 1 });
   expect(popup).toHaveBeenCalledTimes(2);
   chrome.setTheme(request, 'dark');
-  expect(owner.setTitleBarOverlay).toHaveBeenCalledWith({ color: '#1b1b1c', symbolColor: '#f9fafb' });
+  expect(owner.setTitleBarOverlay).toHaveBeenCalledWith({ color: '#15171b', symbolColor: '#f9fafb' });
   expect(() => chrome.setTheme(request, { color: 'red' })).toThrow('标题栏主题无效');
+});
+
+it('窗口按钮区的底色与网页侧栏同色，两种主题都不留接缝', () => {
+  expect(TITLE_BAR_COLORS.dark.color).toBe(token('dark', '--color-sidebar'));
+  expect(TITLE_BAR_COLORS.light.color).toBe(token('light', '--color-sidebar'));
 });

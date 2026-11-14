@@ -28,6 +28,7 @@ import {
   conversationBusy,
   conversationById,
   conversationForSession,
+  conversationViews,
   retainConversation,
   sessionIsRunning,
   updateConversation,
@@ -468,6 +469,22 @@ export const useChat = create<ChatState>()((set, get) => {
       set((state) => ({ items: markPermissionPending(state.items, requestId) }));
     },
     dismissBanner: () => set({ banner: undefined }),
+    dismissNotice(id) {
+      const state = get();
+      // 后台会话的错误同样可关闭；只改确实含该条目的视图。
+      const targets = conversationViews(state).filter((view) =>
+        view.items.some((item) => item.kind === 'error' && item.id === id),
+      );
+      if (!targets.length) return;
+      let background = state.background;
+      let current: Partial<ChatState> = {};
+      for (const view of targets) {
+        const items = view.items.filter((item) => !(item.kind === 'error' && item.id === id));
+        if (view.conversationId === state.conversationId) current = { items };
+        else background = { ...background, [view.conversationId]: { ...view, items } };
+      }
+      set({ ...current, background });
+    },
   };
 });
 

@@ -1,7 +1,8 @@
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert, X } from 'lucide-react';
 import { memo } from 'react';
 import { Streamdown } from 'streamdown';
 import type { ChatItem } from './chat-reducer';
+import { useChat } from './chat-store';
 import { PermissionCard } from './PermissionCard';
 import { InteractionCard } from './InteractionCard';
 import { MessageAttachments } from './MessageAttachments';
@@ -88,7 +89,16 @@ export const MessageItem = memo(function MessageItem({
           className="flex items-start gap-2 rounded-xl bg-destructive/8 px-3 py-2 text-[13px] leading-6"
         >
           <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <span className="min-w-0 break-words text-destructive-foreground">{item.message}</span>
+          <span className="min-w-0 flex-1 break-words text-destructive-foreground">{item.message}</span>
+          <button
+            type="button"
+            aria-label="关闭这条错误"
+            title="关闭"
+            className="-m-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => useChat.getState().dismissNotice(item.id)}
+          >
+            <X aria-hidden className="size-3.5" />
+          </button>
         </div>
       );
     default:

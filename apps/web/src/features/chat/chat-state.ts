@@ -121,6 +121,8 @@ export type ChatState = {
   interrupt(): void;
   respondPermission(requestId: string, allow: boolean): void;
   dismissBanner(): void;
+  /** 只移除提示条目；原生历史里本就没有错误条目，重新读取后自然一致。 */
+  dismissNotice(id: string): void;
 };
 
 /** 只有页面选择和运行内容随会话保存，连接、配置默认与管理索引仍由宿主持有。 */

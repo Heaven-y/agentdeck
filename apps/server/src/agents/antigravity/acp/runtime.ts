@@ -30,6 +30,8 @@ class AcpTurn {
   private promptCapabilities?: AcpRecord;
   private sent = false;
   private ended = false;
+  /** 本轮已流出正文：原生服务在末尾报临时故障时不能再把这一轮说成什么都没产出。 */
+  private produced = false;
   private failed?: AcpError;
   private fallback?: TurnHandle;
   private prompts?: AcpPrompts;
@@ -138,7 +140,10 @@ class AcpTurn {
     }
     try {
       this.prompts?.echo(object(params.update));
-      for (const event of this.mapper.update(object(params.update))) this.input.emit(event);
+      for (const event of this.mapper.update(object(params.update))) {
+        if (event.type === 'text' && event.delta) this.produced = true;
+        this.input.emit(event);
+      }
     } catch {
       this.failed = protocolFailure();
       void this.interrupt();
@@ -170,8 +175,7 @@ class AcpTurn {
           type: 'compaction',
           state: { status: this.controller.signal.aborted ? 'cancelled' : 'failed', trigger: 'manual' },
         });
-      this.input.emit({ type: 'error', message: this.errorMessage(error) });
-      this.input.emit({ type: 'turn_end', isError: true });
+      this.failTurn(error);
     } finally {
       this.ended = true;
       this.prompts?.close();
@@ -179,6 +183,25 @@ class AcpTurn {
       this.permissions?.cancel();
       await this.client?.close();
     }
+  }
+
+  /** 可重试的服务错误在正文已流出时不代表整轮失败，只留一条可折叠记录。 */
+  private failTurn(error: unknown): void {
+    const message = this.errorMessage(error);
+    if (error instanceof AcpError && error.retryable && this.produced && !this.controller.signal.aborted) {
+      this.input.emit({
+        type: 'activity',
+        // 带上本轮身份：同一个会话再次超时时各轮保留自己的记录，不会被并进上一轮的位置。
+        id: this.input.clientMessageId ? `agy-service-retry:${this.input.clientMessageId}` : 'agy-service-retry',
+        name: '原生模型服务超时',
+        status: 'completed',
+        output: `${message}\n本轮已收到正文，但可能不完整；需要完整内容时可重新读取原生历史核对。`,
+      });
+      this.input.emit({ type: 'turn_end', isError: false });
+      return;
+    }
+    this.input.emit({ type: 'error', message });
+    this.input.emit({ type: 'turn_end', isError: true });
   }
 
   private errorMessage(error: unknown): string {

@@ -2,7 +2,7 @@ import type { FollowupSnapshot, ServerMessage } from '@agentdeck/shared/conversa
 import type { ChatState, ConversationView } from './chat-state';
 import type { DraftAttachment } from './attachment-actions';
 import { emptyConversation, EMPTY_MODEL_OVERRIDES, DEFAULT_REASONING_EFFORTS } from './chat-state-helpers';
-import { conversationById, updateConversation } from './conversations';
+import { conversationById, conversationViews, updateConversation } from './conversations';
 import { inputItem, sameDraft, type LocalFollowupQueue, type FollowupDraft } from './followup-state';
 import { openedTab } from './conversation-tabs';
 import { reduceChat } from './chat-reducer';
@@ -22,6 +22,18 @@ function snapshotView(state: ChatState, snapshot: FollowupSnapshot): Conversatio
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES },
     reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
   };
+}
+
+/** 快照只能挂到已存在的视图；同一原生会话的身份可以跨 conversationId 认领。 */
+function knownView(state: ChatState, snapshot: FollowupSnapshot): ConversationView | undefined {
+  const byId = conversationById(state, snapshot.conversationId);
+  if (byId || !snapshot.sessionId) return byId;
+  return conversationViews(state).find(
+    (view) =>
+      view.workspaceId === snapshot.workspaceId &&
+      view.agent === snapshot.agent &&
+      view.sessionId === snapshot.sessionId,
+  );
 }
 
 function matchesView(view: ConversationView, snapshot: Pick<FollowupSnapshot, 'workspaceId' | 'agent' | 'sessionId'>) {
@@ -62,9 +74,9 @@ export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnap
   const state = get(),
     old = state.followups[snapshot.queueId];
   if (old && (old.invalid || old.snapshot.revision > snapshot.revision)) return;
-  const existing = conversationById(state, snapshot.conversationId);
-  const view = existing ?? snapshotView(state, snapshot);
-  if (!matchesView(view, snapshot)) return;
+  // 没有对应视图就不能显示或操作这个队列；凭空补一条会留下无法回收的「草稿」。
+  const view = knownView(state, snapshot);
+  if (!view || !matchesView(view, snapshot)) return;
   const { drafts, clearDraft } = mergeDrafts(old, snapshot, view);
   const patch = {
     queueId: snapshot.queueId,
@@ -74,7 +86,7 @@ export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnap
   };
   set({
     followups: { ...state.followups, [snapshot.queueId]: { snapshot, drafts } },
-    ...updateConversation(state, view, existing ? patch : { ...view, ...patch }),
+    ...updateConversation(state, view, patch),
   });
 }
 export function invalidateFollowups(get: Get, set: Set) {

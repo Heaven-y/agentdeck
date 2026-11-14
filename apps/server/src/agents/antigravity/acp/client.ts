@@ -3,7 +3,7 @@ import path from 'node:path';
 import { resolveLocalCommand, type ResolvedCommand } from '../../../platform/process/executable';
 import { AntigravityLines } from '../lines';
 import { antigravityBackgroundEnvironment } from '../process-environment';
-import { antigravityDiagnostic } from '../diagnostics';
+import { antigravityDiagnostic, serviceFailure } from '../diagnostics';
 import {
   AcpError,
   cancelled,
@@ -38,6 +38,7 @@ function nativeFailure(value: unknown): AcpError {
   return new AcpError(
     'native',
     diagnostic?.type === 'error' ? diagnostic.message : 'Antigravity ACP 未完成请求，请核对模型、配置或原生运行状态。',
+    serviceFailure(text(error.message)),
   );
 }
 

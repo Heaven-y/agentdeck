@@ -18,15 +18,22 @@ export type LocalFollowupQueue = {
 };
 export const pendingFollowups = (queue?: LocalFollowupQueue) =>
   queue?.snapshot.items.filter((item) => !['accepted', 'cancelled'].includes(item.status)) ?? [];
-export function viewQueue(state: ChatState, view: ConversationView = state) {
+/** 队列可能早于视图的 queueId 绑定，按会话身份兜底查找；两处判定共用同一口径。 */
+function findQueue(followups: ChatState['followups'], view: ConversationView) {
   return view.queueId
-    ? state.followups[view.queueId]
-    : Object.values(state.followups).find(
+    ? followups[view.queueId]
+    : Object.values(followups).find(
         (queue) =>
           queue.snapshot.conversationId === view.conversationId &&
           queue.snapshot.workspaceId === view.workspaceId &&
           queue.snapshot.agent === view.agent,
       );
+}
+/** 后台入口只在真有未完成待发项时保留；历史队列不能永久占住列表。 */
+export const queueHasPending = (followups: ChatState['followups'], view: ConversationView): boolean =>
+  pendingFollowups(findQueue(followups, view)).length > 0;
+export function viewQueue(state: ChatState, view: ConversationView = state) {
+  return findQueue(state.followups, view);
 }
 export function draftContent(view: ConversationView, text: string): FollowupContent {
   return {

@@ -576,6 +576,14 @@ describe('Codex app-server 核心边界', () => {
 });
 
 describe('原生会话读取', () => {
+  it('原生没有名字和预览时标题保持空串，占位文案交给界面', async () => {
+    const { dir, options } = await setup();
+    const named = (await listCodexSessions(dir, options)).find((value) => value.sessionId === 'native-thread');
+    expect(named?.summary).toBe('原生会话');
+    // fake-app-server 的 second 线程既没有 name 也没有 preview。
+    const untitled = (await listCodexSessions(dir, options)).find((value) => value.sessionId === 'second');
+    expect(untitled?.summary).toBe('');
+  });
   it('遍历全部目录分页并排除内部子代理，由服务统一裁决归属', async () => {
     const { dir, options, messages } = await setup();
     expect((await listCodexSessions(dir, options)).map((value) => value.sessionId)).toEqual([

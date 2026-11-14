@@ -20,6 +20,7 @@ import { LoadMoreSessions } from '../features/sessions/LoadMoreSessions';
 import { BackgroundConversations } from '../features/chat/BackgroundConversations';
 import { ProjectSessionRow } from '../features/sessions/ProjectSessionRow';
 import { localSessionId, useWorkspaceSessions, type WorkspaceSession } from '../features/sessions/workspace-sessions';
+import { useProductSettings } from '../features/settings/use-product-settings';
 
 export type SidebarProps = {
   pages?: ReactNode;
@@ -53,7 +54,8 @@ export type SidebarProps = {
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_FAILURES: SessionListFailure[] = [];
-const DEFAULT_PROJECT_SESSION_LIMIT = 10;
+/** 产品设置未读到时的取值，与 DEFAULT_APPEARANCE.sessionLimit 一致。 */
+const FALLBACK_SESSION_LIMIT = 5;
 const agentSearchNames = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity AGY' };
 const newestFirst = (a: SessionSummary, b: SessionSummary) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
 const matchesSession = (session: SessionSummary, query: string) =>
@@ -78,9 +80,9 @@ function visibleProjects(projects: Workspace[], sessions: Record<string, Workspa
   });
 }
 
-function displayedProjectSessions(sessions: WorkspaceSession[], activeKey: string, showAll: boolean) {
-  if (showAll || sessions.length <= DEFAULT_PROJECT_SESSION_LIMIT) return sessions;
-  const visible = sessions.slice(0, DEFAULT_PROJECT_SESSION_LIMIT);
+function displayedProjectSessions(sessions: WorkspaceSession[], activeKey: string, showAll: boolean, limit: number) {
+  if (showAll || sessions.length <= limit) return sessions;
+  const visible = sessions.slice(0, limit);
   const active = sessions.find((session) => sessionActionKey(session.projectId ?? '', session) === activeKey);
   if (active && !visible.some((session) => sessionActionKey(session.projectId ?? '', session) === activeKey)) {
     visible[visible.length - 1] = active;
@@ -134,11 +136,12 @@ function ProjectItem({
   onManageProject?: SidebarProps['onManageProject'];
 }) {
   const FolderIcon = expanded ? FolderOpen : Folder;
+  const sessionLimit = useProductSettings().data?.settings.appearance.sessionLimit ?? FALLBACK_SESSION_LIMIT;
   const sortableSessions = useMemo(() => sessions.filter((session) => !session.local), [sessions]);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const visibleSessions = useMemo(
-    () => displayedProjectSessions(sessions, activeKey, searching || showAllSessions),
-    [sessions, activeKey, searching, showAllSessions],
+    () => displayedProjectSessions(sessions, activeKey, searching || showAllSessions, sessionLimit),
+    [sessions, activeKey, searching, showAllSessions, sessionLimit],
   );
   return (
     <li className="min-w-0">
@@ -205,6 +208,7 @@ function ProjectItem({
           )}
           <ProjectSessionExpansionControl
             count={sessions.length}
+            limit={sessionLimit}
             expanded={showAllSessions}
             searching={searching}
             toggle={() => setShowAllSessions((expanded) => !expanded)}
@@ -253,16 +257,18 @@ function ProjectSessionStatus({
 
 function ProjectSessionExpansionControl({
   count,
+  limit,
   expanded,
   searching,
   toggle,
 }: {
   count: number;
+  limit: number;
   expanded: boolean;
   searching: boolean;
   toggle(): void;
 }) {
-  if (searching || count <= DEFAULT_PROJECT_SESSION_LIMIT) return null;
+  if (searching || count <= limit) return null;
   return (
     <button
       type="button"
@@ -271,7 +277,7 @@ function ProjectSessionExpansionControl({
       onClick={toggle}
     >
       {expanded ? <ChevronUp aria-hidden className="size-3.5" /> : <ChevronDown aria-hidden className="size-3.5" />}
-      {expanded ? '收起' : `展开其余 ${count - DEFAULT_PROJECT_SESSION_LIMIT} 条`}
+      {expanded ? '收起' : `展开其余 ${count - limit} 条`}
     </button>
   );
 }

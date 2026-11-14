@@ -13,6 +13,8 @@ import { useProjectSessions } from '../../src/features/projects/use-project-sess
 import { useChat } from '../../src/features/chat/chat-store';
 
 import { queryClient } from '../../src/lib/query-client';
+import { settingsApi } from '../../src/features/settings/api';
+import { DEFAULT_APPEARANCE, DEFAULT_SPOTLIGHT } from '@agentdeck/shared/settings';
 import { useUiPreferences } from '../../src/ui/ui-preferences';
 
 const project: Workspace = { id: 'p1', name: '示例项目', dir: path.resolve('fixtures', 'demo') };
@@ -382,17 +384,41 @@ it('每个项目默认限制会话行数，展开可查看全部已加载项并�
 
   const group = within(screen.getByRole('region', { name: '示例项目会话' }));
   expect(group.getByText('项目会话 1')).toBeTruthy();
-  expect(group.getByText('项目会话 10')).toBeTruthy();
-  expect(group.queryByText('项目会话 11')).toBeNull();
-  expect(group.getByRole('button', { name: '展开其余 2 条' }).getAttribute('aria-expanded')).toBe('false');
+  expect(group.getByText('项目会话 5')).toBeTruthy();
+  expect(group.queryByText('项目会话 6')).toBeNull();
+  expect(group.getByRole('button', { name: '展开其余 7 条' }).getAttribute('aria-expanded')).toBe('false');
 
-  fireEvent.click(group.getByRole('button', { name: '展开其余 2 条' }));
+  fireEvent.click(group.getByRole('button', { name: '展开其余 7 条' }));
   expect(group.getByText('项目会话 12')).toBeTruthy();
   expect(group.getByRole('button', { name: '收起' }).getAttribute('aria-expanded')).toBe('true');
 
   fireEvent.click(group.getByRole('button', { name: '收起' }));
-  expect(group.queryByText('项目会话 11')).toBeNull();
-  expect(group.getByRole('button', { name: '展开其余 2 条' })).toBeTruthy();
+  expect(group.queryByText('项目会话 6')).toBeNull();
+  expect(group.getByRole('button', { name: '展开其余 7 条' })).toBeTruthy();
+});
+
+it('设置里改过会话条数后按新值折叠，不写死默认值', async () => {
+  const sessions = Array.from({ length: 12 }, (_, index) => ({
+    ...claudeSession,
+    sessionId: `claude-${index + 1}`,
+    title: `项目会话 ${index + 1}`,
+    updatedAt: new Date(12_000 - index * 1000).toISOString(),
+  }));
+  vi.spyOn(settingsApi, 'readProductSettings').mockResolvedValue({
+    settings: {
+      defaultAgent: 'claude',
+      spotlight: DEFAULT_SPOTLIGHT,
+      appearance: { ...DEFAULT_APPEARANCE, sessionLimit: 8 },
+      resources: { intervalSeconds: 5, timeoutSeconds: 8 },
+    },
+    revision: 'missing',
+  });
+  managedSidebar(sessions);
+
+  const group = within(await screen.findByRole('region', { name: '示例项目会话' }));
+  expect(await group.findByText('项目会话 8')).toBeTruthy();
+  expect(group.queryByText('项目会话 9')).toBeNull();
+  expect(group.getByRole('button', { name: '展开其余 4 条' })).toBeTruthy();
 });
 
 it('当前选中的旧会话在折叠列表中仍可见，搜索会显示所有匹配结果', () => {
@@ -458,24 +484,46 @@ it('侧栏保留各CLI复制入口，管理动作按原生能力显示', async (
 
 it('非当前项目删除只发送源行身份，必须确认且失败留在原处', async () => {
   useChat.getState().selectWorkspace('different-project');
-  const fetcher = vi
-    .fn()
-    .mockResolvedValue(new Response(JSON.stringify({ message: '原生写入未确认' }), { status: 503 }));
+  // 侧栏同时会读产品设置；每个请求返回新的 Response，body 不能被前一个请求读走。
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url === '/api/settings/product')
+      return new Response(
+        JSON.stringify({
+          settings: {
+            defaultAgent: 'claude',
+            spotlight: DEFAULT_SPOTLIGHT,
+            appearance: DEFAULT_APPEARANCE,
+            resources: { intervalSeconds: 5, timeoutSeconds: 8 },
+          },
+          revision: 'missing',
+        }),
+        { status: 200 },
+      );
+    return new Response(JSON.stringify({ message: '原生写入未确认' }), { status: 503 });
+  });
   vi.stubGlobal('fetch', fetcher);
   managedSidebar();
   fireEvent.click(screen.getByRole('button', { name: /^示例项目/ }));
   await actionFor(claudeSession.title, '删除');
   const dialog = screen.getByRole('dialog', { name: '删除会话' });
   const confirm = within(dialog).getByRole<HTMLButtonElement>('button', { name: '确认删除会话' });
+  // 只统计会话操作请求，设置读取不计入。
+  const actions = () =>
+    fetcher.mock.calls.filter(([input]) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return url.endsWith('/actions');
+    });
   expect(confirm.disabled).toBe(true);
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(actions()).toHaveLength(0);
   fireEvent.click(within(dialog).getByRole('checkbox'));
   fireEvent.click(confirm);
   await within(dialog).findByText('原生写入未确认');
-  expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+  expect(actions()).toHaveLength(1);
+  expect(actions()[0]).toEqual([
     '/api/projects/p1/sessions/claude/claude-1/actions',
     expect.objectContaining({ method: 'POST', body: '{"action":"delete","confirmed":true}' }),
-  );
+  ]);
   expect(useChat.getState().workspaceId).toBe('different-project');
 });
 

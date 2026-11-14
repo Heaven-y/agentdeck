@@ -11,11 +11,13 @@ import {
   conversationViews,
   waitingPermission,
 } from './conversations';
+import { queueHasPending } from './followup-state';
 
-function status(view: ConversationView) {
+function status(view: ConversationView, queued: boolean) {
   if (view.interruptRequested) return { text: '正在停止', Icon: LoaderCircle };
   if (waitingPermission(view)) return { text: '等待批准', Icon: ShieldQuestion };
   if (conversationBusy(view)) return { text: '运行中', Icon: LoaderCircle };
+  if (queued) return { text: '有等待发送的消息', Icon: MessageSquare };
   if (view.unread) return { text: '有新消息', Icon: CircleDot };
   return { text: '草稿', Icon: MessageSquare };
 }
@@ -36,13 +38,14 @@ export function BackgroundConversations({
         (view) =>
           (view.conversationId !== state.conversationId || !state.conversationVisible) &&
           (conversationBusy(view) ||
-            !!view.queueId ||
+            queueHasPending(state.followups, view) ||
             view.unread ||
             !!view.draft ||
             (!view.sessionId && conversationHasDraft(view))),
       ),
     ),
   );
+  const followups = useChat((state) => state.followups);
   const stop = useChat((state) => state.interruptConversation);
   const select = useChat((state) => state.openConversation);
   if (!views.length) return null;
@@ -53,7 +56,7 @@ export function BackgroundConversations({
         {views.map((view) => {
           const title = conversationTitle(view);
           const project = projects.find((entry) => entry.id === view.workspaceId)?.name ?? '';
-          const { text, Icon } = status(view);
+          const { text, Icon } = status(view, queueHasPending(followups, view));
           return (
             <li key={view.conversationId} className="flex min-w-0 items-center gap-1 rounded-lg hover:bg-muted/70">
               <button

@@ -39,6 +39,9 @@ function navigationSelector() {
   };
 }
 
+/** 原生标题可能还没落库（AGY 在进程退出后才写）；空标题不能顶掉本地推导的标题。 */
+const preferredTitle = (native: string | undefined, local: string) => native || local;
+
 /** 原生 CLI 可能直到退出才写摘要；本页已发送会话先提供可返回的导航。 */
 export function useWorkspaceSessions(native: Record<string, SessionSummary[]>) {
   const select = useMemo(() => navigationSelector(), []);
@@ -55,8 +58,8 @@ export function useWorkspaceSessions(native: Record<string, SessionSummary[]>) {
       const entry: WorkspaceSession = {
         ...identity,
         projectId: view.workspaceId,
-        title: view.title,
         ...existing,
+        title: preferredTitle(existing?.title, view.title),
         updatedAt: new Date(Math.max(view.lastSentAt, Date.parse(existing?.updatedAt ?? '') || 0)).toISOString(),
         running: view.running || existing?.running === true,
         conversationId: view.conversationId,

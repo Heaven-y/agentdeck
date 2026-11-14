@@ -21,6 +21,8 @@ export class AcpError extends Error {
   constructor(
     readonly code: 'unavailable' | 'selection' | 'cancelled' | 'protocol' | 'native',
     message: string,
+    /** 原生服务临时故障：已产出正文时不应据此判定整轮失败。 */
+    readonly retryable = false,
   ) {
     super(message);
   }
