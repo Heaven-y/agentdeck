@@ -191,7 +191,8 @@ class AcpTurn {
     if (error instanceof AcpError && error.retryable && this.produced && !this.controller.signal.aborted) {
       this.input.emit({
         type: 'activity',
-        id: 'agy-service-retry',
+        // 带上本轮身份：同一个会话再次超时时各轮保留自己的记录，不会被并进上一轮的位置。
+        id: this.input.clientMessageId ? `agy-service-retry:${this.input.clientMessageId}` : 'agy-service-retry',
         name: '原生模型服务超时',
         status: 'completed',
         output: `${message}\n本轮已收到正文，但可能不完整；需要完整内容时可重新读取原生历史核对。`,

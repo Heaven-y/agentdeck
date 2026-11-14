@@ -529,4 +529,21 @@ describe('AGY 原生服务临时故障', () => {
     expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
   });
+
+  it('不同轮次的超时记录各自独立，不会合并到上一轮', async () => {
+    const ids = await Promise.all(
+      ['turn-a', 'turn-b'].map(async (clientMessageId) => {
+        const f = setup({ input: { clientMessageId } });
+        const handle = f.run();
+        await started(f.client);
+        f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '正文' } });
+        f.failPrompt(timeout);
+        await handle.done;
+        return f.events.find((event) => event.type === 'activity')?.id;
+      }),
+    );
+    expect(ids[0]).toContain('turn-a');
+    expect(ids[1]).toContain('turn-b');
+    expect(new Set(ids).size).toBe(2);
+  });
 });
