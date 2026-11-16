@@ -69,7 +69,7 @@ jscpd 递归扫描 server/web/desktop 的 src、shared/src、scripts/dev 与 scr
 
 ### 1.5 后端与远程环境
 
-本地 Fastify 负责访问控制、原生适配、轮次、SSH 和文件任务；长时间操作必须异步、可取消且有界。并发边界、资源预算、主机信任和凭据规则见[架构](../engineering/architecture.md)。
+本地 Fastify 负责访问控制、原生适配、轮次与 SSH；长时间操作必须异步、可取消且有界。并发边界、资源预算、主机信任和凭据规则见[架构](../engineering/architecture.md)。
 
 服务器使用已有工具和 Python 环境，不为监控安装 `nvitop` 或常驻采集器。远端操作、资源观察和对话互不代替，独立成功不能证明所有组合都通过。
 
@@ -127,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev\install-skills.ps1
 | 浏览器热更新 | `npm.cmd run dev` |
 | 本机静态托管 | `npm.cmd start` |
 | 指定关联测试 | `npm.cmd test -- apps/server/tests/chat/turn-manager.test.ts` |
-| 终端受控夹具 | `node --import tsx scripts/dev/e2e-terminal.ts` |
+| 控制台受控夹具 | `node --import tsx scripts/dev/e2e-console.ts` |
 | Windows 本地包 | `npm.cmd run package:desktop` |
 | 解包目录与冒烟 | `npm.cmd run package:desktop:dir`，再按本地安装指南运行冒烟检查 |
 

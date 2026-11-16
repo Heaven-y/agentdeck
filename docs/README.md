@@ -27,6 +27,7 @@
 | 三 CLI 原生能力逐项状态、限制与产品边界 | [原生能力矩阵](engineering/native-capability-matrix.md) |
 | 三 CLI 原生交互、附件与扩展管理补齐 | [当前实施计划](plans/native-capability-parity.md) |
 | 本轮对话体验修复与外观设置的实施步骤 | [对话体验计划](superpowers/plans/2026-11-13-chat-ux.md) |
+| SSH Console 收敛为纯服务器形态的改造步骤 | [服务器为中心的控制台计划](plans/server-centric-ssh-console.md) |
 
 ## 维护规则
 
