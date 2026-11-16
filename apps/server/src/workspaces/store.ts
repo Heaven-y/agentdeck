@@ -38,20 +38,15 @@ export type WorkspaceStore = {
 export type WorkspaceStoreDeps = {
   configDir: string;
   dirExists(p: string): Promise<boolean>;
-  /** 已登记服务器档案的稳定别名；只在输入带了 server 时查询 */
-  knownHosts(): Promise<string[]>;
 };
 
 const FILE_NAME = 'workspaces.json';
-// 落盘文件比接口更严格：id 唯一、dir 必须是绝对路径、server 与 remoteDir 成对出现。
+// 落盘文件比接口更严格：id 唯一、dir 必须是绝对路径。
 // dir 若非绝对路径，会被下游当作 cwd 直接传给 CLI，等于静默跑错目录；
-// server 单独存在时 isBoundWorkspace 判否、任何服务器面板都打不开，却仍占着
-// target_referenced 名额。两种情况都会让坏数据继续跑，所以拦住整份配置，
-// 让人先去修文件。
+// 坏数据会继续跑，所以拦住整份配置，让人先去修文件。
 const StoredWorkspacesSchema = WorkspaceSchema.array()
   .refine((items) => new Set(items.map((item) => item.id)).size === items.length)
-  .refine((items) => items.every((item) => path.isAbsolute(item.dir)))
-  .refine((items) => items.every((item) => (item.server === undefined) === (item.remoteDir === undefined)));
+  .refine((items) => items.every((item) => path.isAbsolute(item.dir)));
 
 export function createWorkspaceStore(deps: WorkspaceStoreDeps): WorkspaceStore {
   const file = path.join(deps.configDir, FILE_NAME);
@@ -93,23 +88,10 @@ export function createWorkspaceStore(deps: WorkspaceStoreDeps): WorkspaceStore {
   }
 
   /**
-   * server 与 remoteDir 同进同退。只绑服务器却给不出默认目录的项目：
-   * isBoundWorkspace 判否、打不开任何服务器面板，却会占住 target_referenced 名额、
-   * 挡住服务器档案修改。只给目录不绑服务器同理无法使用。
-   */
-  function assertBinding(value: WorkspaceInput): void {
-    if ((value.server === undefined) === (value.remoteDir === undefined)) return;
-    throw new WorkspaceValidationError(
-      'remoteDir',
-      value.server === undefined ? '未绑定服务器时不能设置服务器目录' : '绑定服务器时必须设置服务器目录',
-    );
-  }
-
-  /**
-   * 目录必须是绝对路径；服务器绑定可选，但 server 与 remoteDir 必须成对出现。
+   * 目录必须是绝对路径。
    *
    * 「目录必须存在」只在新增项目或换目录时检查。已有的项目目录可能只是**暂时离线**
-   * （移动硬盘没插、网络盘没挂），此时用户仍然必须能改名、解绑服务器、或把目录改到别处——
+   * （移动硬盘没插、网络盘没挂），此时用户仍然必须能改名、或把目录改到别处——
    * 否则那条记录就成了只能手改 JSON 的死条目。
    */
   async function validate(input: WorkspaceInput, checkExists = true): Promise<WorkspaceInput> {
@@ -117,17 +99,8 @@ export function createWorkspaceStore(deps: WorkspaceStoreDeps): WorkspaceStore {
     if (!path.isAbsolute(value.dir)) throw new WorkspaceValidationError('dir', '项目目录必须是绝对路径');
     const dir = path.resolve(value.dir);
     if (checkExists && !(await deps.dirExists(dir))) throw new WorkspaceValidationError('dir', '项目目录不存在');
-    if (value.server !== undefined && !(await deps.knownHosts()).includes(value.server)) {
-      throw new WorkspaceValidationError('server', '服务器未登记，请先保存服务器档案');
-    }
-    assertBinding(value);
     // 显式重建，避免 update 传入 undefined 时把空键带进落盘文件。
-    return {
-      name: value.name,
-      dir,
-      ...(value.server === undefined ? {} : { server: value.server }),
-      ...(value.remoteDir === undefined ? {} : { remoteDir: value.remoteDir }),
-    };
+    return { name: value.name, dir };
   }
 
   return {

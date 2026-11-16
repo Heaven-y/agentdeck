@@ -42,8 +42,6 @@ export function createCodexRunner(options: CodexRuntimeOptions & { idleMs?: numb
       input.workspace.id,
       input.projectDir ?? input.workspace.dir,
       input.workspace.dir,
-      input.workspace.server,
-      input.workspace.remoteDir,
       input.sessionId ?? '',
       input.model ?? '',
       input.reasoningEffort ?? '',

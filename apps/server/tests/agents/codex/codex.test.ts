@@ -201,8 +201,6 @@ async function setup(mode = 'normal') {
     id: 'workspace',
     name: '测试',
     dir,
-    server: 'my-server',
-    remoteDir: '~/projects/demo',
   };
   const log = path.join(dir, 'rpc.jsonl');
   const options = { command, env: { CODEX_HOME: dir, CODEX_TEST_MODE: mode, CODEX_TEST_LOG: log } };

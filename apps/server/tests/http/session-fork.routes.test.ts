@@ -17,8 +17,6 @@ const ws: Workspace = {
   id: 'w1',
   name: '分叉测试',
   dir: path.join(tmpdir(), 'agentdeck-fork-fixture', 'workspace'),
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 };
 const sourceId = 'source-session';
 const forkedId = 'forked-session';

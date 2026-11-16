@@ -17,8 +17,6 @@ describe('能力目录路由', () => {
       id: 'workspace',
       name: 'demo',
       dir: path.join(tmpdir(), 'capabilities-route'),
-      server: 'my-server',
-      remoteDir: '~/projects/demo',
     };
     const provider = vi.fn(async () => ({ models: [], entries: [], warnings: ['模型目录暂不可用'] }));
     const app = Fastify();

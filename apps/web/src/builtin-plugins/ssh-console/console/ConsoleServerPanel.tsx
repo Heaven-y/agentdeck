@@ -8,6 +8,7 @@ import { DetailDialog } from '../../../ui/DetailDialog';
 import { ServerConnectionForm } from '../ssh/ServerConnectionForm';
 import { ConsoleViewTabs } from './ConsoleTabs';
 import { ConsoleResources } from './ConsoleResources';
+import { ConsoleJobs } from './ConsoleJobs';
 import { ConsoleFiles } from './ConsoleFiles';
 import type { ConsoleServerTab, ConsoleView } from './console-state';
 
@@ -126,6 +127,7 @@ function ConsoleServerContent({
       {(view === 'overview' || view === 'processes') && (
         <ConsoleResources serverId={tab.serverId} directory={tab.directory} view={view} active={enabled} />
       )}
+      {view === 'jobs' && <ConsoleJobs serverId={tab.serverId} active={enabled} />}
       {filesLoaded && (
         <div hidden={view !== 'files'} className="flex min-h-0 flex-1 flex-col">
           <ConsoleFiles serverId={tab.serverId} initialDirectory={tab.directory} active={enabled && view === 'files'} />

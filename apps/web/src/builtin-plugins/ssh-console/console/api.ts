@@ -1,5 +1,6 @@
 import { request } from '../../../lib/http';
 import type {
+  SlurmSnapshot,
   SshConsoleDirectory,
   SshConsoleOverview,
   SshConsolePreview,
@@ -20,6 +21,7 @@ export const sshConsoleApi = {
     get<SshConsoleOverview>(`${base(serverId)}/overview?${new URLSearchParams({ path })}`, signal),
   processes: (serverId: string, signal?: AbortSignal) =>
     get<SshConsoleProcesses>(`${base(serverId)}/processes`, signal),
+  jobs: (serverId: string, signal?: AbortSignal) => get<SlurmSnapshot>(`${base(serverId)}/jobs`, signal),
   directory: (serverId: string, path: string, signal?: AbortSignal) =>
     get<SshConsoleDirectory>(`${base(serverId)}/files?${new URLSearchParams({ path })}`, signal),
   preview: (serverId: string, path: string, signal?: AbortSignal) =>

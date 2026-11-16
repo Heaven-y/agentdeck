@@ -1,9 +1,9 @@
 import type { SshConsoleDisk, SshConsoleHost } from '@agentdeck/shared/ssh';
-import { HOST_RESOURCE_COMMAND } from '../legacy/resources/commands';
-import { parseHostResources, type CpuCounters } from '../legacy/resources/parse';
+import { HOST_RESOURCE_COMMAND } from './host-command';
+import { parseHostResources, type CpuCounters } from './host-parse';
 
 const section = (name: string, command: string) => `printf '\\036${name}\\037\\n'; { ${command}; } 2>/dev/null;`;
-/** 独立控制台补充主机信息，旧项目工具继续使用原采样协议。 */
+/** 独立控制台采样主机信息，并补充核数、内核与运行时长。 */
 export const CONSOLE_HOST_COMMAND =
   'export LC_ALL=C; ' +
   [

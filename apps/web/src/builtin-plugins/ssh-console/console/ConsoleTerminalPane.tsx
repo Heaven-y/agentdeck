@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buttonClass } from '../../../ui/styles';
-import { TerminalPasteDialog } from '../legacy/terminal/TerminalDialogs';
-import { prepareTerminalPaste } from '../legacy/terminal/paste';
+import { TerminalPasteDialog } from './TerminalPasteDialog';
+import { prepareTerminalPaste } from './paste';
 import { createConsoleTerminalRuntime } from './terminal-runtime';
 import { ConsoleTerminalSearch } from './ConsoleTerminalSearch';
 import type { TerminalSearchResults } from './terminal-search';

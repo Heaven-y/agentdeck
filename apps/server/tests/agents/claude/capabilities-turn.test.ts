@@ -11,8 +11,6 @@ const workspace: Workspace = {
   id: 'w1',
   name: 'demo',
   dir: path.join(os.tmpdir(), 'agentdeck-fixture', 'demo'),
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 };
 const compact = { name: 'compact', description: '原生压缩', argumentHint: '', builtin: true };
 const skill = { name: 'fixture', description: '原生技能', argumentHint: '<任务>' };

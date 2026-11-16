@@ -112,7 +112,7 @@ it('完整启动接线在停用期间拒绝所有 SSH 路由，重新启用恢�
   expect((await request('api/plugins/ssh-console', 'PUT', { enabled: false, revision: initial.revision })).status).toBe(
     200,
   );
-  for (const url of ['api/ssh-targets', 'api/workspaces/missing/resources', 'api/workspaces/missing/slurm']) {
+  for (const url of ['api/ssh-targets', 'api/ssh-console/my-server/overview']) {
     expect((await request(url)).status).toBe(409);
   }
   expect((await request('api/projects')).status).toBe(200);

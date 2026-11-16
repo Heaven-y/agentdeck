@@ -31,8 +31,6 @@ async function setup(mode = 'normal') {
     id: 'workspace',
     name: '能力测试',
     dir,
-    server: 'my-server',
-    remoteDir: '~/projects/demo',
   };
   const options = {
     command: {

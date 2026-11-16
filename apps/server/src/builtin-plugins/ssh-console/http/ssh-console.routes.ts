@@ -58,6 +58,11 @@ function registerReads(app: FastifyInstance, service: SshConsoleService) {
     checked(Empty, req.query);
     return service.processes(serverId, requestSignal(req, reply));
   });
+  app.get('/api/ssh-console/:serverId/jobs', options, (req, reply) => {
+    const { serverId } = checked(Params, req.params);
+    checked(Empty, req.query);
+    return service.jobs(serverId, requestSignal(req, reply));
+  });
   app.get('/api/ssh-console/:serverId/files', options, (req, reply) => {
     const { serverId } = checked(Params, req.params);
     const { path } = checked(PathQuery, req.query);

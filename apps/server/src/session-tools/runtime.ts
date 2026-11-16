@@ -31,7 +31,6 @@ export function createSessionToolsRuntime(configDir: string) {
   const store = createWorkspaceStore({
     configDir,
     dirExists: async (directory) => (await stat(directory)).isDirectory(),
-    knownHosts: () => Promise.resolve([]),
   });
   const environment = createLaunchEnvironment({ configDir });
   const management = createAntigravitySessionManagement({ environment: () => environment.resolve('antigravity') });

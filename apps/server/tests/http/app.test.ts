@@ -55,8 +55,6 @@ afterEach(async () => {
 const body: WorkspaceInput = {
   name: 'demo',
   dir: path.join(os.tmpdir(), 'agentdeck-fixture', 'demo'),
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 };
 
 describe('访问控制', () => {

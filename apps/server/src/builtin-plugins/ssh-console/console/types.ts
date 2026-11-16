@@ -1,4 +1,5 @@
 import type {
+  SlurmSnapshot,
   SshConsoleDirectory,
   SshConsoleOverview,
   SshConsolePreview,
@@ -14,6 +15,8 @@ export type SshConsoleDeps = { pool: SshPool; isEnabled(): boolean };
 export type SshConsoleService = {
   overview(serverId: string, remoteDir?: string, signal?: AbortSignal): Promise<SshConsoleOverview>;
   processes(serverId: string, signal?: AbortSignal): Promise<SshConsoleProcesses>;
+  /** 当前登录账号的只读 squeue 快照；不可用与失败都以快照状态表达。 */
+  jobs(serverId: string, signal?: AbortSignal): Promise<SlurmSnapshot>;
   listDirectory(serverId: string, directory?: string, signal?: AbortSignal): Promise<SshConsoleDirectory>;
   preview(serverId: string, file: string, signal?: AbortSignal): Promise<SshConsolePreview>;
   listTerminals(serverId: string): Promise<{ terminals: SshConsoleTerminal[] }>;

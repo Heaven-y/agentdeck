@@ -5,7 +5,6 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServerTargets } from '../../../../src/builtin-plugins/ssh-console/ssh/targets';
 import { createServerProfiles } from '../../../../src/builtin-plugins/ssh-console/ssh/profiles';
-import { createWorkspaceStore } from '../../../../src/workspaces/store';
 import { registerSshTargetRoutes } from '../../../../src/builtin-plugins/ssh-console/http/ssh-targets.routes';
 import { registerSshRoutes } from '../../../../src/builtin-plugins/ssh-console/http/ssh.routes';
 
@@ -17,11 +16,6 @@ const input = { name: '演示', hostname: 'example.invalid', username: 'demo', a
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'profiles-test-'));
   const targets = createServerTargets({ configDir: root, homeDir: root });
-  const store = createWorkspaceStore({
-    configDir: root,
-    dirExists: async () => true,
-    knownHosts: async () => (await targets.list()).map((server) => server.alias),
-  });
   const state = { connected: true, hasPassword: true, saved: false, savingAvailable: false, paused: false };
   const pool = {
     disconnect: vi.fn(),
@@ -33,7 +27,7 @@ async function fixture() {
     readServerPassword: vi.fn(async () => ({ password: null, revision: 'a'.repeat(64), savingAvailable: false })),
     commitServerEdit: vi.fn(async () => undefined),
   };
-  const profiles = createServerProfiles({ targets, store, pool });
+  const profiles = createServerProfiles({ targets, pool });
   const app = Fastify();
   registerSshTargetRoutes(app, profiles);
   registerSshRoutes(app, { profiles, pool });
@@ -42,13 +36,7 @@ async function fixture() {
     await rm(root, { recursive: true, force: true });
   });
   const server = await targets.save(input);
-  const workspace = await store.create({
-    name: '项目',
-    dir: root,
-    remoteDir: '~/projects/demo',
-    server: server.alias,
-  });
-  return { root, targets, profiles, store, pool, server, workspace, app };
+  return { root, targets, profiles, pool, server, app };
 }
 describe('服务器档案事务及HTTP保护', () => {
   it('GET只列登记档案，导入选项保留unsupported和私钥路径且不改写config', async () => {
@@ -63,26 +51,9 @@ describe('服务器档案事务及HTTP保护', () => {
     ]);
     expect(await readFile(file, 'utf8')).toBe(text);
   });
-  it('被引用的目标和删除拒绝；空闲认证变更失效连接，旧快照409', async () => {
+  it('认证变更失效连接，旧快照 409', async () => {
     const f = await fixture();
     const url = '/api/ssh-targets/' + f.server.alias;
-    for (const patch of [
-      { hostname: 'other.invalid' },
-      { username: 'other' },
-      { port: 2222 },
-      { authMode: 'key', keyFile: path.join(f.root, 'key') },
-    ]) {
-      const response = await f.app.inject({
-        method: 'PUT',
-        url,
-        payload: { input: { ...input, ...patch }, expected: f.server },
-      });
-      expect(response.statusCode).toBe(409);
-      expect(response.json()).toMatchObject({ code: 'target_referenced' });
-    }
-    expect(
-      (await f.app.inject({ method: 'DELETE', url, payload: { expected: f.server, confirmed: true } })).statusCode,
-    ).toBe(409);
     expect(f.pool.disconnect).not.toHaveBeenCalled();
     const next = await f.app.inject({
       method: 'PUT',
@@ -92,11 +63,11 @@ describe('服务器档案事务及HTTP保护', () => {
     expect(next.statusCode).toBe(200);
     expect(next.json()).toMatchObject({ alias: f.server.alias, authMode: 'key' });
     expect(f.pool.disconnect).toHaveBeenCalledWith(f.server.alias);
+    // 用旧 expected 再改一次必须是 409，不能静默覆盖别人的提交。
     expect((await f.app.inject({ method: 'PUT', url, payload: { input, expected: f.server } })).statusCode).toBe(409);
   });
-  it('无引用删除要求完整expected和确认，不静默覆盖档案', async () => {
+  it('删除要求完整expected和确认，不静默覆盖档案', async () => {
     const f = await fixture();
-    await f.store.remove(f.workspace.id);
     const url = '/api/ssh-targets/' + f.server.alias;
     expect((await f.app.inject({ method: 'DELETE', url, payload: { expected: f.server } })).statusCode).toBe(400);
     expect(
@@ -105,33 +76,43 @@ describe('服务器档案事务及HTTP保护', () => {
     expect(await f.targets.list()).toEqual([]);
     expect(f.pool.forgetServerCredentials).toHaveBeenCalledExactlyOnceWith(f.server);
   });
-  it('工作区活动不再阻断连接与凭据操作；普通连接检查与非普通连接均放行', async () => {
+  it('服务器不再被项目引用，只要有完整确认就能删除', async () => {
+    // 项目与服务器解耦：删除服务器只受凭据状态约束，不再看有没有项目引用它。
     const f = await fixture();
-    await f.store.create({
-      name: '另一个项目',
-      dir: f.root,
-      remoteDir: '/other',
-      server: f.server.alias,
+    const url = '/api/ssh-targets/' + f.server.alias;
+    const removed = await f.app.inject({ method: 'DELETE', url, payload: { expected: f.server, confirmed: true } });
+    expect(removed.statusCode).toBe(204);
+    expect(await f.targets.list()).toEqual([]);
+  });
+  it('项目存在与否不影响改连接目标', async () => {
+    // 旧版本会因"服务器被项目引用"拒绝改 hostname；现在项目里根本没有这个字段。
+    const f = await fixture();
+    const projectDir = path.join(f.root, 'project');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      path.join(f.root, 'workspaces.json'),
+      JSON.stringify([{ id: 'w1', name: '项目', dir: projectDir }]),
+      'utf8',
+    );
+    const next = await f.app.inject({
+      method: 'PUT',
+      url: '/api/ssh-targets/' + f.server.alias,
+      payload: { input: { ...input, hostname: 'other.invalid' }, expected: f.server },
     });
+    expect(next.statusCode).toBe(200);
+    expect(next.json()).toMatchObject({ hostname: 'other.invalid' });
+  });
+  it('连接检查放行普通请求，服务器不存在时报缺失', async () => {
+    const f = await fixture();
     const request = (password?: string) =>
       f.app.inject({ method: 'POST', url: '/api/ssh/connect', payload: { sshHost: f.server.alias, password } });
     expect((await request()).statusCode).toBe(200);
     expect((await request('fixture-secret')).statusCode).toBe(200);
     expect(f.pool.connect).toHaveBeenCalledTimes(2);
     expect(f.pool.disconnect).not.toHaveBeenCalled();
+    const missing = await f.app.inject({ method: 'POST', url: '/api/ssh/connect', payload: { sshHost: 'gone' } });
+    expect(missing.json()).toMatchObject({ code: 'target_missing' });
   });
-});
-
-it('删除与创建竞争时持有工作区快照，排队创建不能引用已删除服务器', async () => {
-  const f = await fixture();
-  await f.store.remove(f.workspace.id);
-  const { id: _id, ...input } = f.workspace;
-  const deletion = f.profiles.remove(f.server.alias, f.server);
-  const creation = f.store.create(input);
-  await expect(creation).rejects.toMatchObject({ field: 'server' });
-  await deletion;
-  expect(await f.store.list()).toEqual([]);
-  expect(await f.targets.list()).toEqual([]);
 });
 
 it('HTTP expected按原始完整记录比较，不用默认值或规范化补齐快照', async () => {
@@ -152,7 +133,6 @@ it('HTTP expected按原始完整记录比较，不用默认值或规范化补齐
 
 it('删除时凭据清理失败保留档案；陈旧快照不触碰凭据', async () => {
   const f = await fixture();
-  await f.store.remove(f.workspace.id);
   f.pool.forgetServerCredentials.mockRejectedValueOnce(new Error('清理失败'));
   await expect(f.profiles.remove(f.server.alias, f.server)).rejects.toThrow('清理失败');
   expect(await f.targets.get(f.server.alias)).toEqual(f.server);

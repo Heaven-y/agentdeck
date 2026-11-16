@@ -329,19 +329,6 @@ it('新服务器加密失败不留下半份档案、密码或系统异常正文'
   expect(await f.passwords.has(JSON.stringify(['new.invalid', 22, 'demo']))).toBe(false);
 });
 
-it('携带新密码也不能绕过被引用连接目标的变更限制', async () => {
-  const f = await fixture();
-  await f.store.create({ name: '项目', dir: f.root, server: f.server.alias, remoteDir: '~/projects/demo' });
-  const response = await f.edit(await revision(f), {
-    input: { ...input, hostname: 'other.invalid' },
-    password: 'fixture-new-secret',
-  });
-  expect(response.statusCode).toBe(409);
-  expect(response.json()).toMatchObject({ code: 'target_referenced' });
-  expect(await f.targets.get(f.server.alias)).toEqual(f.server);
-  expect(await f.passwords.has(JSON.stringify(['other.invalid', 22, 'demo']))).toBe(false);
-});
-
 it.each(['read', 'save'] as const)('HTTP取消%s时，迟到解密或保存不能恢复敏感操作', async (operation) => {
   const f = await fixture();
   await f.passwords.save(connectionIdentity(f.server), 'fixture-original-secret');

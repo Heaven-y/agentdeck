@@ -22,10 +22,9 @@ const make = (opts: { dirExists?: boolean } = {}) =>
   createWorkspaceStore({
     configDir,
     dirExists: async () => opts.dirExists ?? true,
-    knownHosts: async () => ['my-server'],
   });
 
-const input = () => ({ name: 'demo', dir: projectDir, server: 'my-server', remoteDir: '~/projects/demo' });
+const input = () => ({ name: 'demo', dir: projectDir });
 
 describe('createWorkspaceStore', () => {
   it('创建后返回 UUID，并持久化到磁盘', async () => {
@@ -58,42 +57,20 @@ describe('createWorkspaceStore', () => {
     await expect(make().create({ ...input(), dir: 'relative/dir' })).rejects.toBeInstanceOf(WorkspaceValidationError);
   });
 
-  it('未登记的服务器时报 server 字段错误', async () => {
-    await expect(make().create({ ...input(), server: 'unknown' })).rejects.toMatchObject({ field: 'server' });
-    await expect(make().create({ ...input(), server: 'unknown' })).rejects.toThrow(/服务器未登记/);
+  it('旧配置里的服务器绑定字段被丢弃，不阻塞项目读写', async () => {
+    // 服务器绑定已不属于项目：旧字段照旧通过，但不会出现在落盘结果里。
+    const store = make();
+    const created = await store.create({ ...input(), server: 'unknown', remoteDir: '~/projects/demo' } as never);
+    expect(created).not.toHaveProperty('server');
+    expect(created).not.toHaveProperty('remoteDir');
   });
 
-  it('服务器目录不合法时报 remoteDir 字段错误', async () => {
-    await expect(make().create({ ...input(), remoteDir: 'projects' })).rejects.toMatchObject({ field: 'remoteDir' });
-  });
-
-  it('未绑定服务器时不能设置默认目录', async () => {
-    await expect(make().create({ name: 'demo', dir: projectDir, remoteDir: '~/projects/demo' })).rejects.toMatchObject({
-      field: 'remoteDir',
-      message: '未绑定服务器时不能设置服务器目录',
-    });
-  });
-
-  it('绑定服务器时必须同时设置服务器目录，不能留下半绑定项目', async () => {
-    // 只有 server 的项目打不开任何服务器面板，却会占住 target_referenced 名额。
-    await expect(make().create({ name: 'demo', dir: projectDir, server: 'my-server' })).rejects.toMatchObject({
-      name: 'WorkspaceValidationError',
-      field: 'remoteDir',
-      message: '绑定服务器时必须设置服务器目录',
-    });
-  });
-
-  it('update 不能把已绑定项目改成半绑定，也不能只解绑一半', async () => {
+  it('update 只能改名称与目录，不再接受绑定字段', async () => {
     const store = make();
     const ws = await store.create(input());
-    await expect(store.update(ws.id, { remoteDir: undefined })).rejects.toMatchObject({ field: 'remoteDir' });
-    await expect(store.update(ws.id, { server: undefined })).rejects.toMatchObject({ field: 'remoteDir' });
-    expect(await store.get(ws.id)).toEqual(ws);
-    // 同时解绑两半是允许的：项目退回纯本地。
-    const unbound = await store.update(ws.id, { server: undefined, remoteDir: undefined });
-    expect(unbound).toMatchObject({ id: ws.id });
-    expect(unbound).not.toHaveProperty('server');
-    expect(unbound).not.toHaveProperty('remoteDir');
+    const renamed = await store.update(ws.id, { name: '改名后' });
+    expect(renamed).toMatchObject({ id: ws.id, name: '改名后', dir: ws.dir });
+    expect(renamed).not.toHaveProperty('server');
   });
 
   it.each(['{private-secret', '{}', '[null]', '[{"id":"secret"}]'])('%s损坏拒绝读写并保留原文', async (text) => {
@@ -138,39 +115,35 @@ describe('createWorkspaceStore', () => {
     expect(await readFile(file, 'utf8')).toBe(text);
   });
 
-  const halfBoundPatches = [
-    { label: '只有服务器没有服务器目录', patch: { remoteDir: undefined } },
-    { label: '只有服务器目录没有服务器', patch: { server: undefined } },
-  ] as const;
-  it.each(halfBoundPatches)('落盘文件里的半绑定条目（$label）同样阻止读取', async ({ patch }) => {
+  it('落盘文件里的旧服务器绑定字段不影响读取', async () => {
+    // 服务器绑定已从项目 schema 移除：旧文件里的 server / remoteDir 直接忽略，
+    // 让升级后的第一份配置仍能读出来，而不是逼用户手改 JSON。
     const valid = await make().create(input());
     const file = path.join(configDir, 'workspaces.json');
-    const text = JSON.stringify([{ ...valid, id: 'other', ...patch }]);
+    const text = JSON.stringify([{ ...valid, id: 'other', server: 'my-server', remoteDir: '~/demo' }]);
     await writeFile(file, text, 'utf8');
-    await expect(make().list()).rejects.toMatchObject({ name: 'WorkspaceStorageError' });
-    expect(await readFile(file, 'utf8')).toBe(text);
+    expect(await make().list()).toEqual([{ ...valid, id: 'other' }]);
   });
 
-  it('当前可选字段与默认配置合法，不要求SSH或目录仍在线', async () => {
+  it('当前可选字段与默认配置合法，不要求目录仍在线', async () => {
     const valid = await make().create(input());
     expect(await make({ dirExists: false }).list()).toEqual([valid]);
-    expect(await make().update(valid.id, { name: 'renamed' })).toMatchObject({ server: valid.server });
+    expect(await make().update(valid.id, { name: 'renamed' })).toMatchObject({ name: 'renamed', dir: valid.dir });
   });
 
   it('update 只改指定字段，id 不变', async () => {
     const store = make();
     const ws = await store.create(input());
     const updated = await store.update(ws.id, { name: '新名字' });
-    expect(updated).toMatchObject({ id: ws.id, name: '新名字', remoteDir: ws.remoteDir });
+    expect(updated).toMatchObject({ id: ws.id, name: '新名字', dir: ws.dir });
     expect(await store.get(ws.id)).toEqual(updated);
   });
 
-  it('目录暂时离线时仍能改名和解绑，不能变成只能手改文件的死条目', async () => {
+  it('目录暂时离线时仍能改名，不能变成只能手改文件的死条目', async () => {
     const ws = await make().create(input());
     // 移动硬盘没插：目录查不到存在，但记录还在。
     const offline = make({ dirExists: false });
     expect(await offline.update(ws.id, { name: '改名' })).toMatchObject({ name: '改名' });
-    expect(await offline.update(ws.id, { server: undefined, remoteDir: undefined })).not.toHaveProperty('server');
     // 但真正换到一个不存在的目录仍要被拦住。
     await expect(offline.update(ws.id, { dir: path.join(projectDir, 'missing') })).rejects.toMatchObject({
       field: 'dir',

@@ -118,14 +118,10 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
   const store = createWorkspaceStore({
     configDir: config.configDir,
     dirExists,
-    knownHosts: () => builtin.knownHosts(),
   });
   const activity = createWorkspaceActivity();
   const builtin = await createBuiltinPlugins({
     configDir: config.configDir,
-    store,
-    activity,
-    productSettings,
     logError,
   });
   // 旧版 workspaces.json 的字段级转换：在本进程读写项目配置之前跑一次。

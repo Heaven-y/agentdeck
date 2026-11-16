@@ -28,7 +28,6 @@ async function setup() {
         (entry) => entry.isDirectory(),
         () => false,
       ),
-    knownHosts: async () => ['my-server'],
   });
   const app = Fastify();
   apps.push(app);
@@ -89,93 +88,47 @@ describe('项目接口', () => {
     expect(missing.statusCode).toBe(400);
     expect(missing.json()).toMatchObject({ code: 'invalid_project', field: 'dir', message: '项目目录不存在' });
 
-    const unknownHost = await create(app, {
-      name: '未登记服务器',
+    const leftover = await create(app, {
+      name: '带旧绑定字段',
       dir: await tempDir('agentdeck-project-'),
       server: 'unknown-host',
-      remoteDir: '~/x',
+      remoteDir: '~/projects/demo',
     });
-    expect(unknownHost.statusCode).toBe(400);
-    expect(unknownHost.json()).toMatchObject({
-      code: 'invalid_project',
-      field: 'server',
-      message: '服务器未登记，请先保存服务器档案',
-    });
+    // 服务器绑定已不属于项目：旧字段被丢弃，不参与校验也不写回响应。
+    expect(leftover.statusCode).toBe(200);
+    expect(leftover.json()).not.toHaveProperty('server');
+    expect(leftover.json()).not.toHaveProperty('remoteDir');
   });
 
-  it('只改名字时保留服务器绑定与目录', async () => {
+  it('只改名字时保留目录', async () => {
     const { app } = await setup();
     const dir = await tempDir('agentdeck-project-');
-    const created = await create(app, { name: '旧名字', dir, server: 'my-server', remoteDir: '~/projects/demo' });
+    const created = await create(app, { name: '旧名字', dir });
     const id = created.json().id;
 
     const patched = await app.inject({ method: 'PATCH', url: `/api/projects/${id}`, payload: { name: '新名字' } });
     expect(patched.statusCode).toBe(200);
-    expect(patched.json()).toMatchObject({
-      id,
-      name: '新名字',
-      dir,
-      server: 'my-server',
-      remoteDir: '~/projects/demo',
-    });
+    expect(patched.json()).toMatchObject({ id, name: '新名字', dir });
     // 从落盘结果再读一次，确认不是只在响应里拼出来的。
     const listed = await app.inject('/api/projects');
-    expect(listed.json()).toEqual([{ id, name: '新名字', dir, server: 'my-server', remoteDir: '~/projects/demo' }]);
+    expect(listed.json()).toEqual([{ id, name: '新名字', dir }]);
   });
 
-  it('同时传 null 解绑两半，退回纯本地项目', async () => {
-    const { app } = await setup();
-    const dir = await tempDir('agentdeck-project-');
-    const created = await create(app, { name: '已绑定', dir, server: 'my-server', remoteDir: '~/projects/demo' });
-    const id = created.json().id;
-
-    const patched = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${id}`,
-      payload: { server: null, remoteDir: null },
-    });
-    expect(patched.statusCode).toBe(200);
-    expect(patched.json()).toEqual({ id, name: '已绑定', dir });
-    const listed = await app.inject('/api/projects');
-    expect(listed.json()).toEqual([{ id, name: '已绑定', dir }]);
-  });
-
-  it('只解绑一半返回 400，且原绑定不变', async () => {
-    const { app } = await setup();
-    const dir = await tempDir('agentdeck-project-');
-    const created = await create(app, { name: '已绑定', dir, server: 'my-server', remoteDir: '~/projects/demo' });
-    const id = created.json().id;
-
-    for (const payload of [{ server: null }, { remoteDir: null }]) {
-      const response = await app.inject({ method: 'PATCH', url: `/api/projects/${id}`, payload });
-      expect(response.statusCode).toBe(400);
-      expect(response.json()).toMatchObject({ code: 'invalid_project', field: 'remoteDir' });
-    }
-    const listed = await app.inject('/api/projects');
-    expect(listed.json()).toEqual([{ id, name: '已绑定', dir, server: 'my-server', remoteDir: '~/projects/demo' }]);
-  });
-
-  it('解绑后可以重新绑定，绑定必须成对给出', async () => {
+  it('补丁里的旧绑定字段被忽略，项目保持纯本地', async () => {
     const { app } = await setup();
     const dir = await tempDir('agentdeck-project-');
     const created = await create(app, { name: '项目', dir });
     const id = created.json().id;
 
-    const half = await app.inject({
+    const patched = await app.inject({
       method: 'PATCH',
       url: `/api/projects/${id}`,
-      payload: { server: 'my-server' },
+      payload: { server: 'my-server', remoteDir: '~/projects/demo' },
     });
-    expect(half.statusCode).toBe(400);
-    expect(half.json()).toMatchObject({ field: 'remoteDir' });
-
-    const bound = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${id}`,
-      payload: { server: 'my-server', remoteDir: '~/x' },
-    });
-    expect(bound.statusCode).toBe(200);
-    expect(bound.json()).toMatchObject({ server: 'my-server', remoteDir: '~/x' });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).toEqual({ id, name: '项目', dir });
+    const listed = await app.inject('/api/projects');
+    expect(listed.json()).toEqual([{ id, name: '项目', dir }]);
   });
 
   it('修改不存在的项目返回 404', async () => {

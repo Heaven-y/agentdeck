@@ -3,7 +3,6 @@ import { useId } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import type { ManagedServer } from '@agentdeck/shared/ssh';
-import type { Workspace } from '@agentdeck/shared/projects';
 
 function connectionLabel(status: SshCredentialStatus) {
   if (status.connected) return '已连接';
@@ -30,22 +29,14 @@ function ServerStatus({ server }: { server: ManagedServer }) {
     </>
   );
 }
-function referenceLabel(workspaces: UseQueryResult<Workspace[]>, alias: string) {
-  if (workspaces.isError) return '引用读取失败';
-  if (!workspaces.data) return '引用读取中…';
-  const count = workspaces.data.filter((workspace) => workspace.server === alias).length;
-  return count ? `${count} 个工作区引用` : '无工作区引用';
-}
 function ServerRow({
   server,
   selected,
-  references,
   mode,
   select,
 }: {
   server: ManagedServer;
   selected: boolean;
-  references: string;
   mode: 'edit' | 'select';
   select(alias: string): void;
 }) {
@@ -57,7 +48,7 @@ function ServerRow({
         type="button"
         aria-label={`${mode === 'edit' ? '编辑服务器' : '选择服务器'}：${server.name}`}
         aria-pressed={selected}
-        aria-describedby={`${id}-target ${id}-status ${id}-references`}
+        aria-describedby={`${id}-target ${id}-status`}
         onClick={() => select(server.alias)}
         className={`flex min-h-11 w-full min-w-0 items-start gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${selected ? 'border-accent/60 bg-accent/10' : 'border-border hover:bg-muted/50'}`}
       >
@@ -72,9 +63,6 @@ function ServerRow({
             <span>{server.authMode === 'key' ? '已有私钥' : '账号密码'}</span>
             <ServerStatus server={server} />
           </span>
-          <span id={`${id}-references`} className="block text-xs text-muted-foreground">
-            {references}
-          </span>
         </span>
         {selected && <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-accent" />}
       </button>
@@ -84,13 +72,11 @@ function ServerRow({
 
 export function ServerList({
   hosts,
-  workspaces,
   alias,
   mode,
   select,
 }: {
   hosts: UseQueryResult<ManagedServer[]>;
-  workspaces: UseQueryResult<Workspace[]>;
   alias: string;
   mode: 'edit' | 'select';
   select(alias: string): void;
@@ -118,7 +104,6 @@ export function ServerList({
               key={JSON.stringify(server)}
               server={server}
               selected={server.alias === alias}
-              references={referenceLabel(workspaces, server.alias)}
               mode={mode}
               select={select}
             />

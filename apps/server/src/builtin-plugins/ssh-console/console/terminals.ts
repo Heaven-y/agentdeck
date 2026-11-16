@@ -3,7 +3,7 @@ import type { ClientChannel } from 'ssh2';
 import {
   SSH_CONSOLE_LIMITS,
   SshConsoleTerminalCreateSchema,
-  TerminalClientMessageSchema,
+  TerminalInputSchema,
   TerminalSizeSchema,
   type SshConsoleTerminal,
   type SshConsoleTerminalCreate,
@@ -11,8 +11,8 @@ import {
 } from '@agentdeck/shared/ssh';
 import type { SshPool } from '../ssh/pool';
 import { createSftpReader } from '../ssh/sftp';
-import { createTerminalInput, type TerminalInput } from '../legacy/terminal/input';
-import { initializeTerminal } from '../legacy/terminal/initialization';
+import { createTerminalInput, type TerminalInput } from '../ssh/terminal-input';
+import { initializeTerminal } from '../ssh/terminal-init';
 import type { ConsoleAccess, ConsoleLease } from './access';
 import { consoleDirectory } from './files';
 import { SshConsoleError } from './errors';
@@ -205,7 +205,7 @@ export function createConsoleTerminals(pool: SshPool, access: ConsoleAccess) {
     },
     writeTerminal(serverId: string, terminalId: string, data: string) {
       return Promise.resolve().then(async () => {
-        const parsed = TerminalClientMessageSchema.safeParse({ type: 'input', data });
+        const parsed = TerminalInputSchema.safeParse(data);
         if (!parsed.success) throw new SshConsoleError('invalid_request');
         const entry = await find(serverId, terminalId);
         if (entry.ending) throw new SshConsoleError('terminal_exited');

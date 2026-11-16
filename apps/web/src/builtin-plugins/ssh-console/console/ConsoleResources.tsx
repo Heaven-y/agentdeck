@@ -5,8 +5,8 @@ import { SSH_CONSOLE_LIMITS } from '@agentdeck/shared/ssh';
 import { sshConsoleApi } from './api';
 import { buttonClass } from '../../../ui/styles';
 import { ConsoleOverview } from './ConsoleOverview';
-import { useServerObservationVersion } from '../legacy/resources/use-server-observation';
-import '../legacy/resources/resources.css';
+import { useServerObservationVersion } from './use-server-observation';
+import './resources.css';
 import { ConsoleProcessTables } from './ConsoleProcessTables';
 import { consoleError } from './console-state';
 

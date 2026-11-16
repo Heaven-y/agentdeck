@@ -1,6 +1,6 @@
 import { sshApi, sshKeys } from '../ssh/api';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type Ref } from 'react';
+import { useState } from 'react';
 import { Plus, Server, Settings2 } from 'lucide-react';
 
 import { buttonClass } from '../../../ui/styles';
@@ -12,16 +12,11 @@ import { consoleError, useConsoleVisible, type ConsoleServerTab } from './consol
 export type SshConsolePageProps = {
   visible: boolean;
   onManageServers(): void;
-  onLegacyTools?(): void;
-  legacyToolsRef?: Ref<HTMLButtonElement>;
-  legacyToolsOpen?: boolean;
-  initialServer?: string;
-  initialDirectory?: string;
 };
-function useConsoleNavigation(initialServer?: string, initialDirectory = '~') {
-  const initial = initialServer ? [{ serverId: initialServer, directory: initialDirectory }] : [];
-  const [tabs, setTabs] = useState<ConsoleServerTab[]>(initial);
-  const [selected, setSelected] = useState(initialServer);
+/** 控制台以服务器为单位：打开时没有选中任何服务器，由用户从标签条或选择器决定。 */
+function useConsoleNavigation() {
+  const [tabs, setTabs] = useState<ConsoleServerTab[]>([]);
+  const [selected, setSelected] = useState<string>();
   const open = (alias: string) => {
     setTabs((current) =>
       current.some((item) => item.serverId === alias) ? current : [...current, { serverId: alias, directory: '~' }],
@@ -36,17 +31,9 @@ function useConsoleNavigation(initialServer?: string, initialDirectory = '~') {
   return { tabs, selected, setSelected, open, close };
 }
 
-export default function SshConsolePage({
-  visible,
-  onManageServers,
-  onLegacyTools,
-  legacyToolsRef,
-  legacyToolsOpen = false,
-  initialServer,
-  initialDirectory,
-}: SshConsolePageProps) {
+export default function SshConsolePage({ visible, onManageServers }: SshConsolePageProps) {
   const active = useConsoleVisible(visible);
-  const navigation = useConsoleNavigation(initialServer, initialDirectory);
+  const navigation = useConsoleNavigation();
   const [picker, setPicker] = useState(false);
   const servers = useQuery({
     queryKey: sshKeys.sshHosts,
@@ -70,18 +57,6 @@ export default function SshConsolePage({
           <Settings2 aria-hidden className="size-4" />
           服务器档案
         </button>
-        {onLegacyTools && (
-          <button
-            ref={legacyToolsRef}
-            type="button"
-            aria-controls="legacy-server-tools"
-            aria-expanded={legacyToolsOpen}
-            className={`${buttonClass('ghost')} ml-auto`}
-            onClick={onLegacyTools}
-          >
-            项目服务器工具
-          </button>
-        )}
       </div>
       {servers.error && (
         <p role="alert" className="px-5 py-3 text-sm text-destructive-foreground">

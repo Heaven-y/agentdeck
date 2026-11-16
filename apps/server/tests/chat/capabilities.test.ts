@@ -9,8 +9,6 @@ const ws: Workspace = {
   id: 'w',
   name: 'demo',
   dir: path.join(tmpdir(), 'capabilities-fixture'),
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 };
 function setup() {
   const catalog: NativeCapabilityCatalog = {

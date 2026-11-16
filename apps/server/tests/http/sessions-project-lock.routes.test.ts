@@ -27,7 +27,6 @@ async function fixture() {
   const store = createWorkspaceStore({
     configDir: path.join(directory, 'config'),
     dirExists: async () => true,
-    knownHosts: async () => [],
   });
   const project = await store.create({ name: 'fixture', dir: first });
   const started = deferred();

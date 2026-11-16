@@ -39,6 +39,25 @@ it('独立服务器路由提供只读文件与可恢复PTY，不需要项目身�
   }
 });
 
+it('作业路由按服务器查询 squeue，只返回结构化快照且禁止缓存', async () => {
+  const fixture = consoleFixture();
+  fixture.setExecOutput(() => '                 7      gpu      synthetic-job     demo  R       1:00     1  node1\n');
+  const app = Fastify();
+  registerSshConsoleRoutes(app, createSshConsoleService(fixture));
+  try {
+    const jobs = await app.inject({ url: '/api/ssh-console/my-server/jobs' });
+    expect(jobs.statusCode).toBe(200);
+    expect(jobs.headers['cache-control']).toBe('no-store');
+    expect(jobs.json()).toMatchObject({ status: 'available', truncated: false });
+    // 只读：不接受作业管理或用户输入拼接。
+    expect(fixture.commands.every(({ command }) => command.includes('squeue') && command.includes('--user='))).toBe(
+      true,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
 it('未知字段、无效游标、JSON解析失败和插件停用统一拒绝且不回传输入', async () => {
   const fixture = consoleFixture();
   const app = Fastify();

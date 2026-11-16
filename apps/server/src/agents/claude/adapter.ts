@@ -38,8 +38,6 @@ export function createClaudeRunner(
       input.workspace.id,
       input.projectDir ?? input.workspace.dir,
       input.workspace.dir,
-      input.workspace.server,
-      input.workspace.remoteDir,
       input.sessionId ?? '',
       input.model ?? '',
       input.reasoningEffort ?? '',

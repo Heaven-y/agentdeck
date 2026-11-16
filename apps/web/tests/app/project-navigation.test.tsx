@@ -13,8 +13,6 @@ const projects: Workspace[] = ['one', 'two'].map((id) => ({
   id,
   name: id,
   dir: '/projects/demo',
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 }));
 const history = (sessionId: string, agent: AgentKind = 'codex'): SessionHistory => ({
   session: { sessionId, agent, summary: sessionId, lastModified: 1 },

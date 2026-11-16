@@ -1,11 +1,9 @@
 // 桌面壳构建配置：主进程把后端源码一起打包，preload 单独打成 CJS。
 // 第三方依赖保持外部（安装包按 desktop 的生产依赖收集），本仓库源码一律打进产物，
 // 包括走 workspace 软链的 @agentdeck/shared —— 它是 TS 源码，必须由打包器处理。
-import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'electron-vite';
-import type { Plugin } from 'vite';
 import webConfig from '../web/vite.config';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
@@ -26,26 +24,6 @@ const MAIN_EXTERNALS = [
   /^@modelcontextprotocol\/sdk(?:\/|$)/,
 ];
 
-/** 后端在模块加载时读取 remote-helper.py，打包后要放到与主进程入口同级的目录。 */
-function copyRemoteHelper(): Plugin {
-  const source = path.resolve(
-    projectRoot,
-    '../server/src/builtin-plugins/ssh-console/legacy/remote-files/remote-helper.py',
-  );
-  return {
-    name: 'agentdeck-copy-remote-helper',
-    buildStart() {
-      this.addWatchFile(source);
-    },
-    async writeBundle() {
-      const target = path.join(projectRoot, 'out/main');
-      await mkdir(target, { recursive: true });
-      // 在 closeBundle 触发 Electron 重启前完成复制。
-      await copyFile(source, path.join(target, 'remote-helper.py'));
-    },
-  };
-}
-
 export default defineConfig(({ command }) => ({
   main: {
     build: {
@@ -58,7 +36,6 @@ export default defineConfig(({ command }) => ({
         output: { entryFileNames: ({ name }) => (name === 'session-tools' ? 'session-tools.mjs' : '[name].js') },
       },
     },
-    plugins: [copyRemoteHelper()],
   },
   preload: {
     build: {

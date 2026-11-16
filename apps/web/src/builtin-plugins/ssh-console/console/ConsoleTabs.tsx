@@ -1,5 +1,5 @@
 import { Tab, TabList, TabProvider } from '@ariakit/react';
-import { Activity, FolderOpen, ListTree, TerminalSquare, X } from 'lucide-react';
+import { Activity, FolderOpen, ListChecks, ListTree, TerminalSquare, X } from 'lucide-react';
 import type { ManagedServer } from '@agentdeck/shared/ssh';
 import { buttonClass } from '../../../ui/styles';
 import type { ConsoleServerTab, ConsoleView } from './console-state';
@@ -7,6 +7,7 @@ import type { ConsoleServerTab, ConsoleView } from './console-state';
 export const consoleViews = [
   { id: 'overview', label: '概览', Icon: Activity },
   { id: 'processes', label: '进程', Icon: ListTree },
+  { id: 'jobs', label: '作业', Icon: ListChecks },
   { id: 'files', label: '文件', Icon: FolderOpen },
   { id: 'terminals', label: '终端', Icon: TerminalSquare },
 ] as const;

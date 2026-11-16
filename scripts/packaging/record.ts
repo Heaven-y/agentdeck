@@ -50,24 +50,19 @@ async function verifyRuntime(version: string) {
   const packagedVersion = PackageVersion.parse(JSON.parse(extractFile(archive, 'package.json').toString())).version;
   if (packagedVersion !== version) throw new Error('打包的桌面版本与当前清单不一致');
   const mainHash = digest(extractFile(archive, path.join('out', 'main', 'main.js')));
-  const helperHash = digest(extractFile(archive, path.join('out', 'main', 'remote-helper.py')));
   const preloadHash = digest(extractFile(archive, path.join('out', 'preload', 'preload.cjs')));
   if (
     mainHash !== (await hashFile(path.join(root, 'apps/desktop/out/main/main.js'))) ||
-    helperHash !==
-      (await hashFile(
-        path.join(root, 'apps/server/src/builtin-plugins/ssh-console/legacy/remote-files/remote-helper.py'),
-      )) ||
     preloadHash !== (await hashFile(path.join(root, 'apps/desktop/out/preload/preload.cjs')))
   )
-    throw new Error('打包的主进程、preload 或远端 helper 与当前构建不一致');
+    throw new Error('打包的主进程或 preload 与当前构建不一致');
   const entries = listPackage(archive, { isPack: false });
   if (entries.some((file) => /claude-agent-sdk-(win32|linux|darwin)|cpu-features|sshcrypto\.node/.test(file)))
     throw new Error('安装包包含不应分发的 CLI 或可选原生绑定');
   const webIndex = await hashFile(path.join(root, 'apps/web/dist/index.html'));
   if (webIndex !== (await hashFile(path.join(release, 'win-unpacked/resources/web/index.html'))))
     throw new Error('安装包页面不是当前前端构建');
-  return { main: mainHash, preload: preloadHash, remoteHelper: helperHash, webIndex, archive: await hashFile(archive) };
+  return { main: mainHash, preload: preloadHash, webIndex, archive: await hashFile(archive) };
 }
 
 const version = PackageVersion.parse(

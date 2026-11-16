@@ -7,7 +7,7 @@ import type { WorkspaceStore } from './store';
 
 const FILE_NAME = 'workspaces.json';
 /** 当前落盘结构声明的键；其余键（localDir、sshHost、sync、policy 等）都是旧版本遗留，转换时丢弃。 */
-const NEW_KEYS = new Set(['id', 'name', 'dir', 'server', 'remoteDir']);
+const NEW_KEYS = new Set(['id', 'name', 'dir']);
 
 export type ImportReport = {
   /** 成功转换并写入的条数 */
@@ -36,24 +36,21 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
 /**
- * 显式重建一条记录：旧 localDir/sshHost 改名为 dir/server，其余键全部丢弃。
- * 绝不展开原对象，否则 sync、policy 等旧字段会被原样带进新文件。
+ * 显式重建一条记录：旧 localDir 改名为 dir，其余键全部丢弃。
+ * 绝不展开原对象，否则 sshHost、sync、policy 等旧字段会被原样带进新文件。
+ * 服务器绑定已不再属于项目，server / remoteDir 与其它旧键一样丢弃。
  */
 function candidate(entry: Record<string, unknown>): Record<string, unknown> {
   const dir = text(entry.dir) ?? text(entry.localDir);
-  const server = text(entry.server) ?? text(entry.sshHost);
-  const remoteDir = text(entry.remoteDir);
   return {
     id: entry.id,
     name: entry.name,
     ...(dir === undefined ? {} : { dir }),
-    ...(server === undefined ? {} : { server }),
-    ...(remoteDir === undefined ? {} : { remoteDir }),
   };
 }
 
 /**
- * 与 store.load() 同一套落盘约束：schema 通过、目录是绝对路径、server 与 remoteDir 同进同退。
+ * 与 store.load() 同一套落盘约束：schema 通过、目录是绝对路径。
  * 任何一条不满足都只影响这一条，绝不能把坏数据写回去让整份配置读不出来。
  */
 function storedWorkspace(entry: unknown): Workspace | undefined {
@@ -61,8 +58,6 @@ function storedWorkspace(entry: unknown): Workspace | undefined {
   const parsed = WorkspaceSchema.safeParse(candidate(entry));
   if (!parsed.success) return undefined;
   if (!path.isAbsolute(parsed.data.dir)) return undefined;
-  const bound = parsed.data.server !== undefined;
-  if (bound !== (parsed.data.remoteDir !== undefined)) return undefined;
   return parsed.data;
 }
 
@@ -100,8 +95,7 @@ function parseItems(raw: string): unknown[] | undefined {
  * - 目录不是绝对路径：跳过，这是结构性错误，不猜用户想指向哪里。
  * - 目录是绝对路径但当前不存在：**保留**。落盘只要求绝对路径（见 store.ts 的 StoredWorkspacesSchema），
  *   列表本来就容忍目录离线；这里若把条目丢掉，用户那条项目会在升级后无声消失，
- *   连服务器绑定一起没了——比留着一条「目录不存在」的可见提示糟得多。
- * - server 与 remoteDir 只出现一半：跳过，不替用户补默认目录，那会凭空造出他没配过的路径。
+ *   比留着一条「目录不存在」的可见提示糟得多。
  * - id 重复：只保留第一条，否则整份配置过不了唯一性校验。
  */
 function convertOne(entry: unknown, seen: Set<string>): Workspace | undefined {

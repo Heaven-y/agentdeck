@@ -7,7 +7,6 @@ import { createServerProfiles } from '../../../../src/builtin-plugins/ssh-consol
 import { createSshPool } from '../../../../src/builtin-plugins/ssh-console/ssh/pool';
 import { createPasswordStore } from '../../../../src/builtin-plugins/ssh-console/ssh/password-store';
 import { connectionIdentity } from '../../../../src/builtin-plugins/ssh-console/ssh/connection';
-import { createWorkspaceStore } from '../../../../src/workspaces/store';
 
 it('删除档案清除真实凭据文件且不重入队列；重新登记同一目标和新后端均不复用旧密码', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'server-removal-'));
@@ -38,8 +37,7 @@ it('删除档案清除真实凭据文件且不重入队列；重新登记同一�
   };
   const pool = createSshPool(deps);
   const restarted = createSshPool(deps);
-  const store = createWorkspaceStore({ configDir: root, knownHosts: async () => [], dirExists: async () => true });
-  const profiles = createServerProfiles({ targets, store, pool });
+  const profiles = createServerProfiles({ targets, pool });
   try {
     await passwordStore.save(connectionIdentity(server), 'fixture-secret');
     await pool.setPassword(server.alias, 'fixture-secret');

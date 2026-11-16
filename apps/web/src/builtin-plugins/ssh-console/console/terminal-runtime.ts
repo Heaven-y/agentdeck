@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import { useUiPreferences } from '../../../ui/ui-preferences';
-import { prepareTerminalPaste } from '../legacy/terminal/paste';
+import { prepareTerminalPaste } from './paste';
 import { createConsoleTerminalConnection } from './terminal-connection';
 import { countTerminalMatches, terminalSearchDecorations, type TerminalSearchResults } from './terminal-search';
 

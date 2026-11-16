@@ -73,10 +73,10 @@ const processes: SshConsoleProcesses = {
 };
 let client: QueryClient;
 const calls: Array<{ url: string; signal?: AbortSignal | null }> = [];
-function page(visible = true, initialServer = 'my-server') {
+function page(visible = true) {
   return (
     <QueryClientProvider client={client}>
-      <SshConsolePage visible={visible} initialServer={initialServer} onManageServers={vi.fn()} />
+      <SshConsolePage visible={visible} onManageServers={vi.fn()} />
     </QueryClientProvider>
   );
 }
@@ -84,6 +84,13 @@ async function tick(ms = 30) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
+}
+/** 控制台不再由项目提供默认服务器：每个用例自己从选择器打开一台。 */
+async function open(alias = 'my-server') {
+  fireEvent.click(screen.getByRole('button', { name: '连接其他服务器' }));
+  await tick();
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: `打开 ${alias}` }));
+  await tick();
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -138,14 +145,16 @@ beforeEach(() => {
   );
 });
 
-it('项目提供的默认服务器只用于首次打开，之后变化不抢走当前服务器标签', async () => {
-  const view = render(page());
+it('首次打开不选中任何服务器，选定后才建立标签并发起读取', async () => {
+  render(page());
   await tick();
-  view.rerender(page(true, 'other-server'));
-  await tick();
-  expect(screen.getByRole('tab', { name: 'my-server' }).getAttribute('aria-selected')).toBe('true');
-  expect(screen.queryByRole('tab', { name: 'other-server' })).toBeNull();
-  expect(calls.some(({ url }) => url.startsWith('/api/ssh-console/other-server'))).toBe(false);
+  expect(screen.getByText('选择服务器开始')).toBeTruthy();
+  // 没有标签就没有任何服务器读取：控制台不用项目身份，也不猜默认服务器。
+  expect(calls.some(({ url }) => url.startsWith('/api/ssh-console/'))).toBe(false);
+  await open('other-server');
+  expect(screen.getByRole('tab', { name: 'other-server' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.queryByRole('tab', { name: 'my-server' })).toBeNull();
+  expect(calls.some(({ url }) => url.startsWith('/api/ssh-console/other-server/overview'))).toBe(true);
 });
 afterEach(async () => {
   cleanup();
@@ -156,9 +165,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it('独立服务器页面不用项目身份，只对当前可见概览或进程采样，隐藏后停止读取', async () => {
+it('控制台不用项目身份，只对当前可见概览或进程采样，隐藏后停止读取', async () => {
   const view = render(page());
   await tick();
+  await open();
   expect(screen.getByRole('region', { name: 'SSH Console' })).toBeTruthy();
   expect(calls.some(({ url }) => url.startsWith('/api/ssh-console/my-server/overview'))).toBe(true);
   expect(calls.some(({ url }) => url.includes('/workspaces/'))).toBe(false);
@@ -178,6 +188,7 @@ it('独立服务器页面不用项目身份，只对当前可见概览或进程�
 it('文件页只读，显示截断预览；切服务器后不把旧文件结果当成当前内容', async () => {
   render(page());
   await tick();
+  await open();
   fireEvent.click(screen.getByRole('tab', { name: '文件' }));
   await tick();
   fireEvent.click(screen.getByRole('button', { name: '预览 readme.txt' }));
@@ -197,6 +208,7 @@ it('文件页只读，显示截断预览；切服务器后不把旧文件结果�
 it('概览逐个挂载显示剩余空间与每核负载，进程分组可独立折叠且显示显存合计', async () => {
   render(page());
   await tick();
+  await open();
   expect(screen.getByText('/data')).toBeTruthy();
   expect(screen.getByText('剩余 500 B')).toBeTruthy();
   expect(screen.getByText(/0.13\/核/)).toBeTruthy();

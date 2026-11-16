@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { SshConsoleOverview, SshConsoleDisk, SshConsoleHost } from '@agentdeck/shared/ssh';
-import { GpuList } from '../legacy/resources/ResourceMetrics';
-import { ResourceMeter, capacityPercent } from '../legacy/resources/ResourceMeter';
+import { GpuList } from './ResourceMetrics';
+import { ResourceMeter, capacityPercent } from './ResourceMeter';
 import { formatBytes, formatPercent } from './console-state';
 
 function Metric({

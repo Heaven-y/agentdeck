@@ -65,25 +65,20 @@ describe('WorkspaceInputSchema', () => {
   const base = {
     name: 'demo',
     dir: path.join(os.tmpdir(), 'agentdeck-fixture', 'demo'),
-    server: 'my-server',
-    remoteDir: '~/projects/demo',
   };
 
-  it('接受以 ~ 或 / 开头的服务器目录，允许空格和中文', () => {
+  it('接受普通本地目录', () => {
     expect(WorkspaceInputSchema.safeParse(base).success).toBe(true);
-    expect(WorkspaceInputSchema.safeParse({ ...base, remoteDir: '/data/项目 a' }).success).toBe(true);
+    expect(WorkspaceInputSchema.safeParse({ ...base, dir: 'E:\\web\\项目 a' }).success).toBe(true);
   });
 
-  it('拒绝相对路径和含换行的服务器目录', () => {
-    expect(WorkspaceInputSchema.safeParse({ ...base, remoteDir: 'projects' }).success).toBe(false);
-    expect(WorkspaceInputSchema.safeParse({ ...base, remoteDir: '~/a\nb' }).success).toBe(false);
-  });
-
-  it('丢弃已删除的 sync、policy 与旧字段名，而不是整份拒绝', () => {
+  it('丢弃已删除的 sync、policy、服务器绑定与旧字段名，而不是整份拒绝', () => {
     const parsed = WorkspaceInputSchema.parse({
       ...base,
       localDir: base.dir,
-      sshHost: base.server,
+      sshHost: 'my-server',
+      server: 'my-server',
+      remoteDir: '~/projects/demo',
       sync: { mode: 'bisync' },
       policy: { disabledRules: ['privilege'] },
     });

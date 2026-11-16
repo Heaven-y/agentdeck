@@ -1,9 +1,7 @@
-import { projectsApi, projectsKeys } from '../../../features/projects/api';
 import { sshApi, sshKeys } from './api';
 import { useState } from 'react';
-import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ManagedServer, ManualServerInput } from '@agentdeck/shared/ssh';
-import type { Workspace } from '@agentdeck/shared/projects';
 
 import { DetailDialog } from '../../../ui/DetailDialog';
 import { buttonClass } from '../../../ui/styles';
@@ -81,36 +79,13 @@ type Screen =
   | { kind: 'import' }
   | { kind: 'edit'; editor: Editor }
   | { kind: 'delete'; server: ManagedServer };
-function ReferenceNotice({ workspaces, alias }: { workspaces: UseQueryResult<Workspace[]>; alias: string }) {
-  if (workspaces.isError)
-    return (
-      <p role="alert" className="text-sm text-warning">
-        工作区引用读取失败，暂不允许修改连接目标或删除。请重新读取。
-      </p>
-    );
-  if (!alias) return null;
-  const referenced = workspaces.data?.filter((workspace) => workspace.server === alias) ?? [];
-  return (
-    <div className="rounded border border-border p-3 text-sm leading-6">
-      {referenced.length ? (
-        <p>
-          受影响工作区：{referenced.map((workspace) => workspace.name).join('、')}。认证和连接状态由这些工作区共享。
-        </p>
-      ) : (
-        <p>{workspaces.isPending ? '正在读取工作区引用…' : '当前没有工作区引用此服务器。'}</p>
-      )}
-    </div>
-  );
-}
 function ProfileDetails({
   server,
-  locked,
   changeScreen,
   chooseServer,
   connectAfterSave = false,
 }: {
   server: ManagedServer;
-  locked: boolean;
   changeScreen(screen: Screen): void;
   chooseServer?: (alias: string) => void;
   connectAfterSave?: boolean;
@@ -135,7 +110,6 @@ function ProfileDetails({
         <button
           type="button"
           className={buttonClass('danger')}
-          disabled={locked}
           onClick={() => changeScreen({ kind: 'delete', server })}
         >
           删除服务器
@@ -153,7 +127,6 @@ function ProfileDetails({
 function ServerContent({
   screen,
   selected,
-  locked,
   changeScreen,
   saved,
   reset,
@@ -161,7 +134,6 @@ function ServerContent({
 }: {
   screen: Screen;
   selected?: ManagedServer;
-  locked: boolean;
   changeScreen(screen: Screen): void;
   saved(server: ManagedServer): void;
   reset(): void;
@@ -170,21 +142,12 @@ function ServerContent({
   if (screen.kind === 'import')
     return <SshImportOptions select={(initial) => changeScreen({ kind: 'edit', editor: { initial } })} />;
   if (screen.kind === 'edit')
-    return (
-      <ManualServerForm
-        key={JSON.stringify(screen.editor)}
-        {...screen.editor}
-        identityLocked={!!screen.editor.expected && locked}
-        saved={saved}
-        cancel={reset}
-      />
-    );
+    return <ManualServerForm key={JSON.stringify(screen.editor)} {...screen.editor} saved={saved} cancel={reset} />;
   if (screen.kind === 'delete')
     return <DeleteServer key={screen.server.alias} server={screen.server} done={reset} cancel={reset} />;
   return selected ? (
     <ProfileDetails
       server={selected}
-      locked={locked}
       changeScreen={changeScreen}
       chooseServer={chooseServer}
       connectAfterSave={screen.connectAfterSave}
@@ -211,15 +174,9 @@ export function ServerManagerDialog({
     queryFn: ({ signal }) => sshApi.listSshHosts(signal),
     retry: false,
   });
-  const workspaces = useQuery({
-    queryKey: projectsKeys.workspaces,
-    queryFn: ({ signal }) => projectsApi.listWorkspaces(signal),
-    retry: false,
-  });
   const [alias, setAlias] = useState(initialAlias);
   const [screen, setScreen] = useState<Screen>({ kind: 'view' });
   const selected = hosts.data?.find((server) => server.alias === alias);
-  const locked = !workspaces.isSuccess || workspaces.data.some((workspace) => workspace.server === alias);
   const reset = () => setScreen({ kind: 'view' });
   const select = (value: string) => {
     const server = hosts.data?.find((item) => item.alias === value);
@@ -265,25 +222,16 @@ export function ServerManagerDialog({
               onClick={() => {
                 reset();
                 void hosts.refetch();
-                void workspaces.refetch();
               }}
             >
               重新读取
             </button>
           </div>
-          <ServerList
-            hosts={hosts}
-            workspaces={workspaces}
-            alias={alias}
-            mode={onSelect ? 'select' : 'edit'}
-            select={select}
-          />
+          <ServerList hosts={hosts} alias={alias} mode={onSelect ? 'select' : 'edit'} select={select} />
           <section aria-label="服务器详情与编辑" className="min-w-0 space-y-4 rounded-lg border border-border p-4">
-            <ReferenceNotice workspaces={workspaces} alias={alias} />
             <ServerContent
               screen={screen}
               selected={selected}
-              locked={locked}
               changeScreen={setScreen}
               saved={(server) => {
                 setAlias(server.alias);

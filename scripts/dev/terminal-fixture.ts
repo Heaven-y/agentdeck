@@ -3,7 +3,6 @@ import { once } from 'node:events';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import ssh2, { type Connection, type ServerChannel, type Session, type SFTPWrapper } from 'ssh2';
-import { isBoundWorkspace } from '@agentdeck/shared/projects';
 import { createSshPool } from '../../apps/server/src/builtin-plugins/ssh-console/ssh/pool';
 import { createWorkspaceStore } from '../../apps/server/src/workspaces/store';
 import { createServerTargets, serverHostConfig } from '../../apps/server/src/builtin-plugins/ssh-console/ssh/targets';
@@ -164,18 +163,9 @@ export async function startTerminalFixture({
   await pool.setPassword(target.alias, 'fixture-only');
   const store = createWorkspaceStore({
     configDir,
-    knownHosts: async () => (await targets.list()).map((server) => server.alias),
     dirExists: (dir) => Promise.resolve(dir === path.resolve(workspaceDir)),
   });
-  const created = await store.create({
-    name: '终端验收',
-    dir: path.resolve(workspaceDir),
-    server: target.alias,
-    remoteDir: ROOT,
-  });
-  // 终端夹具一定绑定服务器；未绑定属于夹具自身配置错误。
-  if (!isBoundWorkspace(created)) throw new Error('终端夹具的项目必须绑定服务器');
-  const workspace = created;
+  const workspace = await store.create({ name: 'SSH 验收', dir: path.resolve(workspaceDir) });
   return {
     pool,
     store,

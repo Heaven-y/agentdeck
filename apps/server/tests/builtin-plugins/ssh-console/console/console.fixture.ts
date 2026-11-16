@@ -12,6 +12,11 @@ export function consoleFixture() {
   const reads: Array<{ position: number; length: number }> = [];
   const commands: Array<{ serverId: string; command: string }> = [];
   let execOutput: (serverId: string, command: string) => string = () => '';
+  let execResult: (serverId: string, command: string) => { exitCode: number; stderr: string } = () => ({
+    exitCode: 0,
+    stderr: '',
+  });
+  let execBarrier: Promise<void> | undefined;
   let file: Buffer = Buffer.from('文件正文');
   let directoryCount = 2;
   let openBarrier: Promise<void> | undefined;
@@ -115,9 +120,12 @@ export function consoleFixture() {
     openExec: vi.fn(async ({ alias }: { alias: string }, command: string) => {
       commands.push({ serverId: alias, command });
       const channel = Object.assign(new EventEmitter(), { stderr: new EventEmitter(), close: vi.fn() });
+      if (execBarrier) await execBarrier;
       setImmediate(() => {
+        const tail = execResult(alias, command);
         channel.emit('data', Buffer.from(execOutput(alias, command)));
-        channel.emit('exit', 0);
+        if (tail.stderr) channel.stderr.emit('data', Buffer.from(tail.stderr));
+        channel.emit('exit', tail.exitCode);
         channel.emit('close');
       });
       return channel as unknown as ClientChannel;
@@ -151,6 +159,12 @@ export function consoleFixture() {
     },
     setExecOutput: (value: typeof execOutput) => {
       execOutput = value;
+    },
+    setExecResult: (value: typeof execResult) => {
+      execResult = value;
+    },
+    setExecBarrier: (value: Promise<void>) => {
+      execBarrier = value;
     },
     externalIdentityChange: () => {
       connectionVersion++;

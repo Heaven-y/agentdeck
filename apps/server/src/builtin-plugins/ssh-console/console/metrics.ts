@@ -1,7 +1,7 @@
 import { RESOURCE_LIMITS, SSH_CONSOLE_LIMITS, SshConsolePathSchema, type SshConsoleDisk } from '@agentdeck/shared/ssh';
-import { ResourceCache } from '../legacy/resources/cache';
+import { ResourceCache } from './cache';
+import { runConsoleCommand } from './command';
 import { CONSOLE_HOST_COMMAND, CONSOLE_DISK_COMMAND, parseConsoleHost, parseConsoleDisks } from './overview';
-import { runExec } from '../ssh/exec';
 import type { SshPool } from '../ssh/pool';
 import type { ConsoleAccess, ConsoleLease } from './access';
 import { SshConsoleError } from './errors';
@@ -16,34 +16,14 @@ type Host = ReturnType<typeof parseConsoleHost>;
 const keyOf = (lease: ConsoleLease) =>
   JSON.stringify([lease.target.alias, lease.guard.generation, lease.guard.cacheKey]);
 async function sample(pool: SshPool, lease: ConsoleLease, command: string, signal: AbortSignal) {
-  const combined = AbortSignal.any([lease.signal, signal]);
-  let channel: Awaited<ReturnType<SshPool['openExec']>> | undefined;
-  const cancel = () => channel?.close();
-  combined.addEventListener('abort', cancel, { once: true });
-  try {
-    lease.check();
-    combined.throwIfAborted();
-    const result = await runExec(
-      async (text) => {
-        channel = await pool.openExec(lease.target, text, combined);
-        channel.on('error', () => undefined);
-        if (combined.aborted) {
-          channel.close();
-          combined.throwIfAborted();
-        }
-        return channel;
-      },
-      command,
-      { localTimeoutMs: timing.timeoutMs, outputCap: 512 * 1024 },
-    );
-    combined.throwIfAborted();
-    await lease.recheck();
-    if (result.exitCode !== 0 || result.timedOut || result.truncated) throw new SshConsoleError('operation_failed');
-    return result.stdout;
-  } finally {
-    combined.removeEventListener('abort', cancel);
-    channel?.close();
-  }
+  const result = await runConsoleCommand(pool, lease, {
+    command,
+    signal,
+    timeoutMs: timing.timeoutMs,
+    outputCap: 512 * 1024,
+  });
+  if (result.exitCode !== 0 || result.timedOut || result.truncated) throw new SshConsoleError('operation_failed');
+  return result.stdout;
 }
 
 export function createConsoleMetrics(pool: SshPool, access: ConsoleAccess) {

@@ -1,4 +1,4 @@
-// 项目接口：项目 = 本地目录 + 可选的服务器默认值；管理本地记录，不修改目录和原生会话。
+// 项目接口：项目 = 本地目录；管理本地记录，不修改目录和原生会话。
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { WorkspaceInput } from '@agentdeck/shared/projects';
@@ -11,8 +11,6 @@ const Params = z.object({ id: z.string().min(1) });
 const PatchBody = z.object({
   name: z.string().optional(),
   dir: z.string().optional(),
-  server: z.string().nullable().optional(),
-  remoteDir: z.string().nullable().optional(),
 });
 type PatchInput = z.infer<typeof PatchBody>;
 
@@ -48,16 +46,13 @@ function missing(reply: FastifyReply) {
 
 /**
  * 只收集请求体里真正出现的键：
- * - { name } 只改名字，绑定与目录都不动；
- * - { server: null, remoteDir: null } 同时解绑，退回纯本地项目；
- * - { server: null } 只解绑一半，交给 store 按「同进同退」拒绝（400）。
+ * - { name } 只改名字，目录不动；
+ * - { dir } 换目录，需要活动占用门禁。
  */
 function toPatch(body: PatchInput): Partial<WorkspaceInput> {
   const patch: Partial<WorkspaceInput> = {};
   if ('name' in body) patch.name = body.name;
   if ('dir' in body) patch.dir = body.dir;
-  if ('server' in body) patch.server = body.server ?? undefined;
-  if ('remoteDir' in body) patch.remoteDir = body.remoteDir ?? undefined;
   return patch;
 }
 

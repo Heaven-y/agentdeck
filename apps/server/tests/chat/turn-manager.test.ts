@@ -12,8 +12,6 @@ const ws: Workspace = {
   id: 'w1',
   name: 'demo',
   dir: path.join(os.tmpdir(), 'agentdeck-fixture', 'demo'),
-  server: 'my-server',
-  remoteDir: '~/projects/demo',
 };
 
 function fakeSocket() {

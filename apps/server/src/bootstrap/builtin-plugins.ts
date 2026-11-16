@@ -5,17 +5,8 @@ import { createServerTargets } from '../builtin-plugins/ssh-console/ssh/targets'
 import { registerPluginRoutes } from '../http/plugins.routes';
 import type { BuiltinPluginRegistration } from '../plugins/contracts';
 import { createWorkbenchPlugins } from '../plugins/service';
-import type { WorkspaceStore } from '../workspaces/store';
-import type { WorkspaceActivity } from '../workspaces/activity';
-import type { ProductSettingsStore } from '../settings/product-settings';
 
-export async function createBuiltinPlugins(deps: {
-  configDir: string;
-  store: WorkspaceStore;
-  activity: WorkspaceActivity;
-  productSettings: ProductSettingsStore;
-  logError(message: string): void;
-}) {
+export async function createBuiltinPlugins(deps: { configDir: string; logError(message: string): void }) {
   const targets = createServerTargets({ configDir: deps.configDir });
   const registrations: BuiltinPluginRegistration[] = [];
   const plugins = createWorkbenchPlugins({
@@ -24,11 +15,14 @@ export async function createBuiltinPlugins(deps: {
     onDisable: (id) => registrations.find((entry) => entry.manifest.id === id)?.disable(),
   });
   registrations.push(
-    createSshConsolePlugin({ ...deps, targets, isEnabled: () => plugins.isEnabled(sshConsoleDefinition.manifest.id) }),
+    createSshConsolePlugin({
+      configDir: deps.configDir,
+      targets,
+      isEnabled: () => plugins.isEnabled(sshConsoleDefinition.manifest.id),
+    }),
   );
   await plugins.list();
   return {
-    knownHosts: async () => (await targets.list()).map((server) => server.alias),
     registerRoutes(app: FastifyInstance) {
       registerPluginRoutes(app, { service: plugins });
       for (const registration of registrations) {

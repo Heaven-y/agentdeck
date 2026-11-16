@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { BoundWorkspace } from '@agentdeck/shared/projects';
 import type { SshAuthMode } from '@agentdeck/shared/ssh';
 import { createCredentialVault } from './credentials';
 import { knownHostRecordsForTarget } from './known-hosts';
@@ -52,8 +51,6 @@ export type ConnectionDeps = {
   readFile?: (file: string) => Promise<Buffer>;
   lookupHost?: (alias: string) => Promise<RegisteredSshHost | undefined>;
 };
-/** 服务器面板的每个目标都来自已绑定服务器的项目，未绑定的项目不会走到这里。 */
-export const workspaceTarget = (ws: Pick<BoundWorkspace, 'server'>): SshTarget => ({ alias: ws.server });
 export const targetAlias = (target: SshTarget): string => target.alias;
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const DEFAULT_KEYS = ['id_ed25519', 'id_ecdsa', 'id_rsa'];

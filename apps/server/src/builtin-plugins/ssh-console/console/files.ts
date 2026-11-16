@@ -4,9 +4,20 @@ import type { FileEntryWithStats, SFTPWrapper, Stats } from 'ssh2';
 import { SSH_CONSOLE_LIMITS, SshConsolePathSchema, type SshConsoleFileEntry } from '@agentdeck/shared/ssh';
 import type { SshPool } from '../ssh/pool';
 import { createSftpReader, type SftpReader } from '../ssh/sftp';
-import { remotePath } from '../legacy/remote-files/paths';
 import type { ConsoleAccess, ConsoleLease } from './access';
 import { SshConsoleError } from './errors';
+
+/** `~` 展开到远端家目录，其余按给定根目录解析；拒绝越界的相对写法。 */
+function remotePath(input: string, root: string, home: string): string {
+  if (
+    input.length > 4096 ||
+    input.includes('\0') ||
+    (input.startsWith('~') && input !== '~' && !input.startsWith('~/'))
+  )
+    throw new SshConsoleError('invalid_request');
+  if (input === '~' || input.startsWith('~/')) return path.posix.resolve(home, input.slice(2));
+  return path.posix.resolve(root, input || '.');
+}
 
 function fileType(attrs: Stats): SshConsoleFileEntry['type'] {
   if (attrs.isSymbolicLink()) return 'link';

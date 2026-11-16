@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createConnectionResolver,
   createSshConfigLookup,
-  workspaceTarget,
 } from '../../../../src/builtin-plugins/ssh-console/ssh/connection';
 
 const HOME = path.resolve('test-home');
@@ -31,9 +30,6 @@ function fixture(authMode: 'key' | 'password' = 'password') {
 }
 
 describe('SSH 共用连接解析器', () => {
-  it('工作区目标只保留服务器引用', () => {
-    expect(workspaceTarget({ server: 'my-server' })).toEqual({ alias: 'my-server' });
-  });
   it('显式私钥目标解析私钥和同一 known_hosts 路径', async () => {
     const { resolver } = fixture('key');
     const value = await resolver.resolve({ alias: 'my-server' });

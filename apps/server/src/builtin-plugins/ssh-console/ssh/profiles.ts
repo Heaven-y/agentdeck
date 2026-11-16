@@ -1,12 +1,9 @@
 import type { ManagedServer } from '@agentdeck/shared/ssh';
-import type { Workspace } from '@agentdeck/shared/projects';
-import type { WorkspaceStore } from '../../../workspaces/store';
 import type { SshPool } from './pool';
 import { ServerTargetsError, serverDestination, type ServerTargets } from './targets';
 
 type Deps = {
   targets: ServerTargets;
-  store: Pick<WorkspaceStore, 'withSnapshot'>;
   pool: Pick<SshPool, 'disconnect' | 'forgetServerCredentials' | 'readServerPassword' | 'commitServerEdit'>;
 };
 export type ServerProfileEdit = { input: unknown; expected: ManagedServer; revision: string; password?: string | null };
@@ -16,11 +13,8 @@ function editedPassword(current: ManagedServer, next: ManagedServer, password?: 
   const changed = current.authMode !== next.authMode || serverDestination(current) !== serverDestination(next);
   return changed ? null : undefined;
 }
-/** 服务器档案写队列；工作区快照只用于判断该服务器是否仍被引用。 */
+/** 服务器档案写队列；服务器独立于项目，是否可改只看档案共享状态与凭证。 */
 export function createServerProfiles(deps: Deps) {
-  function withServer<T>(alias: string, operation: (workspaces: readonly Workspace[]) => Promise<T>) {
-    return deps.store.withSnapshot((all) => operation(all.filter((workspace) => workspace.server === alias)));
-  }
   return {
     list: deps.targets.list,
     save: deps.targets.save,
@@ -31,55 +25,38 @@ export function createServerProfiles(deps: Deps) {
       );
     },
     createWithPassword(input: unknown, password: string, stillCurrent: () => boolean = () => true) {
-      return deps.store.withSnapshot(() =>
-        deps.targets.save(input, (next, commit) =>
-          deps.pool.commitServerEdit({ next, password, stillCurrent, commit }),
-        ),
+      return deps.targets.save(input, (next, commit) =>
+        deps.pool.commitServerEdit({ next, password, stillCurrent, commit }),
       );
     },
     edit(alias: string, edit: ServerProfileEdit, stillCurrent: () => boolean = () => true) {
-      return withServer(alias, (workspaces) =>
-        deps.targets.update(alias, edit.input, edit.expected, {
-          beforeCommit: (current, next) => {
-            if (workspaces.length && serverDestination(current) !== serverDestination(next!))
-              throw new ServerTargetsError('target_referenced');
-            return Promise.resolve();
-          },
-          commit: (current, next, commit) =>
-            deps.pool.commitServerEdit({
-              next,
-              expected: { server: current, revision: edit.revision },
-              password: editedPassword(current, next, edit.password),
-              stillCurrent,
-              commit,
-            }),
-        }),
-      );
+      return deps.targets.update(alias, edit.input, edit.expected, {
+        commit: (current, next, commit) =>
+          deps.pool.commitServerEdit({
+            next,
+            expected: { server: current, revision: edit.revision },
+            password: editedPassword(current, next, edit.password),
+            stillCurrent,
+            commit,
+          }),
+      });
     },
     update(alias: string, input: unknown, expected: ManagedServer) {
-      return withServer(alias, async (workspaces) => {
-        const next = await deps.targets.update(alias, input, expected, (current, next) => {
-          if (workspaces.length && serverDestination(current) !== serverDestination(next!))
-            throw new ServerTargetsError('target_referenced');
-          // 写盘前失效连接，阻止旧请求跨过提交点；写盘失败也要求重新连接。
-          deps.pool.disconnect(alias);
-          return Promise.resolve();
-        });
-        return next;
+      return deps.targets.update(alias, input, expected, () => {
+        // 写盘前失效连接，阻止旧请求跨过提交点；写盘失败也要求重新连接。
+        deps.pool.disconnect(alias);
+        return Promise.resolve();
       });
     },
     remove(alias: string, expected: ManagedServer) {
-      return withServer(alias, async (workspaces) => {
-        if (workspaces.length) throw new ServerTargetsError('target_referenced');
-        await deps.targets.remove(alias, expected, (current) => deps.pool.forgetServerCredentials(current));
-      });
+      return deps.targets.remove(alias, expected, (current) => deps.pool.forgetServerCredentials(current));
     },
     /** 认证/断开期间只校验档案仍存在；普通连接测试只复用连接，不终止它。 */
     connection<T>(alias: string, _changing: boolean, operation: () => Promise<T>) {
-      return withServer(alias, async () => {
+      return (async () => {
         if (!(await deps.targets.get(alias))) throw new ServerTargetsError('target_missing');
         return operation();
-      });
+      })();
     },
   };
 }

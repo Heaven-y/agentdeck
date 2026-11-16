@@ -21,9 +21,7 @@ import { useAgentCapabilities } from '../../../src/features/chat/use-agent-capab
 const workspace: Workspace = {
   id: 'workspace',
   name: '演示项目',
-  server: 'my-server',
   dir: 'project',
-  remoteDir: '~/projects/demo',
 };
 const skill = {
   id: 'demo',

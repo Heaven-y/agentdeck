@@ -36,8 +36,6 @@ it('授权项目仅返回名称和目录，存储目标固定为清单身份', a
     id: 'project',
     name: '示例',
     dir: 'fixtures',
-    server: 'my-server',
-    remoteDir: '~/projects/demo',
   });
   expect(project).toEqual({ id: 'project', name: '示例', dir: 'fixtures' });
 });

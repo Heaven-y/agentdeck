@@ -67,9 +67,8 @@ export async function credentialEditorFixture() {
   const store = createWorkspaceStore({
     configDir: root,
     dirExists: async () => true,
-    knownHosts: async () => (await targets.list()).map((item) => item.alias),
   });
-  const profiles = createServerProfiles({ targets, pool, store });
+  const profiles = createServerProfiles({ targets, pool });
   const app = Fastify();
   const origin = 'http://localhost:43210';
   registerSecurity(app, { token: 'fixture-session', port: 43210 });

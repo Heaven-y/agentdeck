@@ -1,7 +1,7 @@
 import { ApiError } from '../../../lib/http';
 import { useEffect, useState } from 'react';
 
-export type ConsoleView = 'overview' | 'processes' | 'files' | 'terminals';
+export type ConsoleView = 'overview' | 'processes' | 'jobs' | 'files' | 'terminals';
 export type ConsoleServerTab = { serverId: string; directory: string };
 export const consoleError = (error: unknown) =>
   error instanceof ApiError ? error.message : '无法访问 SSH 控制台，请检查本机服务后重试。';
