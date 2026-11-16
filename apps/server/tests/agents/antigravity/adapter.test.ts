@@ -63,6 +63,38 @@ describe('Antigravity 原生对话运行器', () => {
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
   });
 
+  it('服务错误后进程既不退出也不再输出时，按无进展终止而不是无限等待', async () => {
+    vi.useFakeTimers();
+    const f = await setup();
+    f.init();
+    // 实测 524 之后 agy 会挂住：既不重试也不退出，二十多分钟没有任何输出。
+    f.child.stderr.write('Error: 524, Message: bad_response_status_code, status code 524\n');
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(f.events.map((event) => (event.type === 'error' ? event.message : ''))).toContain(
+      'Antigravity 服务返回错误后长时间没有进展，本轮已终止；请稍后重试。',
+    );
+    expect(f.child.kill).toHaveBeenCalled();
+    f.child.emit('close', 0);
+    await f.handle.done;
+    expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
+  });
+
+  it('服务错误后仍有新输出则继续等待，不误杀长回合', async () => {
+    vi.useFakeTimers();
+    const f = await setup();
+    f.init();
+    f.child.stderr.write('Error: 524, Message: bad_response_status_code, status code 524\n');
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    // 原生仍在推进：重新计时，本轮不应被终止。
+    f.child.stderr.write('Loading settings\ninfo: still working\n');
+    await vi.advanceTimersByTimeAsync(60 * 1000);
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+    f.finish();
+    await f.handle.done;
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+  });
+
   it('stderr 的服务超时在完整答复与正常退出后不再变成错误', async () => {
     const f = await setup();
     f.init();

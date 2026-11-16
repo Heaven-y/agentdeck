@@ -18,6 +18,11 @@ export type AntigravityProcess = Pick<
   'stdin' | 'stdout' | 'stderr' | 'kill' | 'on' | 'once'
 >;
 type LaunchInput = { cwd: string; args: string[]; env?: NodeJS.ProcessEnv };
+/**
+ * 服务错误后允许的最长静默：实测 524 之后 agy 会挂住，既不重试也不退出。
+ * 只在已经出现可重试服务故障时计时，正常的长任务不受影响。
+ */
+const STALL_AFTER_SERVICE_ERROR_MS = 3 * 60 * 1000;
 type Options = {
   launch?: (input: LaunchInput) => AntigravityProcess;
   env?: NodeJS.ProcessEnv;
@@ -66,6 +71,8 @@ class AntigravityTurn {
   private nativeFailure = false;
   /** 服务型故障先暂存：原生可能已自行重试成功，本轮结束前不写成永久错误。 */
   private pendingService?: Extract<AgentEvent, { type: 'error' }>;
+  /** 服务错误后长期没有任何输出时收尾：agy 会挂住既不重试也不退出。 */
+  private stallTimer?: NodeJS.Timeout;
   /** 原生结果已经确认时，进程清理与模型回合成功是两个独立状态。 */
   private closingAfterResult = false;
   private cleanupSignalSent = false;
@@ -129,11 +136,26 @@ class AntigravityTurn {
 
   private consume(lines: AntigravityLines, chunk: Buffer): void {
     if (this.ended || this.finishing || this.failed) return;
+    // 原生仍在输出说明没有挂住，重新计时。
+    if (this.stallTimer) this.armStall();
     try {
       lines.push(chunk);
     } catch {
       this.fail('Antigravity 输出格式异常或超限，已停止本轮。');
     }
+  }
+
+  /**
+   * 只在出现可重试的服务故障后启用：实测 524 之后 agy 既不重试也不退出，
+   * 二十多分钟没有任何请求。正常回合不受影响，长任务也不会被总时长误杀。
+   */
+  private armStall(): void {
+    clearTimeout(this.stallTimer);
+    this.stallTimer = setTimeout(() => {
+      if (this.ended || this.finishing || this.failed || this.mapper.result) return;
+      this.fail('Antigravity 服务返回错误后长时间没有进展，本轮已终止；请稍后重试。');
+    }, STALL_AFTER_SERVICE_ERROR_MS);
+    this.stallTimer.unref();
   }
 
   private message(line: string): void {
@@ -157,6 +179,7 @@ class AntigravityTurn {
     // 服务型故障不代表本轮一定失败：先暂存，等回合结束再按是否有结果决定报不报。
     if (event?.type === 'error' && serviceFailure(line)) {
       this.pendingService ??= event;
+      this.armStall();
       return;
     }
     this.nativeFailure ||=
@@ -181,6 +204,7 @@ class AntigravityTurn {
 
   private stop(): void {
     clearTimeout(this.timer);
+    clearTimeout(this.stallTimer);
     this.kill('SIGTERM');
     this.timer = setTimeout(() => {
       this.kill('SIGKILL');
