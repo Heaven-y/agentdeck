@@ -194,8 +194,11 @@ it('复制稳定会话链接，末尾分叉先呈现原生操作说明', async (
   const copied = new URL(writeText.mock.calls[0]![0] as string);
   expect(copied.protocol).toBe('agentdeck:');
   expect(copied.href).toBe('agentdeck://session?workspace=workspace&agent=claude&id=native-id');
-  expect(await screen.findByText(/会话链接已复制/)).toBeTruthy();
+  const tip = await screen.findByRole('status');
+  expect(tip.textContent).toBe('会话链接已复制');
+  expect(screen.getByRole('region', { name: '会话' }).contains(tip)).toBe(false);
   await openAction('创建分支');
+  expect(screen.queryByText('会话链接已复制')).toBeNull();
   const dialog = screen.getByRole('dialog', { name: '创建分支' });
   expect(dialog.textContent).toContain('源会话保持不变');
   expect(within(dialog).getByRole('button', { name: '创建分支' })).toBeTruthy();

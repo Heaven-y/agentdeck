@@ -159,7 +159,7 @@ export function ProjectSessionRow({
       {workspaceId && manage && (
         <Management session={session} archived={archived} disabled={pending || running} choose={choose} />
       )}
-      {copy.notice && <SessionLinkNotice notice={copy.notice} link={copy.link} />}
+      <SessionLinkNotice notice={copy.notice} link={copy.link} />
     </RowFrame>
   );
 }
