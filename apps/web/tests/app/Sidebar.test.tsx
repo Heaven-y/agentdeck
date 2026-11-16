@@ -283,16 +283,15 @@ it('点项目行切换项目，点会话行把它交给调用方', () => {
   expect(selectSession).toHaveBeenCalledWith('p1', claudeSession);
 });
 
-it('项目目录与服务器绑定收入项目菜单，保留原绑定回调', async () => {
-  const bind = vi.fn();
-  render(<Sidebar projects={[project]} sessionsByProject={{ p1: [] }} onAddProject={vi.fn()} onBindServer={bind} />);
+it('项目目录收入项目菜单，绑定服务器不再出现在工作区菜单里', async () => {
+  render(<Sidebar projects={[project]} sessionsByProject={{ p1: [] }} onAddProject={vi.fn()} />);
   expect(screen.queryByText(project.dir)).toBeNull();
   expect(screen.getByRole('navigation', { name: '项目与会话' })).toBeTruthy();
   expect(screen.getByText('暂无会话')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '管理项目“示例项目”' }));
   expect(await screen.findByText(project.dir)).toBeTruthy();
-  fireEvent.click(screen.getByRole('menuitem', { name: '绑定服务器' }));
-  expect(bind).toHaveBeenCalledExactlyOnceWith(project);
+  // 服务器绑定属于 SSH Console 插件自己的「项目服务器工具」，工作区菜单不重复提供。
+  expect(screen.queryByRole('menuitem', { name: /绑定服务器|修改服务器绑定/ })).toBeNull();
 });
 
 it('受支持会话的管理入口先打开原生菜单，再选择重命名', async () => {

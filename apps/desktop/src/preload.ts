@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   APP_MENU_CHANNEL,
   INITIAL_SESSION_LINK_CHANNEL,
+  OPEN_PATH_CHANNEL,
   SELECT_DIRECTORY_CHANNEL,
   SESSION_LINK_CHANNEL,
   TITLE_BAR_THEME_CHANNEL,
@@ -16,6 +17,7 @@ if (process.isMainFrame) {
     platform: process.platform,
     selectDirectory: (initialPath?: string) =>
       ipcRenderer.invoke(SELECT_DIRECTORY_CHANNEL, initialPath) as Promise<string | null>,
+    openPath: (target: string) => ipcRenderer.invoke(OPEN_PATH_CHANNEL, target) as Promise<boolean>,
     chrome: {
       showMenu: (name: AppMenuName, position: AppMenuPosition) =>
         ipcRenderer.invoke(APP_MENU_CHANNEL, name, position) as Promise<void>,

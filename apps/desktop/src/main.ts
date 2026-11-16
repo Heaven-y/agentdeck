@@ -10,10 +10,12 @@ import { desktopPaths, externalWebLink, navigationAllowed, rendererAddress } fro
 import {
   APP_MENU_CHANNEL,
   INITIAL_SESSION_LINK_CHANNEL,
+  OPEN_PATH_CHANNEL,
   SELECT_DIRECTORY_CHANNEL,
   TITLE_BAR_THEME_CHANNEL,
 } from './bridge';
 import { createDirectoryPicker } from './directory-picker';
+import { createPathOpener } from './path-opener';
 import { applicationMenuTemplate, createWindowChrome, desktopChromeOptions } from './window-chrome';
 import { createDesktopLogger } from './logging';
 import { createDesktopSessionLinks } from './session-links';
@@ -70,6 +72,8 @@ function createMainWindow(url: string): BrowserWindow {
   ipcMain.handle(TITLE_BAR_THEME_CHANNEL, chrome.setTheme);
   const directoryPicker = createDirectoryPicker(window, url, (options) => dialog.showOpenDialog(window, options));
   ipcMain.handle(SELECT_DIRECTORY_CHANNEL, directoryPicker.select);
+  const pathOpener = createPathOpener(window, url, (target) => shell.openPath(target));
+  ipcMain.handle(OPEN_PATH_CHANNEL, pathOpener);
   const links = sessionLinks.attach(window, url);
   ipcMain.handle(INITIAL_SESSION_LINK_CHANNEL, links.initial);
   window.once('ready-to-show', () => window.show());
@@ -77,6 +81,7 @@ function createMainWindow(url: string): BrowserWindow {
     directoryPicker.invalidate();
     links.detach();
     ipcMain.removeHandler(SELECT_DIRECTORY_CHANNEL);
+    ipcMain.removeHandler(OPEN_PATH_CHANNEL);
     ipcMain.removeHandler(APP_MENU_CHANNEL);
     ipcMain.removeHandler(TITLE_BAR_THEME_CHANNEL);
     ipcMain.removeHandler(INITIAL_SESSION_LINK_CHANNEL);

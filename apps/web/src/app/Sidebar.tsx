@@ -42,7 +42,8 @@ export type SidebarProps = {
   onNewSession?(projectId: string, agent: AgentKind): void;
   onSelectProject?(projectId: string): void;
   onSelectSession?(projectId: string, session: SessionSummary): void;
-  onBindServer?(project: Workspace): void;
+  /** 桌面壳提供打开路径能力时，项目菜单显示“在资源管理器中打开”。 */
+  reveal?(project: Workspace): { label: string; open(): void } | undefined;
   onOpenSettings?(): void;
   onOpenCommands?(): void;
   onOpenArchive?(): void;
@@ -98,6 +99,11 @@ function displayedProjectSessions(sessions: WorkspaceSession[], activeKey: strin
   return visible;
 }
 
+/** 项目菜单的“在文件管理器中打开”只在桌面壳提供能力时出现。 */
+function projectReveal(reveal: SidebarProps['reveal'], project: Workspace) {
+  return reveal ? reveal(project) : undefined;
+}
+
 function ProjectItem({
   project,
   sessions,
@@ -114,8 +120,8 @@ function ProjectItem({
   selectSession,
   newSession,
   manageSession,
-  onBindServer,
   onManageProject,
+  reveal,
 }: {
   project: Workspace;
   sessions: WorkspaceSession[];
@@ -132,8 +138,8 @@ function ProjectItem({
   selectSession?: (session: WorkspaceSession) => void;
   newSession?: SidebarProps['onNewSession'];
   manageSession: (session: SessionSummary, action: SessionDialogAction, archived: boolean) => void;
-  onBindServer?: SidebarProps['onBindServer'];
   onManageProject?: SidebarProps['onManageProject'];
+  reveal?: SidebarProps['reveal'];
 }) {
   const FolderIcon = expanded ? FolderOpen : Folder;
   const sessionLimit = useProductSettings().data?.settings.appearance.sessionLimit ?? FALLBACK_SESSION_LIMIT;
@@ -176,7 +182,7 @@ function ProjectItem({
           project={project}
           running={running}
           choose={onManageProject ? (action) => onManageProject(project, action) : undefined}
-          bindServer={onBindServer ? () => onBindServer(project) : undefined}
+          reveal={projectReveal(reveal, project)}
         />
       </div>
       {expanded && (
@@ -369,8 +375,8 @@ export function Sidebar({
   onNewSession,
   onSelectProject,
   onSelectSession,
-  onBindServer,
   onManageProject,
+  reveal,
   onOpenSettings,
   onOpenCommands,
   onOpenArchive,
@@ -484,8 +490,8 @@ export function Sidebar({
                   manageSession={(session, action, archived) =>
                     setManaging({ workspaceId: project.id, session, action, archived })
                   }
-                  onBindServer={onBindServer}
                   onManageProject={onManageProject}
+                  reveal={reveal}
                 />
               ))}
             </ul>

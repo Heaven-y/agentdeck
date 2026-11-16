@@ -1,6 +1,6 @@
 import { projectsApi, projectsKeys } from '../features/projects/api';
 import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useLayoutEffect, useState, type MutableRefObject } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type MutableRefObject } from 'react';
 import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { useChat } from '../features/chat/chat-store';
@@ -18,11 +18,11 @@ import { WorkspaceLayout } from './WorkspaceLayout';
 import { SettingsWorkspace, useSettingsWorkspace } from './SettingsWorkspace';
 import type { SettingsLeave } from '../features/settings/use-model-settings';
 import { useProjectNavigation } from './use-project-navigation';
+import { desktopPathOpener, revealLabel } from '../lib/desktop-bridge';
 import { useOtherSessions, useProjectSessions } from '../features/projects/use-project-sessions';
 import { useConversationSidebar } from './use-conversation-sidebar';
 import { ConversationTabs } from '../features/chat/ConversationTabs';
 import { AddProjectDialog } from '../features/projects/AddProjectDialog';
-import { BindServerDialog } from '../builtin-plugins/ssh-console/legacy/BindServerDialog';
 import { ProjectManageDialog } from '../features/projects/ProjectManageDialog';
 import type { ProjectDraft, ProjectManageAction } from '../features/projects/project-management';
 import { PluginNavigation } from '../features/plugins/PluginNavigation';
@@ -96,29 +96,38 @@ function OpenSettings({ guardRef, close }: { guardRef: MutableRefObject<Settings
 
 function ProjectDialogs({
   adding,
-  binding,
   managing,
   closeAdd,
-  closeBind,
   closeManage,
 }: {
   adding?: ProjectDraft;
-  binding?: Workspace;
   managing?: { project: Workspace; action: ProjectManageAction };
   closeAdd(): void;
-  closeBind(): void;
   closeManage(): void;
 }) {
   return (
     <>
       {adding && <AddProjectDialog initialDir={adding.dir} initialName={adding.name} onClose={closeAdd} />}
-      {binding && <BindServerDialog project={binding} onClose={closeBind} />}
       {managing && <ProjectManageDialog {...managing} onClose={closeManage} />}
     </>
   );
 }
 
-/** 工作区导航贯穿左列；会话与插件使用中间主区，右侧上下文按需打开。 */
+/** 打开项目目录失败时用会话横幅报错，不静默吞掉系统拒绝的原因。 */
+function revealProjectDir(openPath: (target: string) => Promise<boolean>) {
+  return (project: Workspace) => ({
+    label: revealLabel(),
+    open: () => {
+      void openPath(project.dir).catch((error: unknown) => {
+        useChat.setState({ banner: error instanceof Error ? error.message : '无法打开项目目录。' });
+      });
+    },
+  });
+}
+
+/**
+ * 工作区导航贯穿左列；会话与插件使用中间主区，右侧上下文按需打开。
+ */
 export function App() {
   const palette = useCommandPalette();
   const theme = useUiPreferences((state) => state.theme);
@@ -132,6 +141,8 @@ export function App() {
   }, [productSettings.data, setDefaults]);
   const plugins = usePluginPages();
   const activePlugin = plugins.active;
+  const openPath = desktopPathOpener();
+  const reveal = useMemo(() => (openPath ? revealProjectDir(openPath) : undefined), [openPath]);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const settings = useSettingsWorkspace(!activePlugin && !archiveOpen);
   const showPlugin = (id?: string) =>
@@ -150,8 +161,6 @@ export function App() {
   };
   const [addingProject, setAddingProject] = useState<ProjectDraft>();
   const [managingProject, setManagingProject] = useState<{ project: Workspace; action: ProjectManageAction }>();
-  // 绑定服务器要拿到具体的项目对象，不能只记一个开关。
-  const [bindingProject, setBindingProject] = useState<Workspace | undefined>(undefined);
   const dock = useConversationSidebar();
   const conversationVisible = settings.conversationVisible;
   const conversationId = useChat((s) => s.conversationId);
@@ -207,10 +216,8 @@ export function App() {
       <OpenPluginManager opened={plugins.managerOpen} close={() => plugins.setManagerOpen(false)} />
       <ProjectDialogs
         adding={addingProject}
-        binding={bindingProject}
         managing={managingProject}
         closeAdd={() => setAddingProject(undefined)}
-        closeBind={() => setBindingProject(undefined)}
         closeManage={() => setManagingProject(undefined)}
       />
       <OpenPalette
@@ -289,7 +296,7 @@ export function App() {
               onOpenCommands={palette.open}
               onOpenArchive={showArchive}
               onSelectSession={openSession}
-              onBindServer={setBindingProject}
+              reveal={reveal}
             />
           }
         >

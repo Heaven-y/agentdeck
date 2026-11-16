@@ -1,5 +1,5 @@
 import { Menu, MenuButton, MenuItem, useMenuStore } from '@ariakit/react';
-import { FolderOpen, Link2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { FolderOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useRef } from 'react';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { buttonClass } from '../../ui/styles';
@@ -14,12 +14,13 @@ export function ProjectMenu({
   project,
   running,
   choose,
-  bindServer,
+  reveal,
 }: {
   project: Workspace;
   running: boolean;
   choose?(action: ProjectManageAction): void;
-  bindServer?(): void;
+  /** 只有桌面壳提供打开路径能力时才显示该入口。 */
+  reveal?: { label: string; open(): void };
 }) {
   const busy = useProjectChatBusy(project.id);
   const disabled = busy || running;
@@ -49,18 +50,17 @@ export function ProjectMenu({
         {disabled && (
           <p className="max-w-64 px-3 pb-2 text-xs text-muted-foreground">会话运行或操作中，结束后可修改项目。</p>
         )}
-        {bindServer && (
+        {reveal && (
           <MenuItem
-            disabled={disabled}
             className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none data-active-item:bg-muted data-active-item:ring-1 data-active-item:ring-accent"
             onClick={() => {
               menu.hide();
               trigger.current?.focus();
-              bindServer();
+              reveal.open();
             }}
           >
-            <Link2 aria-hidden className="size-4" />
-            {project.server ? '修改服务器绑定' : '绑定服务器'}
+            <FolderOpen aria-hidden className="size-4" />
+            {reveal.label}
           </MenuItem>
         )}
         {choose &&
