@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { parse } from 'smol-toml';
 import { modelContextWindow } from '../../src/agents/common/configuration/token-count';
+import { antigravityLaunchSelection } from '../../src/agents/antigravity/model-launch';
 import { createModelSettingsService } from '../../src/settings/model-settings';
 import { createNativeResourcesService } from '../../src/settings/native-resources';
 import { createLaunchEnvironment } from '../../src/settings/launch-environment';
@@ -30,7 +31,7 @@ async function fixture(nativeModels: () => Promise<AgentModel[]> = async () => [
     await fs.writeFile(file, content);
     return file;
   };
-  return { service, write, environment, resources };
+  return { service, write, environment, resources, homeDir };
 }
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -315,6 +316,154 @@ it('只改上下文窗口时，自定义条目的 modelName 用原生模型 ID �
     label: 'Gemini Example (High)',
     maxTokens: 1000000,
   });
+});
+
+it.each([
+  { selection: 'Gemini Example (High)', requested: undefined },
+  { selection: 'agentdeck', requested: undefined },
+  { selection: 'Gemini Example (High)', requested: 'agentdeck' },
+])(
+  '遗留等价模型重复时窗口可读回，保存复用原生 ID 并消除重复：$selection / $requested',
+  async ({ selection, requested }) => {
+    const { service, write } = await fixture();
+    const entry = { modelName: 'gemini-example-high', label: 'Gemini Example (High)', maxTokens: 1000000 };
+    const unrelated = { modelName: 'another-model', label: 'Another', maxTokens: 200000, extra: true };
+    const file = await write(
+      '.gemini/antigravity-cli/settings.json',
+      JSON.stringify({
+        modelProvider: 'gemini',
+        model: selection,
+        customModelsConfig: {
+          customModels: {
+            agentdeck: { ...entry, modelName: entry.label },
+            'agentdeck-window-example': entry,
+            'agentdeck-example': entry,
+            other: unrelated,
+          },
+        },
+      }),
+    );
+    const initial = await service.read('antigravity');
+    expect(initial.fields.find((field) => field.key === 'contextWindow')?.value).toBe('1000000');
+    const saved = await service.save('antigravity', {
+      revision: initial.revision,
+      changes: { contextWindow: '512K', ...(requested ? { model: requested } : {}) },
+    });
+    const models = JSON.parse(await fs.readFile(file, 'utf8')).customModelsConfig.customModels;
+    expect(Object.values(models).filter((model) => (model as { label: string }).label === entry.label)).toEqual([
+      { ...entry, maxTokens: 512000 },
+    ]);
+    expect(models.other).toEqual(unrelated);
+    expect(saved.fields.find((field) => field.key === 'contextWindow')?.value).toBe('512000');
+    expect((await service.read('antigravity')).fields.find((field) => field.key === 'contextWindow')?.value).toBe(
+      '512000',
+    );
+  },
+);
+
+it('同名模型参数冲突时不猜选、不新增重复或覆盖原生条目', async () => {
+  const { service, write } = await fixture();
+  const entry = { modelName: 'gemini-example-high', label: 'Example', maxTokens: 1000000 };
+  const original = JSON.stringify({
+    modelProvider: 'gemini',
+    model: 'Example',
+    customModelsConfig: {
+      customModels: {
+        first: entry,
+        second: { ...entry, maxTokens: 200000 },
+      },
+    },
+  });
+  const file = await write('.gemini/antigravity-cli/settings.json', original);
+  const initial = await service.read('antigravity');
+  expect(initial.warnings.join(' ')).toContain('同名');
+  await expect(
+    service.save('antigravity', { revision: initial.revision, changes: { contextWindow: '512K' } }),
+  ).rejects.toThrow('同名');
+  expect(await fs.readFile(file, 'utf8')).toBe(original);
+});
+
+it('重命名不能制造同名模型冲突，拒绝保存时保留原始配置', async () => {
+  const { service, write } = await fixture();
+  const original = JSON.stringify({
+    modelProvider: 'gemini',
+    model: 'First',
+    customModelsConfig: {
+      customModels: {
+        first: { modelName: 'native-a', label: 'First', maxTokens: 1000000 },
+        second: { modelName: 'native-b', label: 'Second', maxTokens: 200000, extra: { preserve: true } },
+      },
+    },
+  });
+  const file = await write('.gemini/antigravity-cli/settings.json', original);
+  const initial = await service.read('antigravity');
+  await expect(
+    service.save('antigravity', { revision: initial.revision, changes: { displayName: 'Second' } }),
+  ).rejects.toThrow('同名');
+  expect(await fs.readFile(file, 'utf8')).toBe(original);
+});
+
+it('模型标签与另一条目的键相同时，改窗口保留无关条目且读回同一模型', async () => {
+  const { service, write, homeDir } = await fixture();
+  const unrelated = { modelName: 'native-b', label: 'Unrelated', maxTokens: 200000, unknown: { preserve: true } };
+  const file = await write(
+    '.gemini/antigravity-cli/settings.json',
+    JSON.stringify({
+      modelProvider: 'gemini',
+      model: 'entry-a',
+      customModelsConfig: {
+        customModels: {
+          'entry-a': { modelName: 'native-a', label: 'entry-b', maxTokens: 1000000 },
+          'entry-b': unrelated,
+        },
+      },
+    }),
+  );
+  const initial = await service.read('antigravity');
+  const saved = await service.save('antigravity', {
+    revision: initial.revision,
+    changes: { contextWindow: '512K' },
+  });
+  const config = JSON.parse(await fs.readFile(file, 'utf8'));
+  expect(config.customModelsConfig.customModels).toEqual({
+    'entry-a': { modelName: 'native-a', label: 'entry-b', maxTokens: 512000 },
+    'entry-b': unrelated,
+  });
+  expect(config.model).toBe('entry-b');
+  expect(saved.fields.find((field) => field.key === 'model')?.value).toBe('native-a');
+  expect((await service.read('antigravity')).fields.find((field) => field.key === 'contextWindow')?.value).toBe(
+    '512000',
+  );
+  expect(await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir })).toEqual({
+    model: 'entry-b',
+    contextWindow: { model: 'entry-b', windowTokens: 512000 },
+  });
+});
+
+it.each([
+  { existingKey: 'Native Label', requested: 'new-native' },
+  { existingKey: 'new-native', requested: 'Native Label' },
+])('目录解析出的原生身份撞到已有键 $existingKey 时，登记窗口不会改写已有模型', async ({ existingKey, requested }) => {
+  const { service, write } = await fixture(async () => [{ id: 'new-native', label: 'Native Label' }]);
+  const existing = { modelName: 'old-native', label: 'Old', maxTokens: 200000, option: { preserve: true } };
+  const file = await write(
+    '.gemini/antigravity-cli/settings.json',
+    JSON.stringify({
+      modelProvider: 'gemini',
+      model: 'Old',
+      customModelsConfig: { customModels: { [existingKey]: existing } },
+    }),
+  );
+  const initial = await service.read('antigravity');
+  const saved = await service.save('antigravity', {
+    revision: initial.revision,
+    changes: { model: requested, contextWindow: '1M' },
+  });
+  expect(JSON.parse(await fs.readFile(file, 'utf8')).customModelsConfig.customModels).toEqual({
+    [existingKey]: existing,
+    agentdeck: { modelName: 'new-native', label: 'Native Label', maxTokens: 1000000 },
+  });
+  expect(saved.fields.find((field) => field.key === 'model')?.value).toBe('new-native');
 });
 
 it('客户端伪造的解析结果不会写进 modelName', async () => {

@@ -438,6 +438,7 @@ export const useChat = create<ChatState>()((set, get) => {
         pendingAttachmentInput: sentAttachmentInput(current, message),
         // 旧轮次未确认的压缩留在历史中，新轮次不能把它重新显示为进行中。
         compaction: state.compaction?.status === 'running' ? undefined : state.compaction,
+        contextWindow: undefined,
         running: true,
         lastSentAt: Date.now(),
         pendingClientTurnId: clientTurnId,

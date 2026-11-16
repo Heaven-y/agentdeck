@@ -58,7 +58,12 @@ export function sameSession(current: ConversationView, workspaceId: string, sess
   );
 }
 
-export function nativeStatus(event: AgentEvent): { contextUsage?: ContextUsage | null; compaction?: CompactionState } {
+export function nativeStatus(event: AgentEvent): {
+  contextUsage?: ContextUsage | null;
+  compaction?: CompactionState;
+  contextWindow?: { model?: string; windowTokens?: number };
+} {
+  if (event.type === 'session' && event.contextWindow) return { contextWindow: event.contextWindow };
   if (event.type === 'context') return { contextUsage: event.usage };
   if (event.type === 'compaction') return { compaction: event.state };
   return {};
@@ -85,6 +90,7 @@ export const emptyConversation = {
   actualModel: undefined,
   selectedCapability: undefined,
   contextUsage: undefined,
+  contextWindow: undefined,
   compaction: undefined,
   items: [] as ChatItem[],
   inspectedItemId: undefined,

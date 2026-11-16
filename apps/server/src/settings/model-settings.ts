@@ -7,6 +7,7 @@ import { NativeResourceError } from '../agents/common/configuration/errors';
 import { parseModelConfig } from '../agents/common/configuration/fields';
 import { ModelSettingsError } from '../agents/common/configuration/patch';
 import { cliConfigurations } from '../agents/registry';
+import { antigravityContextWindow } from '../agents/antigravity/context-window';
 import {
   createNativeResourcesService,
   type NativeResourcesService,
@@ -64,6 +65,12 @@ export function createModelSettingsService(deps: Deps = {}) {
     return result;
   }
   return {
+    async contextWindow(agent: AgentKind, model?: string) {
+      if (agent !== 'antigravity') return {};
+      const document = await open(agent);
+      const config = parseModelConfig('json', document.content);
+      return antigravityContextWindow(config, model);
+    },
     async read(agent: AgentKind) {
       const document = await open(agent);
       return response(agent, document, await cliConfigurations[agent].readEnvironment(deps.environment));

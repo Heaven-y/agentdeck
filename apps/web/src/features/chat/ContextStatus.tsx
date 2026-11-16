@@ -1,7 +1,8 @@
 import { Popover, PopoverDisclosure, usePopoverStore } from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import type { AgentKind, CompactionState, ContextUsage } from '@agentdeck/shared/conversation';
+import type { AgentKind, CompactionState } from '@agentdeck/shared/conversation';
 import { useChat } from './chat-store';
+import { useContextWindow, type DisplayContextUsage as ContextUsage } from './use-context-window';
 
 const numberFormat = new Intl.NumberFormat('zh-CN');
 const tokens = (value: number) => numberFormat.format(value);
@@ -45,7 +46,7 @@ function usageSource(usage: ContextUsage): string {
 export function contextPercentage(usage: ContextUsage): number | undefined {
   if (Number.isFinite(usage.percentage) && usage.percentage! >= 0) return usage.percentage;
   if (usage.windowTokens === undefined || !Number.isFinite(usage.windowTokens) || usage.windowTokens <= 0) return;
-  return Number.isFinite(usage.usedTokens) && usage.usedTokens >= 0
+  return usage.usedTokens !== undefined && Number.isFinite(usage.usedTokens) && usage.usedTokens >= 0
     ? (usage.usedTokens / usage.windowTokens) * 100
     : undefined;
 }
@@ -97,7 +98,7 @@ export function UsageDetails({ usage, model }: { usage: ContextUsage; model?: st
         <p className="break-all">
           模型：{reported}
           {usage.windowTokens !== undefined && (
-            <span className="text-muted-foreground">（窗口由该模型的原生报告给出）</span>
+            <span className="text-muted-foreground">（窗口按该模型的原生配置）</span>
           )}
         </p>
       )}
@@ -141,7 +142,7 @@ function ContextLabel({
  */
 export function ContextStatus() {
   const popover = usePopoverStore({ placement: 'top-end' });
-  const usage = useChat((state) => state.contextUsage);
+  const usage = useContextWindow();
   const agent = useChat((state) => state.agent);
   const actualModel = useChat((state) => state.actualModel);
   const compaction = useChat((state) => state.compaction);
@@ -168,7 +169,9 @@ export function ContextStatus() {
         className="z-50 max-h-[min(360px,var(--popover-available-height))] w-80 max-w-[calc(100vw-32px)] space-y-2 overflow-y-auto rounded-2xl border border-border bg-card p-3 text-[13px] leading-6 text-muted-foreground shadow-lg"
       >
         {usage ? <UsageDetails usage={usage} model={actualModel} /> : <p>{emptyUsageMessage(agent)}</p>}
-        {compaction && <CompactionStatus state={compaction} incomplete={incomplete} />}
+        {compaction && compaction.status !== 'completed' && (
+          <CompactionStatus state={compaction} incomplete={incomplete} />
+        )}
       </Popover>
     </>
   );

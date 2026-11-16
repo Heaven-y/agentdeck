@@ -12,4 +12,10 @@ export async function invalidateNativeCapabilities(agent: AgentKind, client = qu
   };
   await client.cancelQueries(filters);
   await client.resetQueries(filters);
+  const windows = {
+    predicate: (query: { queryKey: readonly unknown[] }) =>
+      query.queryKey[0] === 'model-context-window' && query.queryKey[1] === agent,
+  };
+  await client.cancelQueries(windows);
+  await client.invalidateQueries(windows);
 }

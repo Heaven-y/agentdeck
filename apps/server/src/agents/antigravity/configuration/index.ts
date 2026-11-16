@@ -10,6 +10,7 @@ import {
   readModelEnvironment,
 } from './environment';
 import { antigravityFields } from './fields';
+import { antigravitySelectionWarning } from './identity';
 import { launchVariables } from './launch';
 import { patch } from './patch';
 import { antigravityPlan } from './resources';
@@ -23,7 +24,10 @@ export const configuration: CliConfiguration = {
   readEnvironment: readModelEnvironment,
   describe: (config, snapshot) => ({
     fields: [...antigravityFields(config), ...modelConnectionFields(snapshot)],
-    warnings: modelEnvironmentWarnings(config.modelProvider, snapshot),
+    warnings: [
+      ...modelEnvironmentWarnings(config.modelProvider, snapshot),
+      ...[antigravitySelectionWarning(config)].filter((value): value is string => !!value),
+    ],
   }),
   advancedWarnings: () => Promise.resolve([]),
   async prepare(config, input, snapshot, services) {

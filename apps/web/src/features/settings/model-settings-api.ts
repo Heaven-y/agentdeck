@@ -1,8 +1,17 @@
 import { request } from '../../lib/http';
 import type { AgentCapabilities, AgentKind } from '@agentdeck/shared/conversation';
-import type { NativeModelSettingsDocument, NativeModelSettingsInput } from '@agentdeck/shared/settings';
+import type {
+  NativeContextWindow,
+  NativeModelSettingsDocument,
+  NativeModelSettingsInput,
+} from '@agentdeck/shared/settings';
 
 export const modelSettingsApi = {
+  contextWindow: (agent: AgentKind, model?: string, signal?: AbortSignal) =>
+    request<NativeContextWindow>(
+      `/api/settings/models/${agent}/context-window${model ? `?${new URLSearchParams({ model })}` : ''}`,
+      { signal, cache: 'no-store' },
+    ),
   catalog: (agent: AgentKind, signal?: AbortSignal) =>
     request<AgentCapabilities>(`/api/settings/models/${agent}/catalog`, { signal, cache: 'no-store' }),
   refreshCatalog: (agent: AgentKind, signal?: AbortSignal) =>

@@ -7,8 +7,9 @@ import {
   parseAntigravityModelList,
   readAntigravityModelSettings,
   configuredAntigravityModels,
-  antigravityDefaultModel,
+  antigravityModelSelector,
 } from '../../../src/agents/antigravity/model-catalog';
+import { antigravityLaunchSelection } from '../../../src/agents/antigravity/model-launch';
 import { runProcess } from '../../../src/platform/process/run';
 import { discoverAntigravityCommands } from '../../../src/agents/antigravity/commands';
 vi.mock('../../../src/platform/process/executable', () => ({
@@ -64,7 +65,13 @@ it('模型目录兼容裸 ID 和旧 URI，使用稳定键并保留显示名', as
     { id: 'stable', label: '显示名称', modelId: 'new-model', description: '原生自定义模型' },
     { id: 'old', label: '旧名称', modelId: 'old-model', description: '原生自定义模型' },
   ]);
-  expect(await antigravityDefaultModel({ HOME: homeDir, USERPROFILE: homeDir })).toBe('stable');
+  // 原生按 label 识别自定义条目；稳定键传给 --model 会被当成未知型号。
+  expect((await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir })).model).toBe('显示名称');
+  expect(antigravityModelSelector(settings, 'stable')).toBe('显示名称');
+  expect(antigravityModelSelector(settings, '旧名称')).toBe('旧名称');
+  expect(antigravityModelSelector(settings, 'new-model')).toBe('显示名称');
+  // 原生目录里的 ID 原样透传，不因不在自定义条目里被改写。
+  expect(antigravityModelSelector(settings, 'gemini-native-high')).toBe('gemini-native-high');
 });
 
 it('命令目录失配不覆盖模型成功结果，诊断原文不回传', async () => {

@@ -1,7 +1,14 @@
 import { managementObject as object, managementText as text, type ManagementRecord } from './management-rpc';
 import type { AntigravitySessionManagement } from './session-management-types';
+import { rateLimitFailure } from './diagnostics';
 
-export type CompletionBoundary = { inputIndex: number; latestIndex: number };
+export type CompletionBoundary = {
+  sessionId: string;
+  inputIndex: number;
+  latestIndex: number;
+  errorIndices: number[];
+  rateLimitedResult: boolean;
+};
 export type TrajectoryReader = NonNullable<AntigravitySessionManagement['readTrajectory']>;
 const DONE = 'CORTEX_STEP_STATUS_DONE';
 const INPUT = 'CORTEX_STEP_TYPE_USER_INPUT';
@@ -24,13 +31,32 @@ function completedTrajectory(trajectory: ManagementRecord, sessionId: string, bo
   const steps: unknown[] = trajectory.steps;
   const input = object(steps[boundary.inputIndex]);
   if (input.type !== INPUT || input.status !== DONE || steps.length - 1 < boundary.latestIndex) return false;
+  if (!boundary.errorIndices.every((index) => rateLimitedStep(object(steps[index])))) return false;
   const current = steps.slice(boundary.inputIndex + 1).map(object);
-  if (!current.length || !current.every(completedStep)) return false;
-  const last = current.at(-1)!;
+  return completedRound(current, boundary.rateLimitedResult);
+}
+
+function completedRound(current: ManagementRecord[], requiresRateLimit: boolean): boolean {
+  if (requiresRateLimit && !current.some(rateLimitedStep)) return false;
+  if (!current.length || !current.every((step) => completedStep(step) || rateLimitedStep(step))) return false;
+  return finalResponse(current.at(-1)!);
+}
+
+function finalResponse(last: ManagementRecord): boolean {
   const response = object(last.plannerResponse);
   return (
     last.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' &&
     !!(text(response.modifiedResponse) || text(response.response)).trim()
+  );
+}
+
+/** 错误步骤保留在轨迹中；只有已终止的明确 429 可由同轮更后的完整答复确认恢复。 */
+function rateLimitedStep(step: ManagementRecord): boolean {
+  return (
+    step.type === 'CORTEX_STEP_TYPE_ERROR_MESSAGE' &&
+    step.status === DONE &&
+    !step.error &&
+    rateLimitFailure(text(object(object(step.errorMessage).error).userErrorMessage))
   );
 }
 

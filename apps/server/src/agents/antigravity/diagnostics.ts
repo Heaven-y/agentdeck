@@ -7,6 +7,11 @@ export const ANTIGRAVITY_PERMISSION_NOTICE =
   'Antigravity 拒绝了需要确认的工具操作；无交互模式无法完成这次确认。请检查原生权限（permissions）规则，本应用不会自动放行。';
 
 function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
+  if (source === 'run' && rateLimitFailure(line))
+    return {
+      type: 'error',
+      message: 'Antigravity 的模型服务请求受限（HTTP 429），本轮未完成。请稍后重试。',
+    };
   if (/\b(?:error|http|status(?:[_ ]code)?)[\s:="']*524\b/i.test(line))
     return {
       type: 'error',
@@ -31,7 +36,10 @@ function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEven
 
 /** 网关或模型服务的临时故障：原生常自行重试，出现它不代表本轮没有产出。 */
 export const serviceFailure = (value: string): boolean =>
-  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:500|503|524)\b/i.test(stripVTControlCharacters(value));
+  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:429|500|503|524)\b/i.test(stripVTControlCharacters(value));
+
+export const rateLimitFailure = (value: string): boolean =>
+  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*429\b/i.test(stripVTControlCharacters(value));
 
 /** 只识别明确的原生错误或模式变化；固定文案不拼接诊断中的 URL、参数或凭据。 */
 export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'run'): DiagnosticEvent | undefined {

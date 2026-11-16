@@ -21,6 +21,7 @@ const fields = [
   'actualModel',
   'selectedCapability',
   'contextUsage',
+  'contextWindow',
   'compaction',
   'items',
   'inspectedItemId',

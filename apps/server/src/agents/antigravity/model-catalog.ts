@@ -2,7 +2,8 @@ import type { AgentModel } from '@agentdeck/shared/conversation';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { readConfigFile } from '../../platform/files/safe-file';
-import { antigravityModelId, selectedAntigravityModel } from './configuration/identity';
+import { parseModelConfig } from '../common/configuration/fields';
+import { antigravityModelId, assertAntigravitySelection, selectedAntigravityModel } from './configuration/identity';
 
 type CustomModel = { modelName: string; label?: string; maxTokens?: number };
 export type AntigravityModelSettings = {
@@ -32,11 +33,7 @@ function customModels(value: unknown): Record<string, CustomModel> {
 export async function readAntigravityModelSettings(
   options: { homeDir?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<AntigravityModelSettings> {
-  const env = options.env ?? process.env;
-  const home = options.homeDir ?? (process.platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir();
-  const { content } = await readConfigFile(path.join(home, '.gemini', 'antigravity-cli', 'settings.json'));
-  if (!content.trim()) return {};
-  const config = object(JSON.parse(content.replace(/^\uFEFF/, '')));
+  const config = await readAntigravityModelConfig(options);
   return {
     model: text(config.model) || undefined,
     modelProvider: text(config.modelProvider) || undefined,
@@ -44,12 +41,28 @@ export async function readAntigravityModelSettings(
   };
 }
 
-/** headless 1.5.1 未应用自定义默认型号，显式补原生键避免回退或空模型。 */
-export async function antigravityDefaultModel(env: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const settings = await readAntigravityModelSettings({ env });
-  if (settings.modelProvider !== 'gemini') return undefined;
-  const selected = selectedAntigravityModel(settings);
-  return selected && text(selected.modelName) ? text(selected.key) : undefined;
+/** 启动时保留额外模型参数参与冲突检查；不得将此原文返回前端或写进日志。 */
+export async function readAntigravityModelConfig(options: { homeDir?: string; env?: NodeJS.ProcessEnv } = {}) {
+  const env = options.env ?? process.env;
+  const home = options.homeDir ?? (process.platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir();
+  const { content } = await readConfigFile(path.join(home, '.gemini', 'antigravity-cli', 'settings.json'));
+  if (!content.trim()) return {};
+  return parseModelConfig('json', content);
+}
+
+/**
+ * 传给 `--model` 的必须是原生认得的型号：自定义条目按 label 命中。
+ *
+ * 本应用的条目键（如 `agentdeck-window-0a3f9f11eef9`）只是稳定标识；
+ * 旧实现直接传键曾导致配置窗口未被采用，因此必须先解析原生选择值。
+ * 原生 ID 唯一对应自定义条目时沿用该别名覆盖；未匹配自定义条目的 ID 原样透传。
+ */
+export function antigravityModelSelector(settings: AntigravityModelSettings, requested?: string): string | undefined {
+  assertAntigravitySelection(settings, requested);
+  const selected = selectedAntigravityModel(settings, requested);
+  return selected
+    ? text(selected.label) || antigravityModelId(selected.modelName) || text(selected.key)
+    : text(requested) || undefined;
 }
 
 export function configuredAntigravityDefault(settings: AntigravityModelSettings): string | undefined {
@@ -57,7 +70,7 @@ export function configuredAntigravityDefault(settings: AntigravityModelSettings)
   return text(selected?.key) || settings.model;
 }
 
-/** 原生自定义条目的键和 label 均可用于 --model；模型名与窗口不从标题猜测。 */
+/** 目录以稳定键标识，发送时统一翻译为原生 label；窗口不从标题猜测。 */
 export function configuredAntigravityModels(settings: AntigravityModelSettings): AgentModel[] {
   const result = new Map<string, AgentModel>();
   const entries = Object.entries(settings.customModelsConfig?.customModels ?? {});

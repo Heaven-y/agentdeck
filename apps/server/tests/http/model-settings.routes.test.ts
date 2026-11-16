@@ -6,7 +6,8 @@ it('模型配置拒绝路径参数和未知请求体，响应不缓存且解析�
   const app = Fastify();
   const read = vi.fn();
   const save = vi.fn();
-  registerModelSettingsRoutes(app, { read, save });
+  const contextWindow = vi.fn(async () => ({ model: 'Custom', windowTokens: 1000000 }));
+  registerModelSettingsRoutes(app, { read, save, contextWindow });
   try {
     for (const url of ['/api/settings/models/unknown', '/api/settings/models/codex?path=elsewhere']) {
       const result = await app.inject({ url });
@@ -26,6 +27,13 @@ it('模型配置拒绝路径参数和未知请求体，响应不缓存且解析�
     }
     expect(read).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+    const window = await app.inject({ url: '/api/settings/models/antigravity/context-window?model=custom-id' });
+    expect(window.json()).toEqual({ model: 'Custom', windowTokens: 1000000 });
+    expect(window.headers['cache-control']).toBe('no-store');
+    expect(contextWindow).toHaveBeenCalledWith('antigravity', 'custom-id');
+    expect(
+      (await app.inject({ url: '/api/settings/models/antigravity/context-window?path=elsewhere' })).statusCode,
+    ).toBe(400);
   } finally {
     await app.close();
   }

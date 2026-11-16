@@ -10,6 +10,7 @@ import { preserveAttachmentInput } from './attachment-actions';
 import { applyFollowupSnapshot, followupDelivered, followupError, startFollowupTurn } from './followup-events';
 import { asyncQuestionError } from './async-question-actions';
 import { bindRuntimeTaskSender, runtimeTaskMessage, runtimeTaskRecovery } from './runtime-tasks-store';
+import { createContextRefresh } from './context-refresh';
 
 type SetState = (patch: Partial<ChatState>) => void;
 type Msg<T extends ServerMessage['type']> = Extract<ServerMessage, { type: T }>;
@@ -22,6 +23,7 @@ export function createChatEvents(
 ) {
   bindRuntimeTaskSender(send);
   const recovery = createChatRecovery(get, set, interrupts);
+  const contextRefresh = createContextRefresh(get, set);
   const delayedInterrupts = new Map<string, string>();
   function change(view: ConversationView, patch: Partial<ConversationView>) {
     const state = get();
@@ -43,6 +45,7 @@ export function createChatEvents(
       (entry) => entry.pendingClientTurnId === msg.clientTurnId || entry.turnId === msg.turnId,
     );
     if (!view || view.workspaceId !== msg.workspaceId || view.agent !== msg.agent) return;
+    contextRefresh.started(view, msg.turnId);
     change(view, { turnId: msg.turnId, pendingClientTurnId: undefined, queueId: msg.queueId ?? view.queueId });
     if (msg.queueId && !get().followups[msg.queueId])
       applyFollowupSnapshot(get, set, {
@@ -99,6 +102,7 @@ export function createChatEvents(
     const value = msg.event;
     if (value.type === 'session' && value.agent && value.agent !== view.agent) return;
     if (value.type === 'session' && view.sessionId && view.sessionId !== value.sessionId) return;
+    contextRefresh.reported(view, value);
     const identity = reported(view, value);
     change(view, {
       items: reduceChat(view.items, value),
@@ -120,6 +124,7 @@ export function createChatEvents(
       items: reduceChat(view.items, { type: 'turn_end', isError: false }),
       pendingAttachmentInput: view.pendingAttachmentInput?.rejected ? view.pendingAttachmentInput : undefined,
     });
+    void contextRefresh.finished(view);
   }
   function error(msg: Msg<'error'>) {
     if (msg.clientTurnId) recovery.restore(msg.clientTurnId);

@@ -15,7 +15,14 @@ export type AgentEvent =
   | { type: 'context'; usage: ContextUsage | null }
   | { type: 'compaction'; state: CompactionState }
   /** 会话开始或继续，sessionId 由 Agent 分配 */
-  | { type: 'session'; sessionId: string; model: string; cwd: string; agent?: AgentKind }
+  | {
+      type: 'session';
+      sessionId: string;
+      model: string;
+      cwd: string;
+      agent?: AgentKind;
+      contextWindow?: { model?: string; windowTokens?: number };
+    }
   /** 用户消息（只出现在历史记录中，实时对话由前端自己显示） */
   | { type: 'user_message'; text: string; attachments?: MessageAttachment[]; nativeInputId?: string }
   /** 助手文本增量 */

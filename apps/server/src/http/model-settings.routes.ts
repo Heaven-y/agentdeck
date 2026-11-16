@@ -36,6 +36,14 @@ export function registerModelSettingsRoutes(app: FastifyInstance, service: Model
       void reply.code(failure.status).send({ code: failure.code, message: failure.message });
     },
   };
+  app.get('/api/settings/models/:agent/context-window', options, (req, reply) =>
+    respond(reply, () => {
+      const params = Params.safeParse(req.params);
+      const query = z.strictObject({ model: z.string().trim().min(1).max(512).optional() }).safeParse(req.query);
+      if (!params.success || !query.success) throw new NativeResourceError('invalid_request');
+      return service.contextWindow(params.data.agent, query.data.model);
+    }),
+  );
   app.get('/api/settings/models/:agent', options, (req, reply) => respond(reply, () => service.read(agentOf(req))));
   app.put('/api/settings/models/:agent', options, (req, reply) =>
     respond(reply, () => {

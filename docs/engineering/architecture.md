@@ -191,7 +191,7 @@ API 和 WebSocket 继续校验会话及来源；主应用禁止被 iframe 嵌入
 | 原生管理 | `/api/projects/:id/sessions/:agent/:sessionId/actions`、`/fork`，来源及项目均在路径中 |
 | 探测与能力 | `/api/agents/probes`；项目下 `agent-capabilities` 缓存与显式刷新 |
 | 设置 | `/api/settings/product`、`/environment`、`/launch-environment/:agent`，原生文件由 `/api/native-resources/:agent` 提供 |
-| 模型设置 | `/api/settings/models/:agent` 读取与保存表单；`/catalog` 的 GET 只读缓存，POST 原生获取，工作目录由可选 projectId 解析 |
+| 模型设置 | `/api/settings/models/:agent` 读取与保存表单；`/catalog` 的 GET 只读缓存，POST 原生获取，工作目录由可选 projectId 解析；`/context-window` 只读 AGY 当前模型窗口，可选 model 使用启动选择器相同的身份 |
 | 插件 | `/api/plugins/*`，安装注册、启停、静态页面与权限内的设置存储 |
 | 对话 | `/ws`，恢复握手/有序补收、发送、停止、审批答复及回合事件 |
 | 会话读取工具 | `/api/session-tools/:agent`，只读 MCP 的登记状态、启停与原生配置事务 |

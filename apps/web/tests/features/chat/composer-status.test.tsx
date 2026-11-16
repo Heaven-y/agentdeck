@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { modelSettingsApi } from '../../../src/features/settings/model-settings-api';
+import { queryClient } from '../../../src/lib/query-client';
 import { ComposerStatus, latestComposerStatistics } from '../../../src/features/chat/ComposerStatus';
 import { useChat } from '../../../src/features/chat/chat-store';
 import type { ChatItem } from '../../../src/features/chat/chat-reducer';
@@ -13,7 +15,11 @@ const statistics: Extract<ChatItem, { kind: 'statistics' }> = {
   usage: { source: 'claude', scope: 'turn', inputTokens: 300, outputTokens: 120 },
 };
 beforeEach(() => useChat.setState(useChat.getInitialState(), true));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  queryClient.clear();
+  vi.restoreAllMocks();
+});
 
 it('仅显示当前用户轮次的已完成统计，运行中或新轮缺值不沿用旧速度', () => {
   const first: ChatItem[] = [{ kind: 'user', id: 'one', text: '第一轮' }, statistics];
@@ -59,14 +65,15 @@ it('没有原生统计时固定显示未知值，不伪造零速与窗口', () =
   expect(screen.queryByText('0.0 tok/s')).toBeNull();
 });
 
-it('历史压缩完成不替代当前上下文，结果只在详情中出现', async () => {
+it('历史压缩完成不冒充当前状态，上下文面板只保留当前用量', async () => {
   useChat.setState({ compaction: { status: 'completed', trigger: 'auto', beforeTokens: 500, afterTokens: 100 } });
   render(<ComposerStatus />);
   const button = screen.getByRole('button', { name: '上下文用量' });
   expect(button.textContent).toContain('上下文 —');
   expect(screen.queryByText(/压缩已完成/)).toBeNull();
   fireEvent.click(button);
-  expect(await screen.findByText('压缩已完成 · 自动')).toBeTruthy();
+  await screen.findByRole('dialog', { name: '上下文用量详情' });
+  expect(screen.queryByText('压缩已完成 · 自动')).toBeNull();
   act(() => useChat.setState({ contextUsage: { source: 'codex_native', usedTokens: 100, windowTokens: 200000 } }));
   expect(button.textContent).toContain('100 / 200,000');
   expect(button.textContent).not.toContain('压缩');
@@ -95,7 +102,32 @@ it('Antigravity 的窗口标明属于哪个模型，不让人误以为是设置�
   render(<ComposerStatus />);
   fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
   expect(await screen.findByText(/模型：Gemini 4 Carbon \(High\)/)).toBeTruthy();
-  expect(screen.getByText(/窗口由该模型的原生报告给出/)).toBeTruthy();
+  expect(screen.getByText(/窗口按该模型的原生配置/)).toBeTruthy();
+});
+
+it('打开旧会话使用原生当前窗口，模型改变后刷新，运行中保留启动窗口', async () => {
+  const read = vi
+    .spyOn(modelSettingsApi, 'contextWindow')
+    .mockResolvedValue({ model: 'Current', windowTokens: 1000000 });
+  useChat.setState({
+    workspaceId: 'project',
+    sessionId: 'old-session',
+    agent: 'antigravity',
+    contextUsage: { source: 'antigravity_estimate', usedTokens: 74994, windowTokens: 256000, percentage: 29.3 },
+  });
+  render(<ComposerStatus />);
+  expect(await screen.findByText('上下文 74,994 / 1,000,000')).toBeTruthy();
+  expect(screen.getByLabelText('上下文占用 7.5%')).toBeTruthy();
+  act(() => useChat.setState({ running: true, contextWindow: { model: 'Current', windowTokens: 1000000 } }));
+  read.mockResolvedValue({ model: 'Current', windowTokens: 200000 });
+  await act(() => queryClient.invalidateQueries({ queryKey: ['model-context-window'] }));
+  expect(screen.getByText('上下文 74,994 / 1,000,000')).toBeTruthy();
+  act(() => useChat.setState({ running: false }));
+  expect(await screen.findByText('上下文 74,994 / 200,000')).toBeTruthy();
+  read.mockResolvedValue({ model: 'Unknown' });
+  act(() => useChat.getState().setModel('Unknown'));
+  expect(await screen.findByText('上下文 74,994 / —')).toBeTruthy();
+  expect(screen.queryByLabelText('上下文占用 29.3%')).toBeNull();
 });
 
 it('用量自带模型时以原生报告的为准', async () => {
@@ -113,4 +145,26 @@ it('用量自带模型时以原生报告的为准', async () => {
   fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
   expect(await screen.findByText(/模型：Gemini 4 Argon \(High\)/)).toBeTruthy();
   expect(screen.queryByText(/模型：Gemini 4 Carbon/)).toBeNull();
+});
+
+it('新建内置会话绑定原生 ID 或编辑下轮模型时保留本轮窗口，空闲读取失败不沿用旧窗口', async () => {
+  const read = vi
+    .spyOn(modelSettingsApi, 'contextWindow')
+    .mockResolvedValue({ model: 'Builtin', windowTokens: 1048576 });
+  useChat.setState({
+    workspaceId: 'project',
+    agent: 'antigravity',
+    contextUsage: { source: 'antigravity_estimate', usedTokens: 1000 },
+  });
+  render(<ComposerStatus />);
+  expect(await screen.findByText('上下文 1,000 / 1,048,576')).toBeTruthy();
+  act(() => useChat.setState({ running: true, runningInput: { text: '示例', attachments: [], model: '' } }));
+  act(() => useChat.setState({ sessionId: 'native-new' }));
+  expect(screen.getByText('上下文 1,000 / 1,048,576')).toBeTruthy();
+  act(() => useChat.getState().setModel('next-model'));
+  expect(screen.getByText('上下文 1,000 / 1,048,576')).toBeTruthy();
+  read.mockRejectedValue(new Error('同名模型冲突'));
+  act(() => useChat.setState({ running: false, modelOverrides: { claude: '', codex: '', antigravity: '' } }));
+  await act(() => queryClient.invalidateQueries({ queryKey: ['model-context-window'] }));
+  expect(await screen.findByText('上下文 1,000 / —')).toBeTruthy();
 });

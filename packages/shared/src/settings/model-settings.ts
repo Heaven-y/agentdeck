@@ -24,6 +24,8 @@ export type NativeModelSettingsDocument = {
   providers?: Array<{ id: string; label: string; fields: ModelSettingField[] }>;
   warnings: string[];
 };
+/** 所选模型在下一次启动时使用的原生窗口；未知时省略，不以历史窗口补造。 */
+export type NativeContextWindow = { model?: string; windowTokens?: number };
 export const NativeModelSettingsInputSchema = z.strictObject({
   revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
   changes: z.record(

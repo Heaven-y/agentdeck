@@ -154,6 +154,7 @@ function startedPatch(
       draft?.attachments.flatMap((item) => (item.asset ? [item.asset] : [])),
     ),
     running: true,
+    contextWindow: undefined,
     turnId: message.turnId,
     pendingClientTurnId: undefined,
     interruptRequested: false,

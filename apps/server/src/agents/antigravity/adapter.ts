@@ -5,13 +5,18 @@ import type { AgentTurnInput, TurnHandle, TurnRunner } from '../contracts';
 import { resolveLocalCommand } from '../../platform/process/executable';
 import { AntigravityMapper } from './mapper';
 import { AntigravityLines } from './lines';
-import { antigravityDefaultModel } from './model-catalog';
+import {
+  antigravityLaunchSelection,
+  AntigravityModelSelectionError,
+  type AntigravityLaunchSelection,
+} from './model-launch';
 import { AntigravityInvocationError, antigravityInvocationText } from './commands';
 import { antigravityDiagnostic, serviceFailure } from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
 import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { createAntigravityAcpRunner } from './acp/runtime';
+import { prepareNativeSettings } from './native-settings-override';
 
 export type AntigravityProcess = Pick<
   ChildProcessWithoutNullStreams,
@@ -26,7 +31,8 @@ const STALL_AFTER_SERVICE_ERROR_MS = 3 * 60 * 1000;
 type Options = {
   launch?: (input: LaunchInput) => AntigravityProcess;
   env?: NodeJS.ProcessEnv;
-  defaultModel?: () => Promise<string | undefined>;
+  defaultModel?: (requested?: string) => Promise<string | undefined>;
+  selectModel?: (requested?: string) => Promise<AntigravityLaunchSelection>;
   invocationText?: (input: AgentTurnInput, signal: AbortSignal) => Promise<string>;
   readTrajectory?: TrajectoryReader;
 };
@@ -34,7 +40,15 @@ type TurnServices = {
   invocationText: NonNullable<Options['invocationText']>;
   readTrajectory?: TrajectoryReader;
 };
+type ModelResolver = (requested?: string) => Promise<AntigravityLaunchSelection | string | undefined>;
+const launchSelectionValue = (value: Awaited<ReturnType<ModelResolver>>): AntigravityLaunchSelection =>
+  typeof value === 'string' ? { model: value } : (value ?? {});
 
+function startFailure(error: unknown): string {
+  return error instanceof AntigravityInvocationError || error instanceof AntigravityModelSelectionError
+    ? error.message
+    : '无法启动 Antigravity，请检查本机 agy 安装与启动环境。';
+}
 function launch(input: LaunchInput): AntigravityProcess {
   const executable = resolveLocalCommand('agy', input.env ?? process.env);
   return spawn(executable.command, [...executable.args, ...input.args], {
@@ -45,10 +59,11 @@ function launch(input: LaunchInput): AntigravityProcess {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
-function argumentsFor(input: AgentTurnInput): string[] {
+function argumentsFor(input: AgentTurnInput, settings?: string): string[] {
   const args = ['--input-format', 'stream-json', '--output-format', 'stream-json'];
   if (input.sessionId) args.push('--conversation', input.sessionId);
   if (input.model) args.push('--model', input.model);
+  if (settings) args.push('--settings', settings);
   if (input.reasoningEffort) args.push('--effort', input.reasoningEffort);
   args.push(...antigravityPermissionArgs(input.permission));
   return args;
@@ -77,11 +92,13 @@ class AntigravityTurn {
   private closingAfterResult = false;
   private cleanupSignalSent = false;
   private readonly preparation = new AbortController();
+  private selection?: AntigravityLaunchSelection;
+  private nativeSettings?: Awaited<ReturnType<typeof prepareNativeSettings>>;
 
   constructor(
     private readonly input: AgentTurnInput,
     start: (input: LaunchInput) => AntigravityProcess,
-    defaultModel: () => Promise<string | undefined>,
+    defaultModel: ModelResolver,
     private readonly services: TurnServices,
   ) {
     this.done = new Promise((resolve) => {
@@ -95,23 +112,30 @@ class AntigravityTurn {
 
   private async start(
     start: (input: LaunchInput) => AntigravityProcess,
-    defaultModel: () => Promise<string | undefined>,
+    defaultModel: ModelResolver,
     invocationText: (input: AgentTurnInput, signal: AbortSignal) => Promise<string>,
   ) {
     try {
       const text = this.input.invocation ? await invocationText(this.input, this.preparation.signal) : this.input.text;
-      const model = this.input.model ?? (await defaultModel());
-      if (this.ended || this.failed) return;
-      this.child = start({ cwd: this.input.workspace.dir, args: argumentsFor({ ...this.input, model }) });
+      // 显式选择也要翻译应用键，确保命中对应的原生自定义条目。
+      const selection = await defaultModel(this.input.model);
+      this.selection = launchSelectionValue(selection);
+      const model = this.selection.model ?? this.input.model;
+      if (this.selection.nativeSettings)
+        this.nativeSettings = await prepareNativeSettings(this.selection.nativeSettings);
+      if (this.preparation.signal.aborted) {
+        await this.nativeSettings?.close();
+        return;
+      }
+      this.child = start({
+        cwd: this.input.workspace.dir,
+        args: argumentsFor({ ...this.input, model }, this.nativeSettings?.path),
+      });
       this.listen(this.child);
       this.timer = setTimeout(() => this.fail('Antigravity 启动超时，请检查本机登录与配置。'), 30_000);
       this.child.stdin.end(`${JSON.stringify({ event: 'user', message: { content: text } })}\n`);
     } catch (error) {
-      this.fail(
-        error instanceof AntigravityInvocationError
-          ? error.message
-          : '无法启动 Antigravity，请检查本机 agy 安装与启动环境。',
-      );
+      this.fail(startFailure(error));
       if (!this.child) void this.finish(null);
     }
   }
@@ -165,13 +189,21 @@ class AntigravityTurn {
     if (events.some((event) => event.type === 'session') || this.mapper.result) clearTimeout(this.timer);
     for (const event of events) {
       if (event.type === 'error') this.notice(event);
-      else this.input.emit(event);
+      else this.emit(event);
     }
     if (this.mapper.result)
       this.timer = setTimeout(() => {
         this.closingAfterResult = true;
         this.stop();
       }, 2_000);
+  }
+
+  private emit(event: AgentEvent): void {
+    this.input.emit(
+      event.type === 'session' && this.selection?.contextWindow
+        ? { ...event, contextWindow: this.selection.contextWindow }
+        : event,
+    );
   }
 
   private diagnostic(line: string): void {
@@ -242,6 +274,7 @@ class AntigravityTurn {
       this.finishTurn(code);
     } finally {
       this.ended = true;
+      await this.nativeSettings?.close().catch(() => undefined);
       this.settle();
     }
   }
@@ -279,11 +312,10 @@ class AntigravityTurn {
 
   private reviewCompletion(): Promise<boolean> {
     const boundary = this.mapper.completionBoundary();
-    if (this.reportedError || !boundary || !this.services.readTrajectory || !this.input.sessionId)
-      return Promise.resolve(false);
+    if (this.reportedError || !boundary || !this.services.readTrajectory) return Promise.resolve(false);
     return verifyAntigravityCompletion(
       this.services.readTrajectory,
-      { sessionId: this.input.sessionId, cwd: this.input.workspace.dir, boundary },
+      { sessionId: boundary.sessionId, cwd: this.input.workspace.dir, boundary },
       this.preparation.signal,
     );
   }
@@ -296,7 +328,9 @@ export function createAntigravityHeadlessRunner(options: Options = {}): TurnRunn
       input,
       (request) =>
         (options.launch ?? launch)({ ...request, env: antigravityBackgroundEnvironment(options.env ?? process.env) }),
-      options.defaultModel ?? (() => antigravityDefaultModel(options.env ?? process.env)),
+      options.selectModel ??
+        options.defaultModel ??
+        ((requested) => antigravityLaunchSelection(options.env ?? process.env, requested)),
       {
         invocationText:
           options.invocationText ?? ((input, signal) => antigravityInvocationText(input, { env: options.env, signal })),

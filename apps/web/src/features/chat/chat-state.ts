@@ -83,6 +83,7 @@ export type ChatState = {
   sessionModels: Record<string, { actualModel?: string; nativeModel?: string }>;
   selectedCapability?: AgentCapability;
   contextUsage?: ContextUsage | null;
+  contextWindow?: { model?: string; windowTokens?: number };
   compaction?: CompactionState;
   items: ChatItem[];
   inspectedItemId?: string;
@@ -143,6 +144,7 @@ export type ConversationView = Pick<
   | 'actualModel'
   | 'selectedCapability'
   | 'contextUsage'
+  | 'contextWindow'
   | 'compaction'
   | 'items'
   | 'inspectedItemId'

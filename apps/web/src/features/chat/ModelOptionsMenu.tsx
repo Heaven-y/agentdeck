@@ -62,12 +62,20 @@ function RefreshModels({ catalog, disabled }: { catalog: ReturnType<typeof useAg
 }
 
 type CatalogProps = { disabled: boolean; catalog: ReturnType<typeof useAgentCapabilities> };
-function inheritedModel(native?: string, actual?: string, configured?: string) {
-  return native || actual || configured || '';
+function inheritedModel(
+  native?: string,
+  actual?: string,
+  configured?: string,
+  runtime?: { agent: AgentKind; running: boolean },
+) {
+  const fallback = native || actual || configured || '';
+  if (runtime?.agent === 'antigravity') return (runtime.running && actual) || configured || fallback;
+  return fallback;
 }
 function useModelPresentation(model: string, catalog: AgentCapabilities | undefined, fetching: boolean) {
   const agent = useChat((state) => state.agent);
   const actual = useChat((state) => state.actualModel);
+  const running = useChat((state) => state.running);
   const native = useChat((state) => {
     if (!state.workspaceId || !state.sessionId) return undefined;
     return state.sessionModels[sessionActionKey(state.workspaceId, { agent: state.agent, sessionId: state.sessionId })]
@@ -77,7 +85,7 @@ function useModelPresentation(model: string, catalog: AgentCapabilities | undefi
   const historical = useChat((state) => !!state.sessionId);
   // 下一轮配置与上一轮实际报告分开；没有配置证据时才以最近报告说明会话。
   const configured = catalog?.defaultModel;
-  const inherited = inheritedModel(native, actual, configured);
+  const inherited = inheritedModel(native, actual, configured, { agent, running });
   const id = model || inherited;
   const models = catalog?.models ?? [];
   const candidate = findModel(models, id);

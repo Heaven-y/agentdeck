@@ -7,6 +7,11 @@ import { createAntigravityAcpRunner } from '../../../src/agents/antigravity/acp/
 import { AcpError } from '../../../src/agents/antigravity/acp/types';
 import type { AcpConnection, AcpRecord, AcpRequest } from '../../../src/agents/antigravity/acp/types';
 import { AntigravityAcpMapper } from '../../../src/agents/antigravity/acp/mapper';
+import type { NativeContextWindow } from '@agentdeck/shared/settings';
+import {
+  antigravityContextWindow,
+  antigravityContextWindowSnapshot,
+} from '../../../src/agents/antigravity/context-window';
 
 const cwd = path.join(tmpdir(), 'agentdeck-acp-fixture');
 const configuration = () => Promise.resolve({ modelProvider: 'gemini', model: 'gemini-test' });
@@ -91,6 +96,7 @@ function setup(
     settings?: () => Promise<AcpRecord>;
     input?: Partial<AgentTurnInput>;
     client?: ReturnType<typeof fakeClient>;
+    contextWindow?: (settings: AcpRecord, model?: string) => Promise<NativeContextWindow>;
   } = {},
 ) {
   const native = options.client ?? fakeClient();
@@ -101,6 +107,7 @@ function setup(
     env: { GEMINI_API_KEY: 'synthetic' },
     createClient,
     settings: options.settings ?? configuration,
+    contextWindow: options.contextWindow ?? (async (_settings, model) => ({ model, windowTokens: 1048576 })),
     headless,
   });
   runners.push(runner);
@@ -120,6 +127,79 @@ async function started(client: AcpConnection) {
 }
 
 describe('AGY ACP 对话与兼容路径', () => {
+  it.each([
+    { model: { invalid: true } },
+    { model: 'gemini-test', customModelsConfig: { customModels: { broken: null } } },
+  ])('原生模型配置形状错误时在选路前停止，不回退到默认模型：%j', async (invalid) => {
+    const f = setup({ settings: async () => ({ modelProvider: 'gemini', ...invalid }) });
+    const handle = f.run();
+    await vi.waitFor(() =>
+      expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('配置格式错误') }),
+    );
+    await handle.done;
+    expect(f.createClient).not.toHaveBeenCalled();
+    expect(f.headless).not.toHaveBeenCalled();
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  });
+
+  it('启动时按ACP确认的模型发布窗口快照，恢复和后台轮次不依赖界面缓存', async () => {
+    const f = setup({
+      settings: async () => ({ modelProvider: 'gemini', model: 'Gemini Test' }),
+      contextWindow: async (_settings, model) => ({
+        model,
+        windowTokens: model === 'gemini-test' ? 1048576 : 200000,
+      }),
+    });
+    const handle = f.run();
+    await started(f.client);
+    expect(f.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session',
+        model: 'gemini-test',
+        contextWindow: { model: 'gemini-test', windowTokens: 1048576 },
+      }),
+    );
+    f.finish();
+    await handle.done;
+  });
+
+  it('ACP 已确认的内置型号窗口不套用未选中的同底层型号自定义别名', async () => {
+    const f = setup({
+      settings: async () => ({
+        modelProvider: 'gemini',
+        model: 'Gemini Test',
+        customModelsConfig: {
+          customModels: {
+            custom: { modelName: 'gemini-test', label: 'Custom', maxTokens: 200000 },
+          },
+        },
+      }),
+      contextWindow: (settings, model) =>
+        antigravityContextWindowSnapshot(settings, model, (current, requested) =>
+          antigravityContextWindow(current, requested, async () => ({
+            models: {
+              'gemini-test': { displayName: 'Gemini Test', maxTokens: 1048576 },
+            },
+          })),
+        ),
+    });
+    const handle = f.run();
+    await started(f.client);
+    expect(f.events).toContainEqual(
+      expect.objectContaining({
+        type: 'session',
+        model: 'gemini-test',
+        contextWindow: {
+          model: 'gemini-test',
+          windowTokens: 1048576,
+        },
+      }),
+    );
+    expect(f.headless).not.toHaveBeenCalled();
+    f.finish();
+    await handle.done;
+  });
+
   it('已有会话专用命令等待迟到的真实目录，压缩完成有状态，不重放历史或转入headless', async () => {
     const f = setup({
       input: { sessionId: 'native-1', text: '', invocation: { kind: 'acp-command', name: 'compact' } },

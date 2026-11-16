@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { NativeSessionIdSchema, type AgentEvent } from '@agentdeck/shared/conversation';
 import { stepDuration, stepUsage } from './metrics';
-import { ANTIGRAVITY_PERMISSION_NOTICE, antigravityDiagnostic } from './diagnostics';
+import { ANTIGRAVITY_PERMISSION_NOTICE, antigravityDiagnostic, rateLimitFailure } from './diagnostics';
 import type { CompletionBoundary } from './completion';
 
 type RecordValue = Record<string, unknown>;
@@ -60,6 +60,8 @@ export class AntigravityMapper {
   private currentFailure = false;
   private uncertainBoundary = false;
   private terminalFailure = false;
+  private errorIndices = new Set<number>();
+  private rateLimitedResult = false;
   private historicalErrorPossible = false;
   private resultReviewable = false;
   private resultDiagnostic?: DiagnosticEvent;
@@ -138,7 +140,8 @@ export class AntigravityMapper {
     }
     if (index <= this.inputIndex) return;
     this.currentFailure ||= currentStepFailed(step);
-    this.terminalFailure ||= type === 'error_message' || state === 'CANCELLED';
+    this.terminalFailure ||= state === 'CANCELLED';
+    if (type === 'error_message') this.errorIndices.add(index);
     this.observeLatest(index, type, state, step.text_delta);
   }
 
@@ -178,16 +181,29 @@ export class AntigravityMapper {
 
   /** 原生累计 result 会保留历史 ERROR；只以本轮完整答复和自然退出的共同证据纠正。 */
   complete(naturalSuccess: boolean, verified = false): DiagnosticEvent[] {
-    if (this.result && naturalSuccess && (verified || (this.completedResponse() && this.historicalErrorPossible)))
-      this.result = { ...this.result, isError: false };
+    const completed = verified || this.completedHistoricalResponse();
+    if (this.result && naturalSuccess && completed) this.result = { ...this.result, isError: false };
     return this.result?.isError && this.resultDiagnostic ? [this.resultDiagnostic] : [];
   }
 
+  private completedHistoricalResponse(): boolean {
+    return !this.rateLimitedResult && this.completedResponse() && this.historicalErrorPossible;
+  }
+
   completionBoundary(): CompletionBoundary | undefined {
-    if (!this.resultReviewable || !this.result?.isError || this.uncertainBoundary || this.terminalFailure)
-      return undefined;
-    if (!this.inputIndex || !this.latestStep) return undefined;
-    return { inputIndex: this.inputIndex, latestIndex: this.latestStep.index };
+    if (!this.canReviewCompletion()) return undefined;
+    if (this.inputIndex === undefined || !this.latestStep || !this.sessionId) return undefined;
+    return {
+      sessionId: this.sessionId,
+      inputIndex: this.inputIndex,
+      latestIndex: this.latestStep.index,
+      errorIndices: [...this.errorIndices],
+      rateLimitedResult: this.rateLimitedResult,
+    };
+  }
+
+  private canReviewCompletion(): boolean {
+    return this.resultReviewable && this.result?.isError === true && !this.uncertainBoundary && !this.terminalFailure;
   }
 
   private stepStatistics(step: RecordValue): AgentEvent[] {
@@ -284,15 +300,21 @@ export class AntigravityMapper {
 
   private prepareResult(result: RecordValue): AgentEvent[] {
     if (result.status !== 'SUCCESS') this.resultDiagnostic = antigravityDiagnostic(text(result.error));
+    this.rateLimitedResult = rateLimitFailure(text(result.error));
     const hasDeniedActions = Array.isArray(result.denied_actions) && result.denied_actions.length > 0;
     this.historicalErrorPossible =
       !hasDeniedActions && result.conversation_id === this.expectedId && mayContainHistoricalError(result);
-    this.resultReviewable =
-      !hasDeniedActions &&
-      !!this.expectedId &&
-      result.conversation_id === this.expectedId &&
-      result.status === 'ERROR' &&
-      !!text(result.error).trim();
+    this.resultReviewable = !hasDeniedActions && this.reviewableResult(result);
     return hasDeniedActions ? [{ type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE }] : [];
+  }
+
+  private reviewableResult(result: RecordValue): boolean {
+    return (
+      this.initialized &&
+      (!!this.expectedId || this.rateLimitedResult || this.errorIndices.size > 0) &&
+      result.conversation_id === this.sessionId &&
+      result.status === 'ERROR' &&
+      !!text(result.error).trim()
+    );
   }
 }

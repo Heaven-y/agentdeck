@@ -9,6 +9,7 @@ import type { AntigravitySessionManagement } from '../../../src/agents/antigravi
 
 const cwd = path.join(tmpdir(), 'agentdeck-agy-completion');
 const previousError = 'agent executor error: generating and executing: Error 524, Status: 524 unknown';
+const rateLimitError = 'API error (attempt 1): Error 429, Message: Upstream rate limit exceeded, please retry later';
 afterEach(() => vi.useRealTimers());
 
 async function resumedTurn(resume = true, readTrajectory?: AntigravitySessionManagement['readTrajectory']) {
@@ -96,6 +97,116 @@ function completedTrajectory() {
     ],
   };
 }
+
+function rateLimitedTrajectory(resume = true): Record<string, unknown> {
+  const trajectory = completedTrajectory();
+  Object.assign(trajectory.steps[5]!, {
+    type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE',
+    errorMessage: { shouldShowUser: true, error: { userErrorMessage: rateLimitError } },
+  });
+  return { ...trajectory, steps: resume ? trajectory.steps : trajectory.steps.slice(4) };
+}
+
+it.each([true, false])('原生 429 重试后的完整本轮轨迹可纠正累计 ERROR，续接：%s', async (resume) => {
+  const f = await resumedTurn(resume, async () => ({ trajectory: rateLimitedTrajectory(resume) }));
+  const input = resume ? 4 : 0;
+  f.step(input, 'user_input');
+  // 流协议不提供可依赖的错误详情，必须查原生轨迹确认错误种类。
+  f.step(input + 1, 'error_message');
+  f.step(input + 2, 'agent_response', 'DONE', { text_delta: '原生重试后完成。' });
+  f.child.stderr.write(`error: ${rateLimitError}\n`);
+  f.result({ error: rateLimitError, num_turns: resume ? 2 : 1 });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+it.each([false, true])('result 报429但本轮轨迹没有限流恢复证据时保留失败，续接：%s', async (resume) => {
+  const trajectory = completedTrajectory();
+  // 续接时历史轮次的 429 也不能作为本轮恢复证据。
+  Object.assign(trajectory.steps[3]!, {
+    errorMessage: { error: { userErrorMessage: rateLimitError } },
+  });
+  if (!resume) trajectory.steps = trajectory.steps.slice(4);
+  const f = await resumedTurn(resume, async () => ({ trajectory }));
+  const input = resume ? 4 : 0;
+  f.step(input, 'user_input');
+  f.step(input + 2, 'agent_response', 'DONE', { text_delta: '已经输出的答复。' });
+  f.result({ error: rateLimitError, num_turns: resume ? 2 : 1 });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining('429') },
+  ]);
+});
+
+it('累计 result 仍写旧524时，按本轮原生429错误步骤与后续完成答复复核恢复', async () => {
+  const f = await resumedTurn(true, async () => ({ trajectory: rateLimitedTrajectory() }));
+  f.step(4, 'user_input');
+  f.step(5, 'error_message');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '原生重试后完成。' });
+  f.result();
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+it.each([
+  'unknown-error',
+  'later-error',
+  'unfinished',
+  'later-input',
+  'wrong-session',
+  'denied',
+  'exit',
+  'missing-reader',
+])('429 遇到%s时不能仅凭已输出文本改判成功', async (scenario) => {
+  const trajectory = rateLimitedTrajectory();
+  const steps = trajectory.steps as Record<string, unknown>[];
+  if (scenario === 'unknown-error') steps[5]!.errorMessage = { error: { userErrorMessage: '原生不可恢复错误' } };
+  if (scenario === 'later-error') steps.push({ ...steps[5] });
+  if (scenario === 'unfinished') steps[6]!.status = 'CORTEX_STEP_STATUS_RUNNING';
+  if (scenario === 'later-input') steps.splice(6, 0, { ...steps[4] });
+  if (scenario === 'wrong-session') trajectory.cascadeId = 'other';
+  if (scenario === 'denied')
+    steps.splice(6, 0, {
+      type: 'CORTEX_STEP_TYPE_RUN_COMMAND',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      runCommand: { userRejected: true },
+    });
+  const f = await resumedTurn(true, scenario === 'missing-reader' ? undefined : async () => ({ trajectory }));
+  f.step(4, 'user_input');
+  // 即使直播遗漏错误步骤，也必须核实轨迹，不能沿用旧错误的文本启发式。
+  f.step(6, 'agent_response', 'DONE', { text_delta: '一部分回答。' });
+  f.result({ error: rateLimitError });
+  f.child.emit('close', scenario === 'exit' ? 1 : 0);
+  await f.handle.done;
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining('429') },
+  ]);
+});
+
+it('429 后用户中断不能被较晚到达的成功轨迹覆盖', async () => {
+  let resolve!: (value: { trajectory: Record<string, unknown> }) => void;
+  const pending = new Promise<{ trajectory: Record<string, unknown> }>((done) => (resolve = done));
+  const read = vi.fn(() => pending);
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(5, 'error_message');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已生成文本。' });
+  f.result({ error: rateLimitError });
+  f.child.emit('close', 0);
+  await Promise.resolve();
+  expect(read).toHaveBeenCalledWith('native-resumed', cwd, expect.any(AbortSignal));
+  await f.handle.interrupt();
+  resolve({ trajectory: rateLimitedTrajectory() });
+  await f.handle.done;
+  expect(f.events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
+});
 
 it('直播缺少最终文本增量时，只读复核本轮原生终态后移除累计旧524', async () => {
   let resolve!: (value: { trajectory: ReturnType<typeof completedTrajectory> }) => void;
@@ -193,14 +304,13 @@ it('stderr 的 524 只是可重试的服务故障，完整答复与自然退出�
   expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
 });
 
-it.each(['current-error', 'cancelled', 'multiple-input', 'denied', 'exit', 'cleanup'])(
+it.each(['cancelled', 'multiple-input', 'denied', 'exit', 'cleanup'])(
   '%s 已确认失败或边界不可信时不发起原生复核',
   async (scenario) => {
     if (scenario === 'cleanup') vi.useFakeTimers();
     const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
     const f = await resumedTurn(true, read);
     f.step(4, 'user_input');
-    if (scenario === 'current-error') f.step(5, 'error_message');
     if (scenario === 'cancelled') f.step(5, 'tool', 'CANCELLED');
     if (scenario === 'multiple-input') f.step(5, 'user_input');
     f.step(6, 'agent_response');
@@ -212,6 +322,19 @@ it.each(['current-error', 'cancelled', 'multiple-input', 'denied', 'exit', 'clea
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
   },
 );
+
+it('流中已出现错误步骤但只读轨迹同索引未证实429时，不能用其他成功步骤覆盖', async () => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(5, 'error_message');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已经输出文本。' });
+  f.result();
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).toHaveBeenCalledOnce();
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
 
 it('原生复核超过预算时结束等待并保留失败', async () => {
   let reviewSignal: AbortSignal | undefined;

@@ -1,7 +1,7 @@
 import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput } from '../../contracts';
 import type { AntigravityModelSettings } from '../model-catalog';
-import { selectedAntigravityModel } from '../configuration/identity';
+import { matchingAntigravityModels } from '../configuration/identity';
 import { AcpError, object, text, list, type AcpConnection, type AcpRecord } from './types';
 
 export function needsHeadless(
@@ -12,7 +12,7 @@ export function needsHeadless(
   if (settings.modelProvider !== 'gemini' || !env.GEMINI_API_KEY || env.AGY_ADC_AUTH === 'true') return true;
   if (input.permission?.agent === 'antigravity' && input.permission.mode === 'auto') return true;
   // ACP不接受自定义模型映射；不把它的默认Gemini型号冒充用户配置。
-  return !!selectedAntigravityModel({ ...settings, model: input.model ?? settings.model });
+  return matchingAntigravityModels({ ...settings, model: input.model ?? settings.model }).length > 0;
 }
 
 function optionValues(option: AcpRecord): AcpRecord[] {

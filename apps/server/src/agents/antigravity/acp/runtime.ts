@@ -1,5 +1,9 @@
 import type { AgentTurnInput, TurnHandle, TurnRunner, NativeSteerInput, NativeInputResult } from '../../contracts';
-import { readAntigravityModelSettings, type AntigravityModelSettings } from '../model-catalog';
+import { readAntigravityModelConfig, type AntigravityModelSettings } from '../model-catalog';
+import { antigravityContextWindowSnapshot } from '../context-window';
+import type { NativeContextWindow } from '@agentdeck/shared/settings';
+import { assertAntigravitySelection } from '../configuration/identity';
+import { ModelSettingsError } from '../../common/configuration/patch';
 import { antigravityInvocationText } from '../commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
@@ -16,6 +20,7 @@ type Options = {
   headless: TurnRunner;
   createClient?: (options: AcpLaunchOptions) => Promise<AcpConnection>;
   settings?: () => Promise<AntigravityModelSettings>;
+  contextWindow?: typeof antigravityContextWindowSnapshot;
   invocationText?: (input: AgentTurnInput, signal: AbortSignal) => Promise<string>;
 };
 
@@ -27,6 +32,7 @@ class AcpTurn {
   private permissions?: AcpPermissions;
   private interactions?: AcpInteractions;
   private nativeId?: string;
+  private contextWindow?: NativeContextWindow;
   private promptCapabilities?: AcpRecord;
   private sent = false;
   private ended = false;
@@ -115,6 +121,11 @@ class AcpTurn {
     );
     const selected = await configureSession(this.client, this.input, { response, settings, signal });
     this.nativeId = selected.id;
+    // ACP 已确认的是内置型号，不再拿其 ID 反查未使用的自定义别名。
+    this.contextWindow = await (this.options.contextWindow ?? antigravityContextWindowSnapshot)(
+      { modelProvider: settings.modelProvider },
+      selected.model,
+    );
     this.permissions = new AcpPermissions(this.client, this.input, selected.id);
     this.client.onRequest = (request) => {
       if (!this.interactions?.request(request)) this.permissions?.request(request);
@@ -207,12 +218,15 @@ class AcpTurn {
   private errorMessage(error: unknown): string {
     if (this.failed) return this.failed.message;
     if (this.controller.signal.aborted) return '本轮已中断。';
-    return error instanceof AcpError ? error.message : 'Antigravity ACP 运行失败，请核对原生配置与运行状态。';
+    return error instanceof AcpError || error instanceof ModelSettingsError
+      ? error.message
+      : 'Antigravity ACP 运行失败，请核对原生配置与运行状态。';
   }
   private async selectRuntime(): Promise<string | undefined> {
     const env = this.options.env ?? process.env;
-    const settings = await (this.options.settings ?? (() => readAntigravityModelSettings({ env })))();
+    const settings = await (this.options.settings ?? (() => readAntigravityModelConfig({ env })))();
     this.controller.signal.throwIfAborted();
+    assertAntigravitySelection(settings, this.input.model);
     if (needsHeadless(this.input, settings, env)) {
       await this.useHeadless();
       return;
@@ -258,6 +272,7 @@ class AcpTurn {
       cwd: this.input.workspace.dir,
       model,
       agent: 'antigravity',
+      contextWindow: this.contextWindow,
     });
     this.sent = true;
     this.compacting = this.input.invocation?.kind === 'acp-command' && this.input.invocation.name === 'compact';

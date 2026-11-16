@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -7,10 +8,60 @@ import type { PermissionSelection, AgentEvent } from '@agentdeck/shared/conversa
 import { createAntigravityRunner, type AntigravityProcess } from '../../../src/agents/antigravity/adapter';
 
 const cwd = path.join(tmpdir(), 'agentdeck-agy-fixture');
+
+it('启动把消歧配置作为临时文件交给原生，窗口快照随会话事件返回并在退出时清理', async () => {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  });
+  const launch = vi.fn(() => child as unknown as AntigravityProcess);
+  const events: AgentEvent[] = [];
+  const settings = {
+    customModelsConfig: {
+      customModels: { canonical: { modelName: 'native-model', label: 'Custom', maxTokens: 1000000 } },
+    },
+  };
+  const runner = createAntigravityRunner({
+    launch,
+    selectModel: async () => ({
+      model: 'Custom',
+      nativeSettings: settings,
+      contextWindow: { model: 'Custom', windowTokens: 1000000 },
+    }),
+  });
+  const handle = runner({
+    workspace: { id: 'p', name: '项目', dir: cwd },
+    sessionId: 'history',
+    text: '示例',
+    emit: (event) => events.push(event),
+    requestPermission: async () => ({ allow: false }),
+  });
+  await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
+  const args = (launch.mock.calls[0] as unknown as [{ args: string[] }])[0].args;
+  expect(args).toContain('history');
+  expect(args).toContain('Custom');
+  const file = args[args.indexOf('--settings') + 1]!;
+  expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(settings);
+  expect(args.join(' ')).not.toContain('maxTokens');
+  child.stdout.write(
+    `${JSON.stringify({ event: 'init', conversation_id: 'history', init: { cwd, model: 'Custom' } })}\n`,
+  );
+  child.stdout.write(
+    `${JSON.stringify({ event: 'result', result: { conversation_id: 'history', status: 'SUCCESS' } })}\n`,
+  );
+  child.emit('close', 0);
+  await handle.done;
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: 'session', contextWindow: { model: 'Custom', windowTokens: 1000000 } }),
+  );
+  await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' });
+});
 afterEach(() => vi.useRealTimers());
 async function setup(
   sessionId?: string,
-  defaultModel: () => Promise<string | undefined> = async () => undefined,
+  defaultModel: (requested?: string) => Promise<string | undefined> = async () => undefined,
   model?: string,
   permission?: PermissionSelection,
 ) {
@@ -316,20 +367,42 @@ describe('Antigravity 原生对话运行器', () => {
     await Promise.resolve();
     expect(launch).not.toHaveBeenCalled();
   });
-  it('没有显式选择时使用已核验自定义默认键，显式模型不被覆盖', async () => {
-    const defaultModel = vi.fn(async () => 'custom-key');
+  it('没有显式选择时使用原生选择器，显式模型也经选择器翻译后再传给原生', async () => {
+    const defaultModel = vi.fn(async (requested?: string) =>
+      requested === 'agentdeck-window-key' ? 'Gemini Example (High)' : 'default-selector',
+    );
     const first = await setup(undefined, defaultModel);
-    expect(first.launch.mock.calls[0]?.[0]?.args).toContain('custom-key');
+    expect(first.launch.mock.calls[0]?.[0]?.args).toContain('default-selector');
     first.init();
     first.finish();
     await first.handle.done;
     defaultModel.mockClear();
-    const second = await setup(undefined, defaultModel, 'explicit-model');
-    expect(second.launch.mock.calls[0]?.[0]?.args).toContain('explicit-model');
-    expect(defaultModel).not.toHaveBeenCalled();
+    // 条目键不是原生认得的型号：必须换成 label，否则原生静默套用家族默认窗口。
+    const second = await setup(undefined, defaultModel, 'agentdeck-window-key');
+    const args = second.launch.mock.calls[0]?.[0]?.args ?? [];
+    expect(args).toContain('Gemini Example (High)');
+    expect(args).not.toContain('agentdeck-window-key');
+    expect(defaultModel).toHaveBeenCalledWith('agentdeck-window-key');
     second.init();
     second.finish();
     await second.handle.done;
+  });
+
+  it('选择器读取失败时停止本轮，不把未解析的内部模型键发送给原生', async () => {
+    const f = await setup(
+      undefined,
+      async () => {
+        throw new Error('private-config-error');
+      },
+      'agentdeck-window-key',
+    );
+    await Promise.resolve();
+    // 旧实现会先启动；关闭合成进程，让回归断言直接显示错误行为。
+    if (f.launch.mock.calls.length) f.child.emit('close', 1);
+    await f.handle.done;
+    expect(f.launch.mock.calls.length).toBe(0);
+    expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
+    expect(JSON.stringify(f.events)).not.toContain('private-config-error');
   });
 
   it('默认模型读取期间取消不会迟到启动进程，准备错误也正常结束', async () => {
