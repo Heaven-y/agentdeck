@@ -43,6 +43,6 @@ npm.cmd run dev:desktop
 
 ## 文档与开发
 
-从[文档导航](docs/README.md)依次阅读产品需求、界面约定、架构和现行决策。`npm run check` 是完整工程门禁，日常按改动影响范围验证；提交、合并与推送遵循[分支规范](docs/guides/dev-environment.md#16-本仓库的-git-分支与提交)。
+从[文档导航](docs/README.md)依次阅读产品需求、界面约定、架构和现行决策。`npm run check` 是完整工程门禁，日常按改动影响范围验证；提交、合并与推送遵循[分支规范](docs/guides/dev-environment.md#17-本仓库的-git-分支与提交)。
 
 当前待办及外部服务限制见路线图；已完成计划和旧设计的追溯方式见[现行决策](docs/engineering/decisions.md#历史追溯)。
