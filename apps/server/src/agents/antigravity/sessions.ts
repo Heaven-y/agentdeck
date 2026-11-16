@@ -11,6 +11,7 @@ import { record, list } from '../common/user-interaction-fields';
 import type { AntigravitySessionManagement } from './session-management-types';
 import { readSummaries, type SummaryRow } from './summaries';
 import { createAntigravitySubagents, createAntigravitySubagentMedia } from './subagents';
+import { NativeTrajectoryMissing, type ManagementRecord } from './management-rpc';
 
 /** Antigravity 在用户目录下维护自己的会话摘要库，不随项目目录变化。 */
 export const ANTIGRAVITY_DB_PATH = path.join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db');
@@ -129,7 +130,14 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
       const cwd = nativeSessionDirectory({ workspaceUris: found.workspaceUris });
       if (!cwd || !(await sameSessionDirectory(cwd, dir)))
         throw new SessionError(404, 'session_missing', 'Antigravity 会话的目录不匹配');
-      const { trajectory } = await api.management.readTrajectory(id, cwd, signal);
+      let trajectory: ManagementRecord;
+      try {
+        ({ trajectory } = await api.management.readTrajectory(id, cwd, signal));
+      } catch (error) {
+        // 原生摘要里会留下没有轨迹的空会话（只读探测、失败回合），打开时按空历史处理。
+        if (error instanceof NativeTrajectoryMissing) return { session: nativeSummary(found), cwd, events: [] };
+        throw error;
+      }
       signal?.throwIfAborted();
       if (trajectory.cascadeId !== id)
         throw new SessionError(404, 'session_missing', 'Antigravity 返回的会话身份不匹配');

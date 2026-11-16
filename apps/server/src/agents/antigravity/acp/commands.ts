@@ -1,7 +1,7 @@
 import { capabilityId, type NativeCapabilityCatalog } from '../../capability-types';
 import type { DiscoveryProfile } from '../discovery-profile';
 import { AntigravityAcpClient } from './client';
-import { AcpError, list, object, text, type AcpRecord } from './types';
+import { AcpError, list, object, text, type AcpConnection, type AcpRecord } from './types';
 
 const supported = new Map([
   ['compact', '压缩当前会话'],
@@ -89,6 +89,7 @@ export async function discoverAcpCommands(profile: DiscoveryProfile, signal?: Ab
   client.onNotification = (method, params) => {
     if (method === 'session/update') commands.update(params);
   };
+  let sessionId = '';
   try {
     await client.request(
       'initialize',
@@ -97,12 +98,24 @@ export async function discoverAcpCommands(profile: DiscoveryProfile, signal?: Ab
     );
     await client.request('authenticate', { methodId: 'gemini-api-key' }, { signal });
     const response = await client.request('session/new', { cwd: profile.root, mcpServers: [] }, { signal });
-    await commands.ready(text(response.sessionId), signal);
-    return commands.entries(text(response.sessionId));
+    sessionId = text(response.sessionId);
+    await commands.ready(sessionId, signal);
+    return commands.entries(sessionId);
   } catch {
     signal?.throwIfAborted();
     return [];
   } finally {
+    // 只读探测建出的会话必须在原生侧关掉，否则它以空会话留在列表里，打开时无轨迹可读。
+    await closeProbeSession(client, sessionId);
     await client.close();
+  }
+}
+
+async function closeProbeSession(client: AcpConnection, sessionId: string): Promise<void> {
+  if (!sessionId) return;
+  try {
+    await client.request('session/close', { sessionId });
+  } catch {
+    // 关会话失败不影响目录结果；客户端关闭仍会带走子进程。
   }
 }

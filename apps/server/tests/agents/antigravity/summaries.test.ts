@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readSummaries } from '../../../src/agents/antigravity/summaries';
 import { createAntigravitySessions } from '../../../src/agents/antigravity/sessions';
+import { NativeTrajectoryMissing } from '../../../src/agents/antigravity/management-rpc';
 
 type FixtureRow = {
   id: string | null;
@@ -367,6 +368,12 @@ describe('Antigravity 原生管理接线', () => {
     ]);
     management.readTrajectory.mockResolvedValueOnce({ trajectory: { cascadeId: 'foreign', steps: [] } });
     await expect(provider.read('source-session', dir)).rejects.toMatchObject({ code: 'session_missing' });
+  });
+  it('轨迹已不在原生侧时按空历史返回，不把空会话报成加载失败', async () => {
+    const { dir, provider, management } = setup();
+    // ACP 只读探测与失败的回合会在原生摘要里留下没有轨迹的空会话。
+    management.readTrajectory.mockRejectedValueOnce(new NativeTrajectoryMissing());
+    await expect(provider.read('source-session', dir)).resolves.toMatchObject({ events: [] });
   });
   it('按已接入能力显示动作，核对归属后调用原生管理，分支结果保留原生身份', async () => {
     const { dir, provider, management } = setup();

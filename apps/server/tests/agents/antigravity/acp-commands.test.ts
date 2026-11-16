@@ -47,11 +47,35 @@ it('目录发现不发送prompt，等待异步目录完成并关闭客户端，�
     expect(
       (await discoverAcpCommands({ root: process.cwd(), gemini: process.cwd(), env: {} })).map((entry) => entry.name),
     ).toEqual(['plan']);
-    expect(request.mock.calls.map(([method]) => method)).toEqual(['initialize', 'authenticate', 'session/new']);
+    // 探测结束必须关掉自己建的原生会话，否则它会作为空会话留在原生列表里。
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      'initialize',
+      'authenticate',
+      'session/new',
+      'session/close',
+    ]);
     expect(close).toHaveBeenCalledOnce();
     request.mockRejectedValueOnce(new Error('unsupported'));
     expect(await discoverAcpCommands({ root: process.cwd(), gemini: process.cwd(), env: {} })).toEqual([]);
     expect(close).toHaveBeenCalledTimes(2);
+  } finally {
+    start.mockRestore();
+  }
+});
+
+it('原生会话已建立时即使目录等待失败也要关掉它', async () => {
+  const request = vi.fn(async (method: string) => {
+    if (method === 'session/new') return { sessionId: 'native' };
+    return {};
+  });
+  const close = vi.fn(async () => {});
+  const client = { request, close, onNotification() {} } as unknown as AcpConnection;
+  const start = vi.spyOn(AntigravityAcpClient, 'start').mockResolvedValue(client);
+  try {
+    const pending = discoverAcpCommands({ root: process.cwd(), gemini: process.cwd(), env: {} });
+    // 目录通知始终不来：ready 会超时，但会话仍然必须被关闭。
+    await expect(pending).resolves.toEqual([]);
+    expect(request.mock.calls.map(([method]) => method)).toContain('session/close');
   } finally {
     start.mockRestore();
   }
