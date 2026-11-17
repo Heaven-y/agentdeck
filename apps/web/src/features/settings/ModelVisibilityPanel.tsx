@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { AgentKind, AgentModel } from '@agentdeck/shared/conversation';
 import { buttonClass, inputClass } from '../../ui/styles';
-import { matchingModels, visibilityCandidates } from '../chat/model-candidates';
+import { matchingModels, visibilityCandidates, type ModelCandidate } from '../chat/model-candidates';
 import { modelDisplay } from '../../cli/shared/model-identity';
 import type { VisibilitySelection, useVisibilityDraft } from './use-visibility-draft';
 
@@ -21,10 +21,19 @@ export function ModelVisibilityPanel({
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(50);
   const choices = visibilityCandidates(agent, models);
-  const checked = (id: string) => draft.selected === 'all' || draft.selected.includes(id);
+  const checked = (model: ModelCandidate) => {
+    const selected = draft.selected;
+    return selected === 'all' || (model.equivalentIds ?? [model.id]).some((id) => selected.includes(id));
+  };
   const matches = matchingModels(choices, query);
   const disabled = !draft.ready;
   const update = (selection: VisibilitySelection) => draft.change(selection);
+  const toggle = (model: ModelCandidate, enabled: boolean) => {
+    const base = draft.selected === 'all' ? choices.map((entry) => entry.id) : draft.selected;
+    const equivalentIds = new Set(model.equivalentIds ?? [model.id]);
+    const retained = base.filter((id) => !equivalentIds.has(id));
+    update([...new Set(enabled ? [...retained, model.id] : retained)]);
+  };
   return (
     <section aria-label="对话菜单中的模型" className="space-y-3 border-t border-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -55,13 +64,9 @@ export function ModelVisibilityPanel({
                 <input
                   type="checkbox"
                   aria-label={`显示 ${modelDisplay(model.id, model)}`}
-                  checked={checked(model.id)}
+                  checked={checked(model)}
                   disabled={disabled}
-                  onChange={(event) => {
-                    const base = draft.selected === 'all' ? choices.map((entry) => entry.id) : [...draft.selected];
-                    const next = event.target.checked ? [...base, model.id] : base.filter((id) => id !== model.id);
-                    update([...new Set(next)]);
-                  }}
+                  onChange={(event) => toggle(model, event.target.checked)}
                 />
                 <span className="min-w-0 truncate" title={model.id}>
                   {modelDisplay(model.id, model)}

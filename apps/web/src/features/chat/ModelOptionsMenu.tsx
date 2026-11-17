@@ -21,7 +21,7 @@ import { findModel, modelDisplay } from '../../cli/shared/model-identity';
 import { configuredModelEffort, modelEfforts } from '../../cli/model-capabilities';
 import { ModelCandidateLabel } from './ModelCandidateLabel';
 import { ModelSearchDialog } from './ModelSearchDialog';
-import { modelCandidates } from './model-candidates';
+import { currentModelCandidate, modelCandidates } from './model-candidates';
 
 const menuClass =
   'z-50 max-h-[min(440px,var(--popover-available-height))] w-72 overflow-y-auto rounded-2xl border border-border bg-card p-1 text-foreground shadow-lg';
@@ -88,7 +88,7 @@ function useModelPresentation(model: string, catalog: AgentCapabilities | undefi
   const inherited = inheritedModel(native, actual, configured, { agent, running });
   const id = model || inherited;
   const models = catalog?.models ?? [];
-  const candidate = findModel(models, id);
+  const candidate = currentModelCandidate(models, id, agent);
   return {
     id,
     label: modelDisplay(id, candidate),

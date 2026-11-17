@@ -85,6 +85,9 @@ it('AGY 同名建议仅合并明确指向原生条目的别名，保留当前身
   const alias = { id: 'configured', label: native.label, modelId: native.id };
   expect(antigravityModelSuggestions([native, alias], alias.id)).toEqual([{ value: alias.id, label: native.label }]);
   expect(antigravityModelSuggestions([native, alias], '')).toEqual([{ value: native.id, label: native.label }]);
+  const named = { id: native.label, label: native.label };
+  expect(antigravityModelSuggestions([native, named], named.id)).toEqual([{ value: named.id, label: native.label }]);
+  expect(antigravityModelSuggestions([named, native], native.id)).toEqual([{ value: native.id, label: native.label }]);
   const other = { ...alias, modelId: 'unrelated-model' };
   expect(antigravityModelSuggestions([native, other], '')).toEqual([
     { value: native.id, label: 'Example (High)（example-high）' },

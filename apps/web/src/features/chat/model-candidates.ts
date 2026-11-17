@@ -2,10 +2,20 @@ import type { AgentKind, AgentModel } from '@agentdeck/shared/conversation';
 import { antigravityModelGroups } from '../../cli/antigravity/model-suggestions';
 import { findModel } from '../../cli/shared/model-identity';
 
-export type ModelCandidate = AgentModel & { searchTerms?: string[] };
+export type ModelCandidate = AgentModel & { searchTerms?: string[]; equivalentIds?: string[] };
 
 function currentCandidate(models: AgentModel[], current: string, agent?: AgentKind) {
   const resolved = findModel(models, current);
+  const nativePair =
+    agent === 'antigravity' && resolved
+      ? antigravityModelGroups(models).find(
+          (entries) => entries.length === 2 && entries.includes(resolved) && entries.every((model) => !model.modelId),
+        )
+      : undefined;
+  if (nativePair) {
+    const selected = combinedCandidate([resolved!, ...nativePair.filter((model) => model !== resolved)]);
+    return { selected, equivalents: nativePair, fromCatalog: true };
+  }
   if (resolved || !current) return { selected: resolved, equivalents: [], fromCatalog: true };
   // 历史中的原生名称可能不在 ID 字段；只按已确认的一对身份消除额外候选。
   const equivalents =
@@ -15,6 +25,15 @@ function currentCandidate(models: AgentModel[], current: string, agent?: AgentKi
   const selected: ModelCandidate = { id: current, label: current };
   if (equivalents.length) selected.searchTerms = equivalents.map(searchText);
   return { selected, equivalents, fromCatalog: false };
+}
+
+/** 当前值只补展示元数据，保留点击时交回的选择身份。 */
+export function currentModelCandidate(
+  models: AgentModel[],
+  current: string,
+  agent?: AgentKind,
+): ModelCandidate | undefined {
+  return currentCandidate(models, current, agent).selected;
 }
 
 /** 当前覆盖不在目录里时仍可选择；别名和 [1m] 的匹配继续交给原有身份规则。 */
@@ -36,9 +55,21 @@ export function modelCandidates(
 }
 
 function combinedCandidates(models: AgentModel[]): ModelCandidate[] {
-  return antigravityModelGroups(models).map((entries) =>
-    entries.length === 1 ? entries[0]! : { ...entries[0]!, searchTerms: entries.map(searchText) },
-  );
+  return antigravityModelGroups(models).map(combinedCandidate);
+}
+
+function combinedCandidate(entries: AgentModel[]): ModelCandidate {
+  const selected = entries[0]!;
+  if (entries.length === 1) return selected;
+  const native = entries.every((model) => !model.modelId)
+    ? entries.find((model) => model.id !== model.label)
+    : undefined;
+  return {
+    ...selected,
+    ...(native ? { modelId: native.id } : {}),
+    searchTerms: entries.map(searchText),
+    equivalentIds: entries.flatMap((model: ModelCandidate) => model.equivalentIds ?? [model.id]),
+  };
 }
 
 /** 设置页的显示范围清单沿用对话菜单的身份合并，避免把原生别名重复列成两个模型。 */

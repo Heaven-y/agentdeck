@@ -7,6 +7,7 @@ import { settingsApi, settingsKeys } from '../../../src/features/settings/api';
 import { modelSettingsApi } from '../../../src/features/settings/model-settings-api';
 import { useChat } from '../../../src/features/chat/chat-store';
 import { queryClient } from '../../../src/lib/query-client';
+import { modelCandidates } from '../../../src/features/chat/model-candidates';
 
 const models = [
   { id: 'one', label: 'one' },
@@ -134,4 +135,35 @@ it('Antigravity 的原生别名只列一行，保存的仍是可发送的原生 
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ antigravity: ['gemini-4-argon-high'] });
   expect(queryClient.getQueryData(settingsKeys.productSettings)).toEqual(product);
+});
+
+it.each(['name', 'both'])('AGY 已保存的原生名称合并显示后仍可取消勾选（%s）', async (savedAs) => {
+  const native = { id: 'gemini-example-high', label: 'Gemini Example (High)' };
+  const named = { id: native.label, label: native.label };
+  const other = { id: 'gemini-other-high', label: 'Gemini Other (High)' };
+  const catalog = [named, native, other];
+  const saved = savedAs === 'both' ? [native.id, named.id, other.id] : [named.id, other.id];
+  let product = {
+    settings: ProductSettingsSchema.parse({ modelVisibility: { antigravity: saved } }),
+    revision: 'b'.repeat(64),
+  };
+  vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
+  const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
+    product = { settings: input.settings, revision: 'c'.repeat(64) };
+    return product;
+  });
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue({ ...nativeDocument(), agent: 'antigravity' });
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models: catalog, entries: [], warnings: [] } as never);
+  render(<ModelSettingsPanel agent="antigravity" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
+
+  const checkbox = await rangeCheckbox(`显示 ${native.id}`);
+  expect(checkbox.checked).toBe(true);
+  fireEvent.click(checkbox);
+  expect(checkbox.checked).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(product.settings.modelVisibility?.antigravity).toEqual([other.id]);
+  expect(modelCandidates(catalog, other.id, product.settings.modelVisibility?.antigravity, 'antigravity')).toEqual([
+    other,
+  ]);
 });

@@ -164,3 +164,40 @@ it('AGY 菜单与搜索都只显示一次同一模型，打开、检索和选择
   expect(useChat.getState().modelOverrides.antigravity).toBe(alias.id);
   await act(async () => undefined);
 });
+
+it('AGY 当前显示名与缓存型号合为一行，点选及重新打开均保留原选择', async () => {
+  const native = { id: 'gemini-example-high', label: 'Gemini Example (High)' };
+  const other = { id: 'gemini-other-high', label: 'Gemini Other (High)' };
+  const overrides = ['old-config', 'window-config', 'saved-config'].map((id) => ({
+    id,
+    label: native.label,
+    modelId: native.id,
+  }));
+  useChat.getState().setAgent('antigravity');
+  useChat.setState({
+    defaults: { ...useChat.getState().defaults, modelVisibility: { antigravity: [native.id, other.id] } },
+  });
+  client.setQueryData(chatKeys.agentCapabilities('project', 'antigravity'), {
+    agent: 'antigravity',
+    discovered: true,
+    defaultModel: native.label,
+    models: [native, { id: native.label, label: native.label }, ...overrides, other],
+    entries: [],
+    warnings: [],
+  });
+  mount();
+  const group = await screen.findByRole('group', { name: '可选模型' });
+  expect(within(group).getAllByRole('menuitemradio')).toHaveLength(2);
+  const current = within(group).getByRole('menuitemradio', { name: native.id });
+  expect(current.getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain(native.id);
+  expect(useChat.getState().modelOverrides.antigravity).toBe('');
+  fireEvent.click(current);
+  expect(useChat.getState().modelOverrides.antigravity).toBe(native.label);
+  await waitFor(() => expect(screen.queryByRole('menu', { name: '模型选项菜单' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
+  const reopened = await screen.findByRole('group', { name: '可选模型' });
+  expect(within(reopened).getAllByRole('menuitemradio')).toHaveLength(2);
+  expect(within(reopened).getByRole('menuitemradio', { name: native.id }).getAttribute('aria-checked')).toBe('true');
+  expect(useChat.getState().modelOverrides.antigravity).toBe(native.label);
+});
