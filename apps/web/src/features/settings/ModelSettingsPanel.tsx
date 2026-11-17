@@ -11,7 +11,6 @@ import { modelEfforts } from '../../cli/model-capabilities';
 import { antigravityModelSuggestions } from '../../cli/antigravity/model-suggestions';
 import { ModelVisibilityPanel } from './ModelVisibilityPanel';
 import { useVisibilityDraft } from './use-visibility-draft';
-import { SessionToolsPanel } from './SessionToolsPanel';
 
 type State = ReturnType<typeof useModelSettings>;
 function visibleFields(fields: ModelSettingField[], state: State) {
@@ -267,7 +266,6 @@ export function ModelSettingsPanel({
       {/* 只保留设置页这一层滚动：内层 overflow 容器会让滚轮停在不可滚动的元素上。 */}
       <div className="space-y-5 px-1">
         <SettingsFeedback state={state} />
-        <SessionToolsPanel key={agent} agent={agent} />
         {state.document && (
           <>
             <ModelSettingsForm state={state} fields={fields} />

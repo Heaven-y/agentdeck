@@ -20,6 +20,7 @@ import {
   parseSessionToolsConfig,
   SESSION_TOOLS_NAME,
   sessionToolsEntry,
+  sessionToolsEntryForAgent,
   type SessionToolsEntry,
 } from './session-tools-format';
 
@@ -29,7 +30,7 @@ const errors = {
   entry_conflict: [409, '同名 agentdeck_sessions 已被其他配置占用，请先使用原生 CLI 处理。'],
   invalid_config: [409, '原生 MCP 配置无法安全读取，请先修复配置。'],
   unavailable: [409, '找不到该 CLI 的原生入口，请检查本机安装和启动环境。'],
-  unsupported_runtime: [409, '便携版的运行目录会变化，请使用安装版启用会话读取。'],
+  unsupported_runtime: [409, '便携版的运行目录会变化，请使用安装版启用会话引用。'],
   native_failed: [500, '原生 CLI 未能更新 MCP 配置，请刷新并检查原生配置。'],
   restart_failed: [500, '配置已保存，但 CLI 重新加载失败，请结束会话后重试。'],
   io_error: [500, '无法访问原生 MCP 配置，请检查文件和目录权限。'],
@@ -114,8 +115,7 @@ export function createSessionToolsService(deps: Deps) {
     const resolved = await deps.environment(agent);
     const env = deps.homeDir ? { ...resolved, HOME: deps.homeDir, USERPROFILE: deps.homeDir } : resolved;
     const homeDir = deps.homeDir ?? nativeHome(env);
-    const entry: SessionToolsEntry =
-      agent === 'antigravity' ? { ...command, tools: { read_session: { eager: true } } } : command;
+    const entry = sessionToolsEntryForAgent(agent, command);
     return { agent, env, file: configFile(agent, homeDir, env), command: entry };
   }
   async function load(context: Context): Promise<State> {

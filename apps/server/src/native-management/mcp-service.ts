@@ -31,6 +31,8 @@ import { managementError, NativeManagementError } from './errors';
 import { mcpTransport, publicMcpConfig, mergeMcpConfig, safeClaudeArguments, sameClaudeEntry } from './mcp-config';
 import { editMcpToml, patchMcpToml } from './mcp-toml';
 import { readMcpPlugins } from './mcp-plugins';
+import type { SessionToolsCommand } from '../settings/session-tools-command';
+import { ownsSessionToolsEntry, SESSION_TOOLS_NAME, sessionToolsEntryForAgent } from '../settings/session-tools-format';
 
 type Deps = {
   homeDir?: string;
@@ -40,6 +42,7 @@ type Deps = {
   onChanged?(agent: AgentKind): void | Promise<void>;
   run?: ProcessRunner;
   plugins?(context: McpContext): Promise<McpPlugin[]>;
+  sessionToolsCommand?: SessionToolsCommand;
 };
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const sourceId = (context: McpContext, source: McpSource) =>
@@ -120,7 +123,20 @@ export function createNativeMcpService(deps: Deps = {}) {
   async function inventory(c: McpContext) {
     const sources = await sourcesFor(c);
     const entries = sources.flatMap((s) =>
-      Object.entries(serverMap(s)).map(([name, config]) => entry(c, s, name, object(config))),
+      Object.entries(serverMap(s)).map(([name, config]) => {
+        const item = entry(c, s, name, object(config));
+        if (
+          s.scope === 'user' &&
+          name === SESSION_TOOLS_NAME &&
+          deps.sessionToolsCommand &&
+          ownsSessionToolsEntry(config, sessionToolsEntryForAgent(c.agent, deps.sessionToolsCommand))
+        ) {
+          item.managedBy = 'session-tools';
+          item.actions = { edit: false, delete: false, enable: false, disable: false };
+          item.reason = '请使用会话引用开关管理。';
+        }
+        return item;
+      }),
     );
     return { sources, entries };
   }

@@ -53,6 +53,7 @@ import { createModelSettingsService } from '../settings/model-settings';
 import { createNativeConfigService } from '../settings/native-config';
 import { createNativeResourcesService } from '../settings/native-resources';
 import { createSessionToolsService } from '../settings/session-tools';
+import { buildSessionToolsCommand } from '../settings/session-tools-command';
 import { createNativeManagementAccess } from '../native-management/access';
 import { createNativeManagementService } from '../native-management/service';
 import { registerNativeManagementRoutes } from '../http/native-management.routes';
@@ -135,10 +136,12 @@ export function createCliServices({
     access: managementAccess,
     onChanged: nativeChanged,
   });
+  const sessionToolsCommand = buildSessionToolsCommand(configDir);
   const nativeMcp = createNativeMcpService({
     environment: (agent) => launchEnvironment.resolve(agent),
     access: managementAccess,
     onChanged: nativeChanged,
+    sessionToolsCommand,
   });
   const nativePlugins = createNativePluginService({
     environment: (agent) => launchEnvironment.resolve(agent),
@@ -303,6 +306,7 @@ export function createCliServices({
       registerSessionToolsRoutes(a, {
         service: createSessionToolsService({
           configDir,
+          command: sessionToolsCommand,
           environment: (agent) => launchEnvironment.resolve(agent),
           withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
           restart: (agent) => runners[agent].restart(),

@@ -55,6 +55,7 @@ export type NativeMcpEntry = {
   scope: NativeResourceScope;
   source: string;
   owner?: string;
+  managedBy?: 'session-tools';
   transport: 'stdio' | 'http' | 'sse' | 'unknown';
   enabled: boolean | null;
   runtime: NativeMcpRuntimeState;

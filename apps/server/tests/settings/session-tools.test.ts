@@ -31,7 +31,7 @@ it.each(['PORTABLE_EXECUTABLE_FILE', 'PORTABLE_EXECUTABLE_DIR'])(
     });
     for (const agent of ['claude', 'codex', 'antigravity'] as const) {
       const status = await service.read(agent);
-      expect(status).toMatchObject({ available: false, message: '便携版的运行目录会变化，请使用安装版启用会话读取。' });
+      expect(status).toMatchObject({ available: false, message: '便携版的运行目录会变化，请使用安装版启用会话引用。' });
       for (const enabled of [true, false])
         await expect(service.save(agent, { enabled, revision: status.revision })).rejects.toMatchObject({
           status: 409,

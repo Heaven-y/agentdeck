@@ -6,6 +6,7 @@ import { createNativeMcpService } from '../../src/native-management/mcp-service'
 import type { NativeManagementAccess } from '../../src/native-management/types';
 import * as executable from '../../src/platform/process/executable';
 import { mcpPluginsFromRecords } from '../../src/native-management/mcp-plugins';
+import { stringify as stringifyToml } from 'smol-toml';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -52,6 +53,53 @@ async function fixture() {
   const service = createNativeMcpService({ homeDir, env: {}, run, plugins: async () => [] });
   return { homeDir, project, write, service, run };
 }
+it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的用户会话工具归入专用入口', async (agent) => {
+  const f = await fixture();
+  const command = { command: 'node', args: ['session-tools.mjs'], env: { EXAMPLE: 'fixture' } };
+  const own = agent === 'antigravity' ? { ...command, tools: { read_session: { eager: true } } } : command;
+  const files = {
+    claude: ['.claude.json', '.mcp.json'],
+    codex: ['.codex/config.toml', '.codex/config.toml'],
+    antigravity: ['.gemini/config/mcp_config.json', '.agents/mcp_config.json'],
+  }[agent];
+  const encode = (entry: object) => {
+    const data = { [agent === 'codex' ? 'mcp_servers' : 'mcpServers']: { agentdeck_sessions: entry } };
+    return agent === 'codex' ? stringifyToml(data) : JSON.stringify(data);
+  };
+  const userFile = path.join(f.homeDir, files[0]!);
+  await f.write(userFile, encode(own));
+  await f.write(path.join(f.project.dir, files[1]!), encode(own));
+  const service = createNativeMcpService({
+    homeDir: f.homeDir,
+    env: {},
+    sessionToolsCommand: command,
+    run: f.run,
+    plugins: async () => [
+      { name: 'agentdeck_sessions', owner: 'demo', installationRoot: f.project.dir, scope: 'user', config: own },
+    ],
+  });
+  const entries = (await service.readMcp(agent, f.project)).entries;
+  const managed = entries.find((entry) => entry.managedBy === 'session-tools')!;
+  expect(managed).toMatchObject({
+    scope: 'user',
+    actions: { edit: false, delete: false, enable: false, disable: false },
+  });
+  expect(entries.filter((entry) => entry.managedBy === 'session-tools')).toHaveLength(1);
+  expect(entries.find((entry) => entry.scope === 'project')?.actions.edit).toBe(true);
+  await expect(
+    service.operateMcp(agent, { id: managed.id, revision: managed.revision, action: 'delete' }),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  for (const changed of [
+    { ...own, args: ['external.mjs'] },
+    { ...own, custom: true },
+  ]) {
+    await f.write(userFile, encode(changed));
+    const external = (await service.readMcp(agent)).entries.find((entry) => !entry.owner)!;
+    expect(external.managedBy).toBeUndefined();
+    expect(external.actions.delete).toBe(true);
+  }
+  expect(f.run).not.toHaveBeenCalled();
+});
 it('离线列表区分真实来源且不回传 URL、参数和环境秘密', async () => {
   const f = await fixture();
   await f.write(

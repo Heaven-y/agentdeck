@@ -10,9 +10,10 @@ afterEach(async () => {
   queryClient.clear();
   vi.unstubAllGlobals();
 });
-it('按当前 CLI 显式启用，冲突保留状态并可重新读取', async () => {
+it.each(['claude', 'codex', 'antigravity'] as const)('按 %s 显式启停会话引用，冲突后重读实际状态', async (agent) => {
   let enabled = false;
   let conflict = false;
+  const changed = vi.fn();
   const writes: { url: string; body: unknown }[] = [];
   vi.stubGlobal(
     'fetch',
@@ -20,22 +21,32 @@ it('按当前 CLI 显式启用，冲突保留状态并可重新读取', async ()
       if (init?.method === 'PUT') {
         writes.push({ url, body: JSON.parse(typeof init.body === 'string' ? init.body : '') });
         if (conflict) return Response.json({ message: '原生配置已改变，请刷新后重试。' }, { status: 409 });
-        enabled = true;
+        enabled = (JSON.parse(init.body as string) as { enabled: boolean }).enabled;
       }
-      return Response.json({ agent: 'antigravity', enabled, available: true, revision: 'revision-1' });
+      return Response.json({ agent, enabled, available: true, revision: 'revision-1' });
     }),
   );
-  render(<SessionToolsPanel agent="antigravity" />);
-  await waitFor(() =>
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '启用会话读取' }).disabled).toBe(false),
-  );
-  fireEvent.click(screen.getByRole('button', { name: '启用会话读取' }));
-  await screen.findByRole('button', { name: '停用会话读取' });
-  expect(writes).toEqual([{ url: '/api/session-tools/antigravity', body: { enabled: true, revision: 'revision-1' } }]);
+  render(<SessionToolsPanel agent={agent} compact={agent === 'codex'} onChanged={changed} />);
+  const toggle = screen.getByRole<HTMLButtonElement>('switch', { name: '会话引用' });
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+  expect(writes).toEqual([]);
+  expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(writes).toEqual([{ url: `/api/session-tools/${agent}`, body: { enabled: true, revision: 'revision-1' } }]);
+  expect(changed).toHaveBeenCalledOnce();
   conflict = true;
-  fireEvent.click(screen.getByRole('button', { name: '停用会话读取' }));
+  fireEvent.click(toggle);
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', '原生配置已改变，请刷新后重试。');
-  expect(screen.getByRole('button', { name: '停用会话读取' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+  expect(toggle.getAttribute('aria-checked')).toBe('true');
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(changed).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  conflict = false;
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
 });

@@ -80,7 +80,7 @@ it('便携版 API 返回不可用原因，PUT 固定 409 且不创建原生配�
     const status = await app.inject({ url: '/api/session-tools/codex' });
     expect(status.json()).toMatchObject({
       available: false,
-      message: '便携版的运行目录会变化，请使用安装版启用会话读取。',
+      message: '便携版的运行目录会变化，请使用安装版启用会话引用。',
     });
     const saved = await app.inject({
       method: 'PUT',

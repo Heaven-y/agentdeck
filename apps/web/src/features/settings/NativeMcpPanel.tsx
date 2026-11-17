@@ -4,9 +4,10 @@ import { buttonClass, inputClass } from '../../ui/styles';
 import { nativeMcpApi, type McpCatalog } from './native-mcp-api';
 import { nativeScopeNames, nativeSettingsError } from './native-resource-labels';
 import NativeMcpEditor from './NativeMcpEditor';
-import { McpOAuthCard } from './NativeMcpRuntime';
+import NativeMcpRuntime, { McpOAuthCard } from './NativeMcpRuntime';
 import { NativeMcpRow } from './NativeMcpRow';
 import { useGuardedSettingsNavigation } from './settings-navigation';
+import { SessionToolsPanel } from './SessionToolsPanel';
 type Editor = { entry?: NativeMcpEntry; source: NativeMcpSource };
 function Sources({
   catalog,
@@ -92,6 +93,7 @@ function CatalogBody({
 }) {
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor>();
+  const entries = catalog.entries.filter((entry) => entry.managedBy !== 'session-tools');
   async function change(entry: NativeMcpEntry, action: 'delete' | 'enable' | 'disable') {
     if (action === 'delete' && !window.confirm(`删除 ${entry.name} 的${nativeScopeNames[entry.scope]}持久配置？`))
       return;
@@ -130,7 +132,7 @@ function CatalogBody({
           }}
         />
       )}
-      {catalog.entries.map((entry) => (
+      {entries.map((entry) => (
         <NativeMcpRow
           key={entry.id}
           context={context}
@@ -145,7 +147,7 @@ function CatalogBody({
       {catalog.operations?.map((operation) => (
         <McpOAuthCard key={operation.id} context={context} initial={operation} />
       ))}
-      {catalog.entries.length === 0 && <p className="text-sm text-muted-foreground">此范围没有发现 MCP 配置。</p>}
+      {entries.length === 0 && <p className="text-sm text-muted-foreground">尚未添加其他 MCP 配置。</p>}
     </>
   );
 }
@@ -162,8 +164,19 @@ export default function NativeMcpPanel({
   const leave = useGuardedSettingsNavigation();
   const { catalog, error, setError } = useCatalog(context, reload, instanceId);
   const current = catalog && (catalog.instanceId ?? '') === instanceId;
+  const sessionEntry = current ? catalog.entries.find((entry) => entry.managedBy === 'session-tools') : undefined;
   return (
     <section aria-label="MCP 管理" className="min-w-0 space-y-4">
+      <SessionToolsPanel key={context.agent} agent={context.agent} reload={reload} onChanged={onChanged}>
+        {sessionEntry && (
+          <NativeMcpRuntime
+            key={`${sessionEntry.revision}:${instanceId}`}
+            context={context}
+            entry={sessionEntry}
+            instanceId={instanceId || undefined}
+          />
+        )}
+      </SessionToolsPanel>
       <p className="text-sm text-muted-foreground">
         持久配置与本次运行分别管理。刷新列表不会启动或连接 MCP；修改配置在下一次原生实例启动时加载。
       </p>

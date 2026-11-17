@@ -8,7 +8,9 @@ Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环�
 
 ## 配置入口
 
-“会话读取”开关显式登记或移除固定 `agentdeck_sessions` MCP。Claude 使用原生 `mcp add-json/remove --scope user`；Codex 精确修改用户 `config.toml` 的同名 `mcp_servers` 项；Antigravity 修改 `~/.gemini/config/mcp_config.json`，将 `read_session` 标为 eager。其他 MCP、权限与批准项保留，同名非自有配置或版本冲突时拒绝覆盖。
+“MCP”页的“会话引用”开关按当前 CLI 显式登记或移除固定 `agentdeck_sessions` MCP，聊天输入区识别到会话链接时也提供同一开关。Claude 使用原生 `mcp add-json/remove --scope user`；Codex 精确修改用户 `config.toml` 的同名 `mcp_servers` 项；Antigravity 修改 `~/.gemini/config/mcp_config.json`，将 `read_session` 标为 eager。其他 MCP、权限与批准项保留，同名非自有配置或版本冲突时拒绝覆盖。
+
+MCP 目录仅将用户作用域中命令、参数、环境和工具声明完全匹配的配置标为 `managedBy: session-tools`，归入专用开关；普通 MCP 接口不再编辑或启停该项。项目、插件及经过用户定制的同名配置继续按原来源展示。两处入口共用注册状态，MCP 刷新会同步重读；保存失败也重新核实状态，以覆盖写入成功但重启失败的情况。
 
 `GET/PUT /api/session-tools/:agent` 读状态及按 revision 更新。保存与运行器重新加载均在该 CLI 空闲锁内完成，运行中返回忙；下轮对话使用新配置，独立运行的原生客户端仍按自己的加载机制生效。入口固定工作台配置目录及三种 CLI 的原生历史根目录，避免跨 CLI 调用时继承了调用方临时 profile；不把认证变量写入 MCP 项。开发模式用 Node/tsx 的绝对入口，桌面分发使用独立 `session-tools.mjs` 与 Electron Node 模式，均不依赖用户工作目录。
 

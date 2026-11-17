@@ -3,9 +3,13 @@ import { parse as parseToml } from 'smol-toml';
 import { encodeJson } from '../agents/common/configuration/patch';
 import { updateTomlFields } from '../platform/files/toml-fields';
 import type { SessionToolsCommand } from './session-tools-command';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 
 export const SESSION_TOOLS_NAME = 'agentdeck_sessions';
 export type SessionToolsEntry = SessionToolsCommand & { tools?: { read_session: { eager: true } } };
+export function sessionToolsEntryForAgent(agent: AgentKind, command: SessionToolsCommand): SessionToolsEntry {
+  return agent === 'antigravity' ? { ...command, tools: { read_session: { eager: true } } } : command;
+}
 type ObjectValue = Record<string, unknown>;
 const isObject = (value: unknown): value is ObjectValue =>
   !!value && typeof value === 'object' && !Array.isArray(value);

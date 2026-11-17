@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import NativeMcpPanel from '../../../src/features/settings/NativeMcpPanel';
 import NativeMcpEditor from '../../../src/features/settings/NativeMcpEditor';
@@ -9,6 +9,8 @@ import {
   type SettingsNavigation,
 } from '../../../src/features/settings/settings-navigation';
 import type { NativeMcpCatalog } from '@agentdeck/shared/settings';
+import { queryClient } from '../../../src/lib/query-client';
+import NativeResourcesDialog from '../../../src/features/settings/NativeResourcesDialog';
 const catalog: NativeMcpCatalog = {
   agent: 'codex',
   warnings: [],
@@ -45,10 +47,13 @@ const catalog: NativeMcpCatalog = {
     },
   ],
 };
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await queryClient.cancelQueries();
+  queryClient.clear();
   vi.restoreAllMocks();
 });
+const sessionStatus = (enabled = false) => ({ agent: 'codex', enabled, available: true, revision: 'original' });
 it('MCP 密钥草稿在统一导航与局部取消时确认放弃，保存期间阻止离开', async () => {
   const guards: SettingsNavigation = new Map();
   const close = vi.fn();
@@ -90,6 +95,7 @@ it('列表不隐式检查连接，秘密为空白，保存冲突保留草稿和�
   const calls: Array<{ url: string; body?: unknown }> = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     calls.push({ url: input as string, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    if ((input as string).includes('/session-tools/')) return Response.json(sessionStatus());
     return init?.method === 'POST'
       ? Response.json({ message: '原生文件已被其他操作修改' }, { status: 409 })
       : Response.json({ ...catalog, instances: [] });
@@ -118,6 +124,7 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
     const url = input as string,
       body = init?.body ? JSON.parse(init.body as string) : undefined;
     calls.push({ url, body });
+    if (url.includes('/session-tools/')) return Response.json(sessionStatus());
     if (init?.method === 'POST')
       return Response.json({
         instanceId,
@@ -166,4 +173,43 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
   fireEvent.click(screen.getByRole('button', { name: '检查 child-only 连接' }));
   await screen.findByText(/已连接/);
   expect(calls.find((call) => call.url.includes('/control'))?.body).toMatchObject({ id: 'child-entry', instanceId });
+});
+it('专用开关与 MCP 目录双向刷新，自有配置不重复展示且同名项目配置仍可管理', async () => {
+  let enabled = true;
+  const calls: string[] = [];
+  const managed = { ...catalog.entries[0]!, name: 'agentdeck_sessions', managedBy: 'session-tools' };
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = input as string;
+    calls.push(url);
+    if (url.includes('/session-tools/')) {
+      if (init?.method === 'PUT') enabled = JSON.parse(init.body as string).enabled;
+      return Response.json(sessionStatus(enabled));
+    }
+    if (url.includes('/native-resources/'))
+      return Response.json({ agent: 'codex', entries: [], roots: [], warnings: [], guidance: [] });
+    return Response.json({
+      ...catalog,
+      instances: [],
+      entries: [
+        ...(enabled ? [managed] : []),
+        { ...catalog.entries[0], id: 'project-entry', name: 'agentdeck_sessions', scope: 'project' },
+      ],
+    });
+  });
+  render(<NativeResourcesDialog agent="codex" category="mcp" embedded onClose={vi.fn()} onBack={vi.fn()} />);
+  const toggle = await screen.findByRole<HTMLButtonElement>('switch', { name: '会话引用' });
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await screen.findByRole('heading', { name: 'agentdeck_sessions' });
+  expect(screen.getAllByRole('button', { name: '编辑 agentdeck_sessions' })).toHaveLength(1);
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  await waitFor(() =>
+    expect(calls.filter((url) => url === '/api/native-management/codex/mcp').length).toBeGreaterThan(1),
+  );
+  expect(screen.getAllByRole('heading', { name: 'agentdeck_sessions' })).toHaveLength(1);
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  enabled = true;
+  fireEvent.click(screen.getByRole('button', { name: '刷新目录' }));
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+  expect(screen.getAllByRole('button', { name: '编辑 agentdeck_sessions' })).toHaveLength(1);
 });
