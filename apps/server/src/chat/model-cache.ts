@@ -27,6 +27,7 @@ type Catalogs = z.infer<typeof LegacyStored>['catalogs'];
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Stored = z.strictObject({
   version: z.literal(3),
+  identityVersion: z.literal(1).optional(),
   directories: z.array(z.strictObject({ key: Digest, catalog: Digest })).max(32),
   catalogs: z.array(ModelCatalog.extend({ id: Digest }).strict()).max(32),
 });
@@ -36,31 +37,39 @@ export type ModelCatalogSnapshot = z.infer<typeof ModelCatalog>;
 export type CachedModelCatalog = { snapshot: ModelCatalogSnapshot; current: boolean };
 
 /** 不合并目录作用域；仅对已解析的公开模型快照做内容去重。 */
-function encode(catalogs: Catalogs): Buffer {
+function encode(catalogs: Catalogs, agent: AgentKind): Buffer {
   const unique = new Map<string, ModelCatalogSnapshot>();
   const directories = catalogs.map(({ key, ...catalog }) => {
     const identity = hash(JSON.stringify(catalog));
     unique.set(identity, catalog);
     return { key, catalog: identity };
   });
-  const content = { version: 3, directories, catalogs: [...unique].map(([id, catalog]) => ({ id, ...catalog })) };
+  const content = {
+    version: 3,
+    ...(agent === 'antigravity' ? { identityVersion: 1 } : {}),
+    directories,
+    catalogs: [...unique].map(([id, catalog]) => ({ id, ...catalog })),
+  };
   return Buffer.from(JSON.stringify(content) + '\n');
 }
-function bounded(catalogs: Catalogs): Buffer | undefined {
+function bounded(catalogs: Catalogs, agent: AgentKind): Buffer | undefined {
   while (catalogs.length > 0) {
-    const bytes = encode(catalogs);
+    const bytes = encode(catalogs, agent);
     if (bytes.length <= MAX_CONFIG_BYTES) return bytes;
     catalogs.shift();
   }
   return undefined;
 }
-function decode(content: string): { catalogs: Catalogs; current: boolean } {
+function decode(content: string, agent: AgentKind): { catalogs: Catalogs; current: boolean } {
   const value: unknown = JSON.parse(content);
   const stored = Stored.safeParse(value);
   if (!stored.success) {
     const legacy = LegacyStored.parse(value);
+    // 旧 AGY 默认值的身份语义未知，不能与新发现的目录合并。
+    if (agent === 'antigravity') return { catalogs: [], current: false };
     return { catalogs: legacy.catalogs, current: legacy.version === 2 };
   }
+  if (agent === 'antigravity' && stored.data.identityVersion !== 1) return { catalogs: [], current: false };
   const snapshots = new Map(stored.data.catalogs.map(({ id, ...catalog }) => [id, catalog]));
   return {
     current: true,
@@ -89,7 +98,7 @@ export function createModelCache(configDir: string) {
     let catalogs: Catalogs = [];
     let current = false;
     try {
-      ({ catalogs, current } = decode(snapshot.content));
+      ({ catalogs, current } = decode(snapshot.content, agent));
     } catch {
       // 派生缓存可由下一次成功发现重建，不把损坏内容当作已获取模型。
     }
@@ -113,7 +122,7 @@ export function createModelCache(configDir: string) {
           ? current.catalogs.filter((catalog) => catalog.key !== identity).slice(-31)
           : [];
         catalogs.push({ key: identity, ...parsed.data });
-        const bytes = bounded(catalogs);
+        const bytes = bounded(catalogs, agent);
         if (!bytes) return;
         const parents = await inspectDirectory(directory, true);
         if (!currentRequest()) return;

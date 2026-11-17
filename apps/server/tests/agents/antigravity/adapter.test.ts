@@ -9,6 +9,42 @@ import { createAntigravityRunner, type AntigravityProcess } from '../../../src/a
 
 const cwd = path.join(tmpdir(), 'agentdeck-agy-fixture');
 
+it.each([
+  { explicit: undefined, expected: 'high' },
+  { explicit: 'low', expected: 'low' },
+])('临时窗口模型使用原生默认强度，显式输入优先（$explicit）', async ({ explicit, expected }) => {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  });
+  const launch = vi.fn(() => child as unknown as AntigravityProcess);
+  const selectModel = vi.fn(async () => ({
+    model: 'runtime-label',
+    sessionModel: 'Example',
+    defaultReasoningEffort: 'high' as const,
+  }));
+  const runner = createAntigravityRunner({
+    launch,
+    selectModel,
+  });
+  const handle = runner({
+    workspace: { id: 'p', name: '项目', dir: cwd },
+    text: '示例',
+    reasoningEffort: explicit,
+    emit: () => {},
+    requestPermission: async () => ({ allow: false }),
+  });
+  await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
+  const args = (launch.mock.calls[0] as unknown as [{ args: string[] }])[0].args;
+  child.emit('close', 0);
+  await handle.done;
+  if (explicit) expect(selectModel).toHaveBeenCalledWith(undefined, explicit);
+  else expect(selectModel).toHaveBeenCalledWith(undefined);
+  expect(args[args.indexOf('--effort') + 1]).toBe(expected);
+});
+
 it('启动把消歧配置作为临时文件交给原生，窗口快照随会话事件返回并在退出时清理', async () => {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
@@ -58,6 +94,54 @@ it('启动把消歧配置作为临时文件交给原生，窗口快照随会话�
   );
   await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' });
 });
+
+it.each([
+  { reported: 'AgentDeck Runtime Test', displayed: 'Custom', window: { model: 'Custom', windowTokens: 1000000 } },
+  { reported: 'different-model', displayed: 'different-model', window: { model: 'different-model' } },
+  { reported: '', displayed: '', window: { model: '' } },
+])('仅将本轮原生运行标签映射回原模型（$reported）', async ({ reported, displayed, window }) => {
+  const child = Object.assign(new EventEmitter(), {
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    kill: vi.fn(() => true),
+  });
+  const launch = vi.fn(() => child as unknown as AntigravityProcess);
+  const events: AgentEvent[] = [];
+  const alias = 'AgentDeck Runtime Test';
+  const settings = { customModelsConfig: { customModels: { custom: { modelName: 'native-model', label: alias } } } };
+  const runner = createAntigravityRunner({
+    launch,
+    selectModel: async () => ({
+      model: alias,
+      sessionModel: 'Custom',
+      nativeSettings: settings,
+      contextWindow: { model: 'Custom', windowTokens: 1000000 },
+    }),
+  });
+  const handle = runner({
+    workspace: { id: 'p', name: '项目', dir: cwd },
+    text: '示例',
+    emit: (event) => events.push(event),
+    requestPermission: async () => ({ allow: false }),
+  });
+  await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
+  const args = (launch.mock.calls[0] as unknown as [{ args: string[] }])[0].args;
+  expect(args).toContain(alias);
+  const file = args[args.indexOf('--settings') + 1]!;
+  expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(settings);
+  child.stdout.write(
+    `${JSON.stringify({ event: 'init', conversation_id: 'native', init: { cwd, model: reported } })}\n`,
+  );
+  child.stdout.write(
+    `${JSON.stringify({ event: 'result', result: { conversation_id: 'native', status: 'SUCCESS' } })}\n`,
+  );
+  child.emit('close', 0);
+  await handle.done;
+  expect(events).toContainEqual(expect.objectContaining({ type: 'session', model: displayed, contextWindow: window }));
+  await expect(stat(file)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 afterEach(() => vi.useRealTimers());
 async function setup(
   sessionId?: string,

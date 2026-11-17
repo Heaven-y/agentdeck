@@ -11,7 +11,7 @@ import {
   type AntigravityLaunchSelection,
 } from './model-launch';
 import { AntigravityInvocationError, antigravityInvocationText } from './commands';
-import { antigravityDiagnostic, serviceFailure } from './diagnostics';
+import { antigravityDiagnostic, rateLimitFailure, serviceFailure } from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
 import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
@@ -32,7 +32,7 @@ type Options = {
   launch?: (input: LaunchInput) => AntigravityProcess;
   env?: NodeJS.ProcessEnv;
   defaultModel?: (requested?: string) => Promise<string | undefined>;
-  selectModel?: (requested?: string) => Promise<AntigravityLaunchSelection>;
+  selectModel?: (requested?: string, reasoningEffort?: string) => Promise<AntigravityLaunchSelection>;
   invocationText?: (input: AgentTurnInput, signal: AbortSignal) => Promise<string>;
   readTrajectory?: TrajectoryReader;
 };
@@ -40,9 +40,14 @@ type TurnServices = {
   invocationText: NonNullable<Options['invocationText']>;
   readTrajectory?: TrajectoryReader;
 };
-type ModelResolver = (requested?: string) => Promise<AntigravityLaunchSelection | string | undefined>;
+type ModelResolver = (
+  requested?: string,
+  reasoningEffort?: string,
+) => Promise<AntigravityLaunchSelection | string | undefined>;
 const launchSelectionValue = (value: Awaited<ReturnType<ModelResolver>>): AntigravityLaunchSelection =>
   typeof value === 'string' ? { model: value } : (value ?? {});
+const resolveSelection = (resolve: ModelResolver, input: AgentTurnInput) =>
+  input.reasoningEffort ? resolve(input.model, input.reasoningEffort) : resolve(input.model);
 
 function startFailure(error: unknown): string {
   return error instanceof AntigravityInvocationError || error instanceof AntigravityModelSelectionError
@@ -86,6 +91,7 @@ class AntigravityTurn {
   private nativeFailure = false;
   /** 服务型故障先暂存：原生可能已自行重试成功，本轮结束前不写成永久错误。 */
   private pendingService?: Extract<AgentEvent, { type: 'error' }>;
+  private pendingServiceRateLimitOnly = true;
   /** 服务错误后长期没有任何输出时收尾：agy 会挂住既不重试也不退出。 */
   private stallTimer?: NodeJS.Timeout;
   /** 原生结果已经确认时，进程清理与模型回合成功是两个独立状态。 */
@@ -118,7 +124,7 @@ class AntigravityTurn {
     try {
       const text = this.input.invocation ? await invocationText(this.input, this.preparation.signal) : this.input.text;
       // 显式选择也要翻译应用键，确保命中对应的原生自定义条目。
-      const selection = await defaultModel(this.input.model);
+      const selection = await resolveSelection(defaultModel, this.input);
       this.selection = launchSelectionValue(selection);
       const model = this.selection.model ?? this.input.model;
       if (this.selection.nativeSettings)
@@ -129,7 +135,14 @@ class AntigravityTurn {
       }
       this.child = start({
         cwd: this.input.workspace.dir,
-        args: argumentsFor({ ...this.input, model }, this.nativeSettings?.path),
+        args: argumentsFor(
+          {
+            ...this.input,
+            model,
+            reasoningEffort: this.input.reasoningEffort ?? this.selection.defaultReasoningEffort,
+          },
+          this.nativeSettings?.path,
+        ),
       });
       this.listen(this.child);
       this.timer = setTimeout(() => this.fail('Antigravity 启动超时，请检查本机登录与配置。'), 30_000);
@@ -199,24 +212,54 @@ class AntigravityTurn {
   }
 
   private emit(event: AgentEvent): void {
-    this.input.emit(
-      event.type === 'session' && this.selection?.contextWindow
-        ? { ...event, contextWindow: this.selection.contextWindow }
-        : event,
-    );
+    if (event.type === 'session' && this.selection) {
+      const alias = this.selection.sessionModel !== undefined;
+      const matchesAlias = alias && event.model === this.selection.model;
+      const model = matchesAlias ? this.selection.sessionModel! : event.model;
+      const contextWindow =
+        alias && !matchesAlias
+          ? (event.contextWindow ?? { model: event.model })
+          : (this.selection.contextWindow ?? event.contextWindow);
+      this.input.emit({
+        ...event,
+        model,
+        ...(contextWindow ? { contextWindow } : {}),
+      });
+    } else this.input.emit(event);
   }
 
   private diagnostic(line: string): void {
     const event = antigravityDiagnostic(line);
     // 服务型故障不代表本轮一定失败：先暂存，等回合结束再按是否有结果决定报不报。
-    if (event?.type === 'error' && serviceFailure(line)) {
-      this.pendingService ??= event;
-      this.armStall();
-      return;
-    }
+    if (event?.type === 'error' && serviceFailure(line) && this.deferService(line, event)) return;
     this.nativeFailure ||=
       event?.type === 'error' || /^(?:error\s*:|AGY_ERROR\s*:)/i.test(stripVTControlCharacters(line).trim());
     if (event) this.notice(event);
+  }
+
+  private deferService(line: string, event: Extract<AgentEvent, { type: 'error' }>): boolean {
+    const plain = stripVTControlCharacters(line);
+    const withoutService = plain
+      .replace(/\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:429|500|503|524)\b/gi, '')
+      .replace(/\bstatus\s*[:=]\s*UNAVAILABLE\b|"status"\s*:\s*"UNAVAILABLE"/gi, '');
+    // 同一行还包含认证等明确失败时，不能按可重试服务错误暂存。
+    if (antigravityDiagnostic(withoutService)?.type === 'error') return false;
+    const withoutRateLimit = plain.replace(/\b429\b/g, '');
+    const rateLimitOnly = rateLimitFailure(plain) && !serviceFailure(withoutRateLimit);
+    const other = antigravityDiagnostic(withoutRateLimit);
+    this.rememberService(event, other, rateLimitOnly);
+    this.armStall();
+    return true;
+  }
+
+  private rememberService(
+    event: Extract<AgentEvent, { type: 'error' }>,
+    other: ReturnType<typeof antigravityDiagnostic>,
+    rateLimitOnly: boolean,
+  ): void {
+    if (!this.pendingService || (this.pendingServiceRateLimitOnly && !rateLimitOnly))
+      this.pendingService = other?.type === 'error' && !rateLimitOnly ? other : event;
+    this.pendingServiceRateLimitOnly &&= rateLimitOnly;
   }
 
   private notice(event: Extract<AgentEvent, { type: 'error' | 'activity' }>): void {
@@ -304,15 +347,24 @@ class AntigravityTurn {
 
   private async completeResult(code: number | null): Promise<void> {
     const naturalSuccess = code === 0 && !this.failed && !this.cleanupSignalSent && !this.nativeFailure;
-    // 先走直播证据；不足时才只读复核，不能提前发出随后无法撤回的旧错误。
-    this.mapper.complete(naturalSuccess);
+    // stdout 与 stderr 无严格先后；待确认服务故障不能仅凭直播答复消除。
+    if (!this.pendingService) this.mapper.complete(naturalSuccess);
     const verified = naturalSuccess ? await this.reviewCompletion() : false;
-    for (const event of this.mapper.complete(naturalSuccess && !this.failed, verified)) this.notice(event);
+    this.emitResult(naturalSuccess, verified);
+  }
+
+  private emitResult(naturalSuccess: boolean, verified: boolean): void {
+    const mayComplete = naturalSuccess && !this.failed && (!this.pendingService || verified);
+    const diagnostics = this.mapper.complete(mayComplete, verified);
+    // 已有服务诊断时优先保留该原因，不叠加可能属于历史轮的累计结果错误。
+    if (!this.pendingService) for (const event of diagnostics) this.notice(event);
   }
 
   private reviewCompletion(): Promise<boolean> {
     const boundary = this.mapper.completionBoundary();
     if (this.reportedError || !boundary || !this.services.readTrajectory) return Promise.resolve(false);
+    if (this.pendingService && !this.pendingServiceRateLimitOnly) return Promise.resolve(false);
+    if (this.pendingService) boundary.rateLimitedResult = true;
     return verifyAntigravityCompletion(
       this.services.readTrajectory,
       { sessionId: boundary.sessionId, cwd: this.input.workspace.dir, boundary },
@@ -330,7 +382,8 @@ export function createAntigravityHeadlessRunner(options: Options = {}): TurnRunn
         (options.launch ?? launch)({ ...request, env: antigravityBackgroundEnvironment(options.env ?? process.env) }),
       options.selectModel ??
         options.defaultModel ??
-        ((requested) => antigravityLaunchSelection(options.env ?? process.env, requested)),
+        ((requested, effort) =>
+          antigravityLaunchSelection(options.env ?? process.env, requested, undefined, { explicitEffort: effort })),
       {
         invocationText:
           options.invocationText ?? ((input, signal) => antigravityInvocationText(input, { env: options.env, signal })),

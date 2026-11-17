@@ -16,7 +16,11 @@ const toolOutput = (info: RecordValue) => {
   return clip(text(info.output)) || clip(text(record(info.error).message)) || (info.error ? '工具执行失败' : '');
 };
 const toolFinished = (state: unknown) => state === 'DONE' || state === 'ERROR';
+const reviewableError = (value: unknown, resumed: boolean) =>
+  typeof value === 'string' ? resumed || !!value.trim() : resumed && value == null;
 const toolFailed = (state: unknown, info: RecordValue) => state === 'ERROR' || !!info.error;
+const terminalStepFailed = (type: string, state: string, failed: boolean) =>
+  state === 'CANCELLED' || (failed && (state === 'ERROR' || (type === 'tool' && state === 'DONE')));
 function currentStepFailed(step: RecordValue): boolean {
   const error = record(record(step.tool_info).error);
   // TOOL_ERROR 可由模型继续处理；保留工具失败，仅在后续最终答复和自然成功退出齐备时纠正旧结果。
@@ -139,8 +143,10 @@ export class AntigravityMapper {
       return;
     }
     if (index <= this.inputIndex) return;
-    this.currentFailure ||= currentStepFailed(step);
-    this.terminalFailure ||= state === 'CANCELLED';
+    const failed = currentStepFailed(step);
+    this.currentFailure ||= failed;
+    // 直播已确认的终态失败不能被同一步不一致的只读快照覆盖。
+    this.terminalFailure ||= terminalStepFailed(type, state, failed);
     if (type === 'error_message') this.errorIndices.add(index);
     this.observeLatest(index, type, state, step.text_delta);
   }
@@ -314,7 +320,8 @@ export class AntigravityMapper {
       (!!this.expectedId || this.rateLimitedResult || this.errorIndices.size > 0) &&
       result.conversation_id === this.sessionId &&
       result.status === 'ERROR' &&
-      !!text(result.error).trim()
+      // 续接的累计错误可能没有正文；只开放只读复核，不直接判为成功。
+      reviewableError(result.error, !!this.expectedId)
     );
   }
 }

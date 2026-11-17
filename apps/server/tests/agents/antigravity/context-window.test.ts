@@ -1,14 +1,189 @@
-import { expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, rmdir, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterEach, expect, it, vi } from 'vitest';
+import * as executable from '../../../src/platform/process/executable';
+import { startManagementBackend } from '../../../src/agents/antigravity/management-process';
 import {
   antigravityContextWindow,
   antigravityContextWindowSnapshot,
+  antigravityDefaultReasoningEffort,
+  invalidateAntigravityModelCatalog,
 } from '../../../src/agents/antigravity/context-window';
+
+vi.mock('../../../src/agents/antigravity/discovery-profile', () => ({
+  withAntigravityDiscoveryProfile: async (
+    _settings: unknown,
+    env: NodeJS.ProcessEnv,
+    run: (profile: { root: string; gemini: string; env: NodeJS.ProcessEnv }) => Promise<unknown>,
+  ) => run({ root: 'isolated', gemini: 'isolated-gemini', env: { ...env, LOCALAPPDATA: 'isolated-local' } }),
+}));
+vi.mock('../../../src/agents/antigravity/management-process', () => ({ startManagementBackend: vi.fn() }));
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
 
 const catalog = async () => ({
   models: {
     'gemini-example-high': { displayName: 'Gemini Example (High)', maxTokens: 1048576, maxOutputTokens: 65536 },
   },
   defaultAgentModelId: 'gemini-example-high',
+});
+
+it('原生命令仅在真实 LOCALAPPDATA 中时，先解析再启动隔离目录发现', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'agentdeck-agy-catalog-test-'));
+  const local = path.join(root, 'local');
+  const agy = path.join(local, 'agy');
+  const bin = path.join(agy, 'bin');
+  const command = path.join(bin, 'agy.exe');
+  await mkdir(local);
+  await mkdir(agy);
+  await mkdir(bin);
+  await writeFile(command, 'fixture');
+  try {
+    vi.mocked(startManagementBackend).mockResolvedValue({
+      request: async () => ({ response: { models: { example: { thinkingLevel: 3 } } } }),
+      close: async () => {},
+    });
+    expect(await antigravityDefaultReasoningEffort('example', undefined, { PATH: '', LOCALAPPDATA: local })).toBe(
+      'high',
+    );
+    const launched = vi.mocked(startManagementBackend).mock.calls[0]![0];
+    expect(launched.command).toEqual({ command, args: [] });
+    expect(launched.env.LOCALAPPDATA).toBe('isolated-local');
+  } finally {
+    await unlink(command);
+    await rmdir(bin);
+    await rmdir(agy);
+    await rmdir(local);
+    await rmdir(root);
+  }
+});
+
+it('目录缓存区分同一可执行文件的不同参数', async () => {
+  vi.spyOn(executable, 'resolveLocalCommand').mockImplementation((_name, env) => ({
+    command: 'fixture-node',
+    args: [env?.AGY_TEST_VARIANT ?? ''],
+  }));
+  vi.mocked(startManagementBackend).mockImplementation(async ({ command }) => ({
+    request: async () => ({
+      response: { models: { example: { thinkingLevel: command?.args[0] === 'first' ? 3 : 1 } } },
+    }),
+    close: async () => {},
+  }));
+  const first = { PATH: '', AGY_TEST_VARIANT: 'first' };
+  const second = { PATH: '', AGY_TEST_VARIANT: 'second' };
+  expect(await antigravityDefaultReasoningEffort('example', undefined, first)).toBe('high');
+  expect(await antigravityDefaultReasoningEffort('example', undefined, second)).toBe('low');
+  expect(startManagementBackend).toHaveBeenCalledTimes(2);
+});
+
+it('较早的目录读取失败不清除其他命令的成功缓存', async () => {
+  vi.spyOn(executable, 'resolveLocalCommand').mockImplementation((_name, env) => ({
+    command: 'concurrent-node',
+    args: [env?.AGY_TEST_VARIANT ?? ''],
+  }));
+  let failFirst!: (error: Error) => void;
+  const failing = new Promise<{ response: { models: { example: { thinkingLevel: number } } } }>((_resolve, reject) => {
+    failFirst = reject;
+  });
+  vi.mocked(startManagementBackend).mockImplementation(async ({ command }) => ({
+    request: async () =>
+      command?.args[0] === 'first' ? failing : { response: { models: { example: { thinkingLevel: 2 } } } },
+    close: async () => {},
+  }));
+  const first = antigravityDefaultReasoningEffort('example', undefined, { AGY_TEST_VARIANT: 'first' });
+  const rejected = expect(first).rejects.toThrow();
+  const second = { AGY_TEST_VARIANT: 'second' };
+  expect(await antigravityDefaultReasoningEffort('example', undefined, second)).toBe('medium');
+  failFirst(new Error('模拟失败'));
+  await rejected;
+  expect(await antigravityDefaultReasoningEffort('example', undefined, second)).toBe('medium');
+  expect(startManagementBackend).toHaveBeenCalledTimes(2);
+});
+
+it('安装更新后同一命令重新读取，旧的在途失败不清新缓存', async () => {
+  vi.spyOn(executable, 'resolveLocalCommand').mockReturnValue({ command: 'installed-fixture', args: [] });
+  let failFirst!: (error: Error) => void;
+  const failing = new Promise<{ response: { models: { example: { thinkingLevel: number } } } }>((_resolve, reject) => {
+    failFirst = reject;
+  });
+  let starts = 0;
+  vi.mocked(startManagementBackend).mockImplementation(async () => {
+    const first = ++starts === 1;
+    return {
+      request: async () => (first ? failing : { response: { models: { example: { thinkingLevel: 3 } } } }),
+      close: async () => {},
+    };
+  });
+  const first = antigravityDefaultReasoningEffort('example');
+  const rejected = expect(first).rejects.toThrow();
+  invalidateAntigravityModelCatalog();
+  expect(await antigravityDefaultReasoningEffort('example')).toBe('high');
+  failFirst(new Error('旧目录失败'));
+  await rejected;
+  expect(await antigravityDefaultReasoningEffort('example')).toBe('high');
+  expect(startManagementBackend).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { name: '缺失模型目录', models: null },
+  { name: '模型目录是数组', models: [] },
+  { name: '模型目录为空', models: {} },
+  { name: '命中项格式错误', models: { example: null } },
+])('拒绝畸形目录且不缓存：$name', async ({ models }) => {
+  vi.spyOn(executable, 'resolveLocalCommand').mockReturnValue({ command: 'invalid-catalog', args: [] });
+  vi.mocked(startManagementBackend).mockResolvedValue({
+    request: async () => ({ response: { models } }),
+    close: async () => {},
+  });
+  await expect(antigravityDefaultReasoningEffort('example')).rejects.toThrow();
+  await expect(antigravityDefaultReasoningEffort('example')).rejects.toThrow();
+  expect(startManagementBackend).toHaveBeenCalledTimes(2);
+});
+
+it('只按原生目录精确型号读取支持的默认思考强度', async () => {
+  const discover = async () => ({
+    models: {
+      'example-low': { thinkingLevel: 1 },
+      'example-medium': { thinkingLevel: 2 },
+      'example-high': { thinkingLevel: 3 },
+      'example-other': {},
+      'example-unsupported': { thinkingLevel: 4 },
+      'example-budget': { supportsThinking: true, thinkingBudget: -1 },
+    },
+  });
+  expect(await antigravityDefaultReasoningEffort('example-low', discover)).toBe('low');
+  expect(await antigravityDefaultReasoningEffort('example-medium', discover)).toBe('medium');
+  expect(await antigravityDefaultReasoningEffort('example-high', discover)).toBe('high');
+  expect(await antigravityDefaultReasoningEffort('example-high-suffix', discover)).toBeUndefined();
+  expect(await antigravityDefaultReasoningEffort('example-other', discover)).toBeUndefined();
+  await expect(antigravityDefaultReasoningEffort('example-unsupported', discover)).rejects.toThrow();
+  await expect(antigravityDefaultReasoningEffort('example-budget', discover)).rejects.toThrow();
+});
+
+it('思考强度目录读取失败或超时时不静默使用原生默认', async () => {
+  await expect(
+    antigravityDefaultReasoningEffort('example-high', async () => {
+      throw new Error('目录错误');
+    }),
+  ).rejects.toThrow();
+  vi.useFakeTimers();
+  try {
+    const pending = antigravityDefaultReasoningEffort('example-high', () => new Promise(() => {}));
+    const rejected = expect(pending).rejects.toThrow();
+    let finished = false;
+    void pending.catch(() => {
+      finished = true;
+    });
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(finished).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('窗口与原生 /context 一致：自定义取显式 maxTokens，不扣历史生成的输出预留', async () => {

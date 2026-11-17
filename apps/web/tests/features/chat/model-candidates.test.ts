@@ -40,6 +40,12 @@ it('同名但底层型号不同、多个配置入口及其他 CLI 均不误合�
   }
   expect(modelCandidates([native, alias], alias.id, undefined, 'claude')).toHaveLength(2);
   expect(modelCandidates([native, alias], alias.id, undefined, 'codex')).toHaveLength(2);
+  for (const agent of ['claude', 'codex'] as const) {
+    expect(modelCandidates([native], native.label, undefined, agent).map((model) => model.id)).toEqual([
+      native.label,
+      native.id,
+    ]);
+  }
 });
 
 it('AGY 旧会话以显示名记录当前模型时，保留原始发送值并合并已确认的目录身份', () => {
@@ -72,6 +78,20 @@ it('AGY 缓存含显示名条目和多个配置入口时，当前原生名称不
   const all = modelCandidates(catalog, named.id, undefined, 'antigravity');
   expect(all.map((model) => model.id)).toEqual([named.id, alias.id, 'window-config', 'saved-config', other.id]);
   expect(all[0]!.modelId).toBe(native.id);
+  const withoutNamed = [
+    native,
+    { ...alias, modelId: native.id },
+    { ...alias, id: 'second-config', modelId: native.id },
+  ];
+  expect(modelCandidates(withoutNamed, native.label, undefined, 'antigravity').map((model) => model.id)).toEqual([
+    native.label,
+    alias.id,
+    'second-config',
+  ]);
+  const configsOnly = withoutNamed.slice(1);
+  const inherited = modelCandidates(configsOnly, native.label, undefined, { agent: 'antigravity', origin: 'native' });
+  expect(inherited.map((model) => model.id)).toEqual([native.label, alias.id, 'second-config']);
+  expect(inherited[0]!.modelId).toBe(native.id);
   const reversed = [named, native, ...catalog.slice(2)];
   expect(visibilityCandidates('antigravity', reversed).map((model) => model.id)).toEqual([
     native.id,
@@ -88,4 +108,18 @@ it('相同名称的两个原生型号仍分别显示，不把未确认的名称�
     native.id,
     other.id,
   ]);
+});
+
+it('名称对应不同型号时保留当前值和各个候选，不猜测或合并身份', () => {
+  const other = { id: 'other-config', label: native.label, modelId: 'different-model' };
+  const anotherNative = { id: 'different-native', label: native.label };
+  for (const catalog of [
+    [native, other],
+    [native, anotherNative],
+    [native, { id: 'same-model-config', label: native.label, modelId: native.id }, other],
+  ]) {
+    const candidates = modelCandidates(catalog, native.label, undefined, 'antigravity');
+    expect(candidates.map((model) => model.id)).toEqual([native.label, ...catalog.map((model) => model.id)]);
+    expect(modelDisplay(candidates[0]!.id, candidates[0])).toBe(native.label);
+  }
 });

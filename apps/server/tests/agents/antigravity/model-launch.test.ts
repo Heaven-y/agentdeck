@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readFile, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import {
-  antigravityLaunchSelection,
+  antigravityLaunchSelection as resolveLaunchSelection,
   AntigravityModelSelectionError,
 } from '../../../src/agents/antigravity/model-launch';
+
+const antigravityLaunchSelection: typeof resolveLaunchSelection = (env, requested, readWindow) =>
+  resolveLaunchSelection(env, requested, readWindow, { readEffort: async () => undefined });
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -44,6 +47,64 @@ const other = {
   request: { headers: { authorization: 'fixture-only-token' }, temperature: 0.4 },
 };
 
+it('临时窗口覆盖按所选原生型号读取默认强度，目录故障明确拒绝启动', async () => {
+  const f = await fixture({
+    modelProvider: 'gemini',
+    model: label,
+    customModelsConfig: { customModels: { custom: canonical } },
+  });
+  const effort = vi.fn(async () => 'high' as const);
+  const selection = await resolveLaunchSelection(f.env, undefined, undefined, { readEffort: effort });
+  expect(effort).toHaveBeenCalledWith(canonical.modelName, undefined, f.env);
+  expect(selection.defaultReasoningEffort).toBe('high');
+  await expect(
+    resolveLaunchSelection(f.env, undefined, undefined, {
+      readEffort: async () => {
+        throw new Error('private-diagnostic');
+      },
+    }),
+  ).rejects.toThrow('推理强度');
+  const unavailable = vi.fn(async () => {
+    throw new Error('目录不可用');
+  });
+  const explicit = await resolveLaunchSelection(f.env, undefined, undefined, {
+    readEffort: unavailable,
+    explicitEffort: 'low',
+  });
+  expect(explicit.model).toBeTruthy();
+  expect(explicit.defaultReasoningEffort).toBeUndefined();
+  expect(unavailable).not.toHaveBeenCalled();
+});
+
+it.each([undefined, 'agentdeck-current', canonical.modelName])(
+  '有窗口的自定义模型使用临时唯一标签，保留原值与其他配置（%s）',
+  async (requested) => {
+    const customModelsConfig = {
+      unknownNativeOption: { enabled: false },
+      customModels: { 'agentdeck-current': canonical, external: other },
+    };
+    const f = await fixture({ modelProvider: 'gemini', model: label, customModelsConfig });
+    const selection = await antigravityLaunchSelection(f.env, requested);
+    expect(selection.model).toBeTruthy();
+    expect(selection.model).not.toBe(label);
+    expect(selection.model).not.toBe(canonical.modelName);
+    expect(selection).toMatchObject({
+      sessionModel: label,
+      contextWindow: { model: label, windowTokens: 1000000 },
+      nativeSettings: {
+        customModelsConfig: {
+          unknownNativeOption: customModelsConfig.unknownNativeOption,
+          customModels: {
+            'agentdeck-current': { ...canonical, label: selection.model },
+            external: other,
+          },
+        },
+      },
+    });
+    expect(await readFile(f.file, 'utf8')).toBe(f.content);
+  },
+);
+
 it.each([
   { configured: label, requested: undefined },
   { configured: 'agentdeck-old', requested: undefined },
@@ -67,13 +128,16 @@ it.each([
       authentication: 'fixture-only-secret',
       customModelsConfig: custom,
     });
-    expect(await antigravityLaunchSelection(f.env, requested)).toEqual({
-      model: label,
+    const selection = await antigravityLaunchSelection(f.env, requested);
+    expect(selection.model).not.toBe(label);
+    expect(selection).toEqual({
+      model: selection.model,
+      sessionModel: label,
       contextWindow: { model: label, windowTokens: 1000000 },
       nativeSettings: {
         customModelsConfig: {
           unknownNativeOption: custom.unknownNativeOption,
-          customModels: { 'agentdeck-current': canonical, external: other },
+          customModels: { 'agentdeck-current': { ...canonical, label: selection.model }, external: other },
         },
       },
     });
@@ -98,15 +162,23 @@ it.each([
   expect(await readFile(f.file, 'utf8')).toBe(f.content);
 });
 
-it('没有等价重复时不生成临时覆盖，显式原生型号仍原样透传', async () => {
+it('自定义窗口使用临时标签，显式内置原生型号仍原样透传', async () => {
   const f = await fixture({
     modelProvider: 'gemini',
     model: 'agentdeck-current',
     customModelsConfig: { customModels: { 'agentdeck-current': canonical, external: other } },
   });
-  expect(await antigravityLaunchSelection(f.env)).toEqual({
-    model: label,
+  const selection = await antigravityLaunchSelection(f.env);
+  expect(selection.model).not.toBe(label);
+  expect(selection).toEqual({
+    model: selection.model,
+    sessionModel: label,
     contextWindow: { model: label, windowTokens: 1000000 },
+    nativeSettings: {
+      customModelsConfig: {
+        customModels: { 'agentdeck-current': { ...canonical, label: selection.model }, external: other },
+      },
+    },
   });
   expect(
     await antigravityLaunchSelection(f.env, 'gemini-native-high', async () => ({
@@ -130,13 +202,36 @@ it('原生默认按标签读取，显式键与其他标签重名时仍启动该�
       },
     },
   });
-  expect(await antigravityLaunchSelection(f.env)).toEqual({
-    model: 'target',
+  const inherited = await antigravityLaunchSelection(f.env);
+  expect(inherited.model).not.toBe('target');
+  expect(inherited).toEqual({
+    model: inherited.model,
+    sessionModel: 'target',
     contextWindow: { model: 'target', windowTokens: 200000 },
+    nativeSettings: {
+      customModelsConfig: {
+        customModels: {
+          other: { modelName: 'native-other', label: inherited.model, maxTokens: 200000 },
+          target: { modelName: 'native-target', label: 'Wanted', maxTokens: 1000000 },
+        },
+      },
+    },
   });
-  expect(await antigravityLaunchSelection(f.env, 'target')).toEqual({
-    model: 'Wanted',
+  const explicit = await antigravityLaunchSelection(f.env, 'target');
+  expect(explicit.model).not.toBe('Wanted');
+  expect(explicit.model).not.toBe(inherited.model);
+  expect(explicit).toEqual({
+    model: explicit.model,
+    sessionModel: 'Wanted',
     contextWindow: { model: 'Wanted', windowTokens: 1000000 },
+    nativeSettings: {
+      customModelsConfig: {
+        customModels: {
+          other: { modelName: 'native-other', label: 'target', maxTokens: 200000 },
+          target: { modelName: 'native-target', label: explicit.model, maxTokens: 1000000 },
+        },
+      },
+    },
   });
   expect(await readFile(f.file, 'utf8')).toBe(f.content);
 });
@@ -147,9 +242,13 @@ it('原生 ID 唯一映射自定义模型时使用其窗口，多个非等价别
     model: label,
     customModelsConfig: { customModels: { custom: canonical } },
   });
-  expect(await antigravityLaunchSelection(f.env, canonical.modelName)).toEqual({
-    model: label,
+  const selection = await antigravityLaunchSelection(f.env, canonical.modelName);
+  expect(selection.model).not.toBe(label);
+  expect(selection).toEqual({
+    model: selection.model,
+    sessionModel: label,
     contextWindow: { model: label, windowTokens: 1000000 },
+    nativeSettings: { customModelsConfig: { customModels: { custom: { ...canonical, label: selection.model } } } },
   });
   await writeFile(
     f.file,
@@ -166,6 +265,66 @@ it('原生 ID 唯一映射自定义模型时使用其窗口，多个非等价别
   await expect(antigravityLaunchSelection(f.env, canonical.modelName)).rejects.toBeInstanceOf(
     AntigravityModelSelectionError,
   );
+});
+
+it.each([undefined, 0])('没有有效窗口时沿用原标签和原生设置（%s）', async (maxTokens) => {
+  const f = await fixture({
+    modelProvider: 'gemini',
+    model: label,
+    customModelsConfig: { customModels: { custom: { ...canonical, maxTokens } } },
+  });
+  expect(await antigravityLaunchSelection(f.env)).toEqual({ model: label, contextWindow: { model: label } });
+  expect(await readFile(f.file, 'utf8')).toBe(f.content);
+});
+
+it.each([undefined, 'custom'])('有窗口但没有原标签时回报原型号（选择 %s）', async (requested) => {
+  const custom = { modelName: 'native-model', maxTokens: 1000000, extra: { option: true } };
+  const f = await fixture({
+    modelProvider: 'gemini',
+    model: custom.modelName,
+    customModelsConfig: { customModels: { custom } },
+  });
+  const selection = await antigravityLaunchSelection(f.env, requested);
+  expect(selection.model).not.toBe(custom.modelName);
+  expect(selection.sessionModel).toBe(custom.modelName);
+  expect(selection.contextWindow).toEqual({ model: custom.modelName, windowTokens: 1000000 });
+  expect(selection.nativeSettings?.customModelsConfig).toEqual({
+    customModels: { custom: { ...custom, label: selection.model } },
+  });
+  expect(await readFile(f.file, 'utf8')).toBe(f.content);
+});
+
+it.each([
+  {
+    name: '已支持的旧格式',
+    storedModel: 'gemini-api://my-server/models/native-model?mode=fixture#example',
+    runtimeModel: 'native-model',
+  },
+  {
+    name: '未识别的旧格式',
+    storedModel: 'gemini-api://my-server/unsupported/native-model',
+    runtimeModel: 'gemini-api://my-server/unsupported/native-model',
+  },
+  {
+    name: '其他协议',
+    storedModel: 'custom-api://my-server/models/native-model',
+    runtimeModel: 'custom-api://my-server/models/native-model',
+  },
+])('临时窗口覆盖只转换已支持的模型 URI：$name', async ({ storedModel, runtimeModel }) => {
+  const legacy = { modelName: storedModel, label: 'Legacy', maxTokens: 1000000, extra: { option: true } };
+  const another = { modelName: 'gemini-api://my-server/models/other-model', label: 'Other', maxTokens: 200000 };
+  const f = await fixture({
+    modelProvider: 'gemini',
+    model: legacy.label,
+    customModelsConfig: { customModels: { legacy, another } },
+  });
+  const selection = await antigravityLaunchSelection(f.env);
+  expect(selection.nativeSettings?.customModelsConfig).toEqual({
+    customModels: { legacy: { ...legacy, modelName: runtimeModel, label: selection.model }, another },
+  });
+  expect(selection.sessionModel).toBe(legacy.label);
+  expect(selection.contextWindow).toEqual({ model: legacy.label, windowTokens: 1000000 });
+  expect(await readFile(f.file, 'utf8')).toBe(f.content);
 });
 
 it.each([

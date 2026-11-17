@@ -13,6 +13,7 @@
 | 模块、生命周期、存储与配额 | [架构](engineering/architecture.md) |
 | 当前方案的理由及历史锚点 | [设计决策](engineering/decisions.md) |
 | 开发、验证、分支与合并 | [开发指南](guides/dev-environment.md) |
+| 配置未生效或同一问题反复修复 | [1M 问题复盘](engineering/decisions.md#传给原生的选择器必须是原生认得的标识)、[排查与验收方法](guides/dev-environment.md#51-同一问题反复修复) |
 | 安装、打包与升级 | [本地分发](guides/local-installation.md) |
 
 ## 按功能查阅

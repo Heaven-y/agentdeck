@@ -16,6 +16,7 @@ import { createCliInstallationService } from '../cli-installation/service';
 import { registerCliInstallationRoutes } from '../http/cli-installation.routes';
 import type { ProcessRunner } from '../platform/process/run';
 import { createAntigravityRunner } from '../agents/antigravity/adapter';
+import { invalidateAntigravityModelCatalog } from '../agents/antigravity/context-window';
 import { discoverAntigravityCapabilities } from '../agents/antigravity/capabilities';
 import { createAntigravitySessionManagement } from '../agents/antigravity/management';
 import { createAntigravitySessions } from '../agents/antigravity/sessions';
@@ -223,6 +224,7 @@ export function createCliServices({
     withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, () => nativeActivity.exclusive(agent, operation)),
     restart: (agent) => runners[agent].restart(),
     onChanged: async (agent) => {
+      if (agent === 'antigravity') invalidateAntigravityModelCatalog();
       await capabilities.invalidate(agent);
       sessions.invalidate(agent);
     },

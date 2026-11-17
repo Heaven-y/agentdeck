@@ -70,11 +70,13 @@ Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 setti
 | Codex | model、model_provider、服务商 name、model_reasoning_effort、整数 model_context_window、model_auto_compact_token_limit | 自定义 provider 的 base_url 与 Responses 协议；直接填写 Key 使用 experimental_bearer_token，原生高级认证保留 |
 | Antigravity | model、modelProvider、自定义模型的 label/modelName/maxTokens | 同页配置 Gemini API URL 与 Key，分别映射 GOOGLE_GEMINI_BASE_URL、GEMINI_API_KEY，经加密启动环境交给新进程 |
 
-三者共用模型输入、缓存候选和“获取模型”操作。工作台分开保留 CLI 选择值、显示名称和底层真实型号；模型入口显示具体型号，名称用于搜索，发送前由适配器解析原生选择值。Claude 的 `[1m]` 后缀在匹配模型能力时单独处理，不会从发送值中删除。推理强度优先采用模型目录报告，未报告时只按已核对的精确型号补全；未手动选择时省略覆盖参数，有适用的默认值则显示其档位，否则仅保留强度图标；这不等于原生 `auto`。Claude、Codex 与 Antigravity 的档位不能互相套用，详细表见[模型身份与推理强度](model-capabilities.md)。 Claude 的名称仍是 picker label，Codex 的名称仍是服务商名称；Claude 持久默认可写 low/medium/high/xhigh，max 仅用于会话。Antigravity 默认强度仍通过模型变体表示，不写不存在的顶层 effort 字段。
+三者共用模型输入、缓存候选和“获取模型”操作。工作台分开保留 CLI 选择值、显示名称和底层真实型号；模型入口显示具体型号，名称用于搜索，发送前由适配器解析原生选择值。Claude 的 `[1m]` 后缀在匹配模型能力时单独处理，不会从发送值中删除。推理强度优先采用模型目录报告，未报告时只按已核对的精确型号补全；未手动选择时继承原生默认，有适用的默认值则显示其档位，否则仅保留强度图标；这不等于原生 `auto`。Claude、Codex 与 Antigravity 的档位不能互相套用，详细表见[模型身份与推理强度](model-capabilities.md)。 Claude 的名称仍是 picker label，Codex 的名称仍是服务商名称；Claude 持久默认可写 low/medium/high/xhigh，max 仅用于会话。Antigravity 默认强度仍通过模型变体表示，不写不存在的顶层 effort 字段。
 
-上下文窗口按实际语义显示：Codex 可写数字 token 上限，自动压缩阈值独立填写 token 数并写入原生 model_auto_compact_token_limit，留空移除该覆盖；Antigravity 自定义模型写 maxTokens；Claude 默认显示“由模型决定”。Claude 的条件性网关窗口覆盖与压缩阈值继续留在原始配置，不自动关闭压缩，也不将压缩阈值冒充模型窗口。
+上下文窗口按实际语义显示：Codex 可写数字 token 上限，自动压缩阈值独立填写 token 数并写入原生 model_auto_compact_token_limit，留空移除该覆盖；Antigravity 自定义模型写 maxTokens；Claude 默认显示“由模型决定”。AGY 的总窗口与自动 checkpoint 触发点分开：设置 1M 不表示累计到 1M 才压缩，工作台不从窗口值推算触发阈值，也不添加未经核实的压缩配置。Claude 的条件性网关窗口覆盖与压缩阈值继续留在原始配置，不自动关闭压缩，也不将压缩阈值冒充模型窗口。
 
-Antigravity 的模型 ID、选择标签和配置条目键各有用途。已存原生 `model` 优先按标签匹配，界面显式选择优先按条目键定位；匹配失败后才兼容旧键或真实型号，歧义不能取第一项。等价的 AgentDeck 遗留重复条目可读回窗口，保存时按标签组归一；标签恰好等于另一条目的键时，不会把那个无关条目纳入删除。启动前用原生 `--settings` 临时文件消除该组歧义，保留其他模型与未知参数，进程结束后移除临时文件。异常配置或真正不同的同名配置明确报错，不能将解析失败转成内部键透传。窗口修改影响随后启动的新建与续聊回合，已运行进程继续使用其启动快照；历史上下文面板只显示当前选择的有效总窗口，依据见[统计口径](cli-observability.md#antigravity-的接入点与限制)。
+Antigravity 的模型 ID、选择标签和配置条目键各有用途。已存原生 `model` 优先按标签匹配，界面显式选择优先按条目键定位；匹配失败后才兼容旧键或真实型号，歧义不能取第一项。等价的 AgentDeck 遗留重复条目可读回窗口，保存时按标签组归一；标签恰好等于另一条目的键时，不会把那个无关条目纳入删除。启动前用原生 `--settings` 临时文件消除该组歧义；自定义模型的 `maxTokens` 为有效正整数时，另为所选条目生成本轮唯一标签，避免原生内置同名选择绕过窗口覆盖。真实 `modelName`、窗口、额外参数及其他模型保留，永久配置不改写，进程结束后移除临时文件。异常配置或真正不同的同名配置明确报错，不能将解析失败转成内部键透传。
+
+临时标签路径按原生目录中的精确型号及已报告推理级别保留变体的默认档位，显式选择的强度优先并跳过默认档位查询；需要补齐默认强度而目录读取失败或已知思考模式无法识别时停止启动，不能悄悄改用另一档。旧式受支持 URI 的型号只在临时副本中提取为裸 ID。会话事件仅在原生报告与本轮临时标签精确一致时还原用户选择并附上窗口快照；报告不一致且缺少原生窗口时保持窗口未知。窗口修改影响随后启动的新建与续聊回合，已运行进程继续使用其启动快照；历史上下文面板只显示当前选择的有效总窗口，依据见[统计口径](cli-observability.md#antigravity-的接入点与限制)。
 
 Antigravity 的 `customModelsConfig.customModels[*].modelName` 必须是原生模型 ID（如 `gemini-4-argon-high`），而 `settings.json` 的 `model` 字段存的是显示标签。只改上下文窗口或模型名称时，工作台仍按原生目录把当前标签解析回 ID 再写入，否则原生会因“不在内置目录”而套用家族默认值；目录不可用或无法唯一匹配时不登记条目。该解析结果只来自服务端读取的原生目录，请求体里同名键一律忽略。
 
@@ -90,7 +92,7 @@ Antigravity 的 `customModelsConfig.customModels` 是对象映射，每个条目
 
 服务地址唯一写入启动环境 `GOOGLE_GEMINI_BASE_URL`，不会再把地址拼进 `modelName`；读取旧的 `gemini-api://.../models/...` 条目时提取模型 ID，保存时标准化。提交的地址去掉末尾 `/v1beta`，由原生 CLI 添加版本路径，避免重复。已有环境地址优先，旧 URI 的地址只在环境没有显式值时迁移，用户明确停用时不恢复。仅 Gemini 模式使用这些条目，不能把 OpenAI Responses 地址当作 Gemini 地址。旧数组形式的说明已纠正，历史可从 `5d5d0c6` 追溯。
 
-模型目录按 CLI 与实际目录持久缓存，成功结果在应用重启后继续使用；用户可点击重新获取，填写过配置时明确显示“保存并获取模型”。设置 GET `/api/settings/models/:agent/catalog` 只读缓存，POST 使用原生接口获取；不会探测任意服务的 /v1/models 或发送对话。Claude 使用 supportedModels，Codex 使用 model/list 并补入原生当前自定义 ID。模型列表是否列全由原生协议决定，始终允许手输。
+模型目录按 CLI 与实际目录持久缓存，通过当前身份版本校验的成功结果在应用重启后继续使用；AGY 不复用无身份标记的旧目录，用户打开模型菜单或重新获取时重建。填写过配置时明确显示“保存并获取模型”。设置 GET `/api/settings/models/:agent/catalog` 只读缓存，POST 使用原生接口获取；不会探测任意服务的 /v1/models 或发送对话。Claude 使用 supportedModels，Codex 使用 model/list 并补入原生当前自定义 ID。模型列表是否列全由原生协议决定，始终允许手输。
 
 窗口和 token 阈值文本框接受整数或十进制简写，例如 `128K`、`1M`、`1.5m`；K 为 1,000，M 为 1,000,000。保存时精确转换成原生整数，读取仍回显原生数值；空白恢复默认，负数、溢出或换算后不是整数的值拒绝保存。这里是输入格式便利，不改变各 CLI 对窗口、压缩和 maxTokens 的定义。
 

@@ -98,6 +98,127 @@ function completedTrajectory() {
   };
 }
 
+it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时按本轮原生终态复核：%s', async (error) => {
+  const trajectory = completedTrajectory();
+  const read = vi.fn(async () => ({ trajectory }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response');
+  f.result({ error });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).toHaveBeenCalledWith('native-resumed', cwd, expect.any(AbortSignal));
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+it.each([
+  ['ERROR 未知错误', 'ERROR', { type: 'UNKNOWN_ERROR', message: '示例失败' }],
+  ['ERROR 无载荷', 'ERROR', undefined],
+  ['DONE 未知错误', 'DONE', { type: 'UNKNOWN_ERROR', message: '示例失败' }],
+])('直播已确认终态失败 %s 时不能用不一致的轨迹改判成功', async (_case, state, error) => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(5, 'tool', state, { tool_info: { name: 'view_file', ...(error ? { error } : {}) } });
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已生成的片段。' });
+  f.result({ error: '' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events).toContainEqual(expect.objectContaining({ type: 'tool_result', isError: true }));
+  expect(read).not.toHaveBeenCalled();
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
+
+it('上一轮的认证错误不能覆盖本轮已复核完成的答复', async () => {
+  const trajectory = completedTrajectory();
+  Object.assign(trajectory.steps[3]!, {
+    errorMessage: { shouldShowUser: true, error: { userErrorMessage: 'Error 401: invalid API key' } },
+  });
+  const read = vi.fn(async () => ({ trajectory }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response');
+  f.result({ error: 'Error 401: invalid API key' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).toHaveBeenCalledWith('native-resumed', cwd, expect.any(AbortSignal));
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+type MissingErrorGuard = {
+  resume?: boolean;
+  input?: number;
+  result?: Record<string, unknown>;
+  exit?: number;
+  interrupt?: boolean;
+};
+const missingErrorGuards: [string, MissingErrorGuard][] = [
+  ['新建会话', { resume: false, input: 0 }],
+  ['未知结果状态', { result: { status: 'UNKNOWN' } }],
+  ['错误正文格式异常', { result: { error: {} } }],
+  ['缺少结果身份', { result: { conversation_id: undefined } }],
+  ['权限拒绝', { result: { denied_actions: [{ action: 'command' }] } }],
+  ['非零退出', { exit: 3 }],
+  ['中断', { interrupt: true }],
+];
+it.each(missingErrorGuards)('无错误正文遇到%s时不发起原生复核', async (_scenario, options) => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(options.resume ?? true, read);
+  const input = options.input ?? 4;
+  f.step(input, 'user_input');
+  f.step(input + 2, 'agent_response');
+  f.result({ error: '', ...options.result });
+  const interrupted = options.interrupt ? f.handle.interrupt() : undefined;
+  f.child.emit('close', options.exit ?? 0);
+  await interrupted;
+  await f.handle.done;
+  expect(read).not.toHaveBeenCalled();
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events.some((event) => event.type === 'error')).toBe(!options.interrupt);
+});
+
+it.each(['wrong-session', 'wrong-input', 'current-error', 'later-input', 'later-error'])(
+  '无错误正文但原生复核遇到%s时仍保留失败',
+  async (scenario) => {
+    const trajectory = completedTrajectory();
+    if (scenario === 'wrong-session') trajectory.cascadeId = 'other-session';
+    if (scenario === 'wrong-input') trajectory.steps[4]!.type = 'CORTEX_STEP_TYPE_PLANNER_RESPONSE';
+    if (scenario === 'current-error') trajectory.steps[5]!.type = 'CORTEX_STEP_TYPE_ERROR_MESSAGE';
+    if (scenario === 'later-input') trajectory.steps.splice(6, 0, { ...trajectory.steps[4]! });
+    if (scenario === 'later-error')
+      trajectory.steps.push({ type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE', status: 'CORTEX_STEP_STATUS_DONE' });
+    const read = vi.fn(async () => ({ trajectory }));
+    const f = await resumedTurn(true, read);
+    f.step(4, 'user_input');
+    if (scenario === 'current-error') f.step(5, 'error_message');
+    f.step(6, 'agent_response');
+    f.result({ error: '' });
+    f.child.emit('close', 0);
+    await f.handle.done;
+    expect(read).toHaveBeenCalledOnce();
+    expect(f.events.some((event) => event.type === 'error')).toBe(true);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  },
+);
+
+it('无错误正文但本轮 stderr 明确认证失败时保留真实诊断', async () => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response');
+  f.child.stderr.write('error: invalid API key\n');
+  f.result({ error: '' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).not.toHaveBeenCalled();
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining('认证') },
+  ]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
+
 function rateLimitedTrajectory(resume = true): Record<string, unknown> {
   const trajectory = completedTrajectory();
   Object.assign(trajectory.steps[5]!, {
@@ -106,6 +227,74 @@ function rateLimitedTrajectory(resume = true): Record<string, unknown> {
   });
   return { ...trajectory, steps: resume ? trajectory.steps : trajectory.steps.slice(4) };
 }
+
+it.each([
+  ['524', '', false],
+  ['524', previousError, true],
+  ['429', '', true],
+  ['429', previousError, false],
+])('待确认服务故障 %s 不可被无错误轨迹吞掉：%s / 结果先到=%s', async (code, error, resultFirst) => {
+  const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已输出的片段。' });
+  if (resultFirst) f.result({ error });
+  f.child.stderr.write(`error: Error ${code}\n`);
+  if (!resultFirst) f.result({ error });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining(code) },
+  ]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
+
+it('stderr 的 429 有本轮原生 429 步骤及后续完成答复时才能复核恢复', async () => {
+  const read = vi.fn(async () => ({ trajectory: rateLimitedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '原生重试后完成。' });
+  f.child.stderr.write(`error: ${rateLimitError}\n`);
+  f.result({ error: '' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).toHaveBeenCalledOnce();
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+});
+
+it('认证错误与 429 同行时不能把认证失败当作可恢复限流', async () => {
+  const read = vi.fn(async () => ({ trajectory: rateLimitedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已输出的片段。' });
+  f.child.stderr.write('error: invalid API key; error: Error 429\n');
+  f.result({ error: '' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).not.toHaveBeenCalled();
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining('认证') },
+  ]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
+
+it.each(['524', '500'])('同轮出现 429 和 %s 时不能以 429 轨迹覆盖服务故障', async (code) => {
+  const read = vi.fn(async () => ({ trajectory: rateLimitedTrajectory() }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, 'agent_response', 'DONE', { text_delta: '已输出的片段。' });
+  f.child.stderr.write(`error: ${rateLimitError}\n`);
+  f.child.stderr.write(`error: Error ${code}\n`);
+  f.result({ error: '' });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  expect(read).not.toHaveBeenCalled();
+  expect(f.events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining(code) },
+  ]);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+});
 
 it.each([true, false])('原生 429 重试后的完整本轮轨迹可纠正累计 ERROR，续接：%s', async (resume) => {
   const f = await resumedTurn(resume, async () => ({ trajectory: rateLimitedTrajectory(resume) }));
@@ -291,15 +480,16 @@ it.each(['interrupt', 'dispose'] as const)('进程退出后%s仍能取消终态�
   expect(f.events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
 });
 
-it('stderr 的 524 只是可重试的服务故障，完整答复与自然退出后不再判为失败', async () => {
+it('stderr 出现 524 后原生明确返回 SUCCESS 时保留成功', async () => {
   const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
   const f = await resumedTurn(true, read);
   f.step(4, 'user_input');
   f.step(6, 'agent_response', 'DONE', { text_delta: '本轮完成。' });
   f.child.stderr.write('error: Error 524, Status: 524 unknown\n');
-  f.result();
+  f.result({ status: 'SUCCESS', error: '' });
   f.child.emit('close', 0);
   await f.handle.done;
+  expect(read).not.toHaveBeenCalled();
   expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
   expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
 });

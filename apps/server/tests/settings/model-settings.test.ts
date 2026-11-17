@@ -33,9 +33,17 @@ async function fixture(nativeModels: () => Promise<AgentModel[]> = async () => [
   };
   return { service, write, environment, resources, homeDir };
 }
+async function removeFixture(root: string): Promise<void> {
+  for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+    const file = path.join(root, entry.name);
+    if (entry.isDirectory()) await removeFixture(file);
+    else await fs.unlink(file);
+  }
+  await fs.rmdir(root);
+}
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  for (const root of roots.splice(0)) await removeFixture(root);
 });
 
 it.each(['claude', 'codex', 'antigravity'] as const)(
@@ -487,9 +495,23 @@ it('模型标签与另一条目的键相同时，改窗口保留无关条目且�
   expect((await service.read('antigravity')).fields.find((field) => field.key === 'contextWindow')?.value).toBe(
     '512000',
   );
-  expect(await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir })).toEqual({
-    model: 'entry-b',
+  const selection = await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir }, undefined, undefined, {
+    readEffort: async () => undefined,
+  });
+  expect(selection.model).toBeTruthy();
+  expect(selection.model).not.toBe('entry-b');
+  expect(selection).toEqual({
+    model: selection.model,
+    sessionModel: 'entry-b',
     contextWindow: { model: 'entry-b', windowTokens: 512000 },
+    nativeSettings: {
+      customModelsConfig: {
+        customModels: {
+          'entry-a': { modelName: 'native-a', label: selection.model, maxTokens: 512000 },
+          'entry-b': unrelated,
+        },
+      },
+    },
   });
 });
 

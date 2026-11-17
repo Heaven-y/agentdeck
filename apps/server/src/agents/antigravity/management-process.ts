@@ -20,7 +20,7 @@ export type ManagementProcessOptions = {
   env: NodeJS.ProcessEnv;
   geminiDir: string;
   signal?: AbortSignal;
-  /** 仅测试可注入合成进程；生产始终解析本机 agy。 */
+  /** 可传入已从原始环境解析的命令，避免隔离配置影响可执行文件定位。 */
   command?: ResolvedCommand;
 };
 

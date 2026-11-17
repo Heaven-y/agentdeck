@@ -18,7 +18,7 @@ export function antigravityFields(config: ConfigObject): ModelSettingField[] {
     field('contextWindow', '上下文窗口', custom?.maxTokens, {
       group: 'model',
       placeholder: '由模型决定，如 128K / 1M',
-      hint: 'K = 1,000，M = 1,000,000 tokens；保存为原生整数。',
+      hint: 'K = 1,000，M = 1,000,000 tokens；总窗口不等于自动压缩触发点。',
     }),
     field('modelProvider', '连接方式', provider, {
       options: [

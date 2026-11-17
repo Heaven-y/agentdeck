@@ -21,7 +21,7 @@ import { findModel, modelDisplay } from '../../cli/shared/model-identity';
 import { configuredModelEffort, modelEfforts } from '../../cli/model-capabilities';
 import { ModelCandidateLabel } from './ModelCandidateLabel';
 import { ModelSearchDialog } from './ModelSearchDialog';
-import { currentModelCandidate, modelCandidates } from './model-candidates';
+import { currentModelCandidate, modelCandidates, type ModelOrigin } from './model-candidates';
 
 const menuClass =
   'z-50 max-h-[min(440px,var(--popover-available-height))] w-72 overflow-y-auto rounded-2xl border border-border bg-card p-1 text-foreground shadow-lg';
@@ -72,6 +72,30 @@ function inheritedModel(
   if (runtime?.agent === 'antigravity') return (runtime.running && actual) || configured || fallback;
   return fallback;
 }
+
+function modelOrigin(input: {
+  agent: AgentKind;
+  model: string;
+  running: boolean;
+  actual?: string;
+  native?: string;
+  configured?: string;
+}): ModelOrigin {
+  if (input.agent !== 'antigravity' || input.model) return 'selection';
+  if (input.running && input.actual) return 'native';
+  return !input.configured && (input.native || input.actual) ? 'native' : 'selection';
+}
+
+function modelMetadata(id: string, agent: AgentKind, origin: ModelOrigin, catalog?: AgentCapabilities) {
+  const candidate = currentModelCandidate(catalog?.models ?? [], id, agent, origin);
+  const capabilityId = origin === 'native' ? (candidate?.id ?? '') : id;
+  return {
+    selected: candidate?.id,
+    capabilityId,
+    label: modelDisplay(origin === 'native' ? (candidate?.id ?? id) : id, candidate),
+  };
+}
+
 function useModelPresentation(model: string, catalog: AgentCapabilities | undefined, fetching: boolean) {
   const agent = useChat((state) => state.agent);
   const actual = useChat((state) => state.actualModel);
@@ -87,14 +111,15 @@ function useModelPresentation(model: string, catalog: AgentCapabilities | undefi
   const configured = catalog?.defaultModel;
   const inherited = inheritedModel(native, actual, configured, { agent, running });
   const id = model || inherited;
-  const models = catalog?.models ?? [];
-  const candidate = currentModelCandidate(models, id, agent);
+  const origin = modelOrigin({ agent, model, running, actual, native, configured });
+  const metadata = modelMetadata(id, agent, origin, catalog);
   return {
     id,
-    label: modelDisplay(id, candidate),
+    origin,
+    ...metadata,
     loading: !id && (reading || fetching),
     // 旧会话未报告原生强度，不能用新会话的目录默认冒充其有效值。
-    defaultEffort: historical ? undefined : configuredModelEffort(agent, id, catalog),
+    defaultEffort: historical ? undefined : configuredModelEffort(agent, metadata.capabilityId, catalog),
   };
 }
 function effortLabel(effort?: string) {
@@ -176,12 +201,16 @@ function ModelChoices({
   catalog,
   model,
   currentModel,
+  selectedModel,
+  origin,
   onManual,
   onSearch,
   onRepair,
 }: CatalogProps & {
   model: string;
   currentModel: string;
+  selectedModel?: string;
+  origin: 'native' | 'selection';
   onManual(): void;
   onSearch(): void;
   onRepair(): void;
@@ -192,8 +221,7 @@ function ModelChoices({
   const setEffort = useChat((state) => state.setReasoningEffort);
   const models = catalog.data?.models ?? [];
   const visible = useChat((state) => state.defaults.modelVisibility?.[state.agent]);
-  const candidates = modelCandidates(models, currentModel, visible, agent);
-  const selected = findModel(candidates, currentModel)?.id;
+  const candidates = modelCandidates(models, currentModel, visible, { agent, origin });
   return (
     <>
       <MenuGroup aria-label="可选模型">
@@ -201,7 +229,7 @@ function ModelChoices({
         {candidates.slice(0, 20).map((candidate) => (
           <Choice
             key={candidate.id}
-            checked={selected === candidate.id}
+            checked={selectedModel === candidate.id}
             disabled={disabled}
             choose={() => setModel(candidate.id)}
           >
@@ -360,7 +388,7 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
         store={effortMenu}
         disabled={disabled}
         catalog={catalog}
-        model={presentation.id}
+        model={presentation.capabilityId}
         defaultEffort={presentation.defaultEffort}
       />
       <Menu store={modelMenu} portal unmountOnHide gutter={8} aria-label="模型选项菜单" className={menuClass}>
@@ -370,6 +398,8 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
           catalog={catalog}
           model={model}
           currentModel={presentation.id}
+          selectedModel={presentation.selected}
+          origin={presentation.origin}
           onManual={() => setManual(true)}
           onSearch={() => setSearchOpen(true)}
           onRepair={() => {
@@ -393,8 +423,8 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
       )}
       {searchOpen && (
         <ModelSearchDialog
-          models={modelCandidates(models, presentation.id, visible, agent)}
-          current={presentation.id}
+          models={modelCandidates(models, presentation.id, visible, { agent, origin: presentation.origin })}
+          current={presentation.selected ?? ''}
           disabled={disabled}
           choose={(id) => {
             setModel(id);

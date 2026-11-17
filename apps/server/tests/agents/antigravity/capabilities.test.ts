@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rmdir, stat, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -21,7 +21,13 @@ vi.mock('../../../src/agents/antigravity/commands', () => ({ discoverAntigravity
 const roots: string[] = [];
 afterEach(async () => {
   vi.resetAllMocks();
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  for (const root of roots.splice(0)) {
+    const native = path.join(root, '.gemini', 'antigravity-cli');
+    await unlink(path.join(native, 'settings.json'));
+    await rmdir(native);
+    await rmdir(path.join(root, '.gemini'));
+    await rmdir(root);
+  }
 });
 async function fixture(config: unknown) {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), 'agentdeck-agy-capabilities-'));
@@ -65,8 +71,15 @@ it('模型目录兼容裸 ID 和旧 URI，使用稳定键并保留显示名', as
     { id: 'stable', label: '显示名称', modelId: 'new-model', description: '原生自定义模型' },
     { id: 'old', label: '旧名称', modelId: 'old-model', description: '原生自定义模型' },
   ]);
-  // 原生按 label 识别自定义条目；稳定键传给 --model 会被当成未知型号。
-  expect((await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir })).model).toBe('显示名称');
+  // 原生按 label 识别自定义条目；有窗口时只为本轮生成唯一标签。
+  const selection = await antigravityLaunchSelection({ HOME: homeDir, USERPROFILE: homeDir }, undefined, undefined, {
+    readEffort: async () => undefined,
+  });
+  expect(selection.sessionModel).toBe('显示名称');
+  expect(selection.model).not.toBe('显示名称');
+  expect(selection.nativeSettings?.customModelsConfig).toMatchObject({
+    customModels: { stable: { modelName: 'new-model', label: selection.model, maxTokens: 32768 } },
+  });
   expect(antigravityModelSelector(settings, 'stable')).toBe('显示名称');
   expect(antigravityModelSelector(settings, '旧名称')).toBe('旧名称');
   expect(antigravityModelSelector(settings, 'new-model')).toBe('显示名称');

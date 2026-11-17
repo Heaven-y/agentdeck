@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -11,7 +11,24 @@ import { createHash } from 'node:crypto';
 const roots: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  for (const root of roots.splice(0)) {
+    const fixtureRoot = path.resolve(root);
+    if (
+      path.dirname(fixtureRoot) !== path.resolve(tmpdir()) ||
+      !path.basename(fixtureRoot).startsWith('agentdeck-model-cache-')
+    )
+      throw new Error('无效的测试临时目录');
+    async function removeDirectory(directory: string): Promise<void> {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const target = path.resolve(directory, entry.name);
+        if (!target.startsWith(`${fixtureRoot}${path.sep}`)) throw new Error('测试清理目标超出临时目录');
+        if (entry.isDirectory()) await removeDirectory(target);
+        else await unlink(target);
+      }
+      await rmdir(directory);
+    }
+    await removeDirectory(fixtureRoot);
+  }
 });
 
 it('落盘期间刷新被替代后不能留下旧请求的目录，失败的新请求保留上次成功缓存', async () => {
@@ -182,6 +199,73 @@ it.each([1, 2])('读取旧 v%i 缓存并保留目录，刷新后写入去重格�
   expect((await upgraded.read(f.ws, 'claude')).discovered).toBe(version === 2);
   expect((await upgraded.read(other, 'claude')).models).toEqual(f.catalog.models);
 });
+
+it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityVersion: 2 }])(
+  'AGY 忽略身份未知的缓存 %j，显式刷新后才能跨进程复用',
+  async ({ version, identityVersion }) => {
+    const f = await fixture();
+    const other = { ...f.ws, dir: path.join(f.root, 'other') };
+    const keyOf = (directory: string) =>
+      createHash('sha256')
+        .update(JSON.stringify(['antigravity', process.platform === 'win32' ? directory.toLowerCase() : directory]))
+        .digest('hex');
+    const oldCatalog = {
+      models: [
+        { id: 'selection-a', label: '模型 A', modelId: 'native-id' },
+        { id: 'native-id', label: '模型 B', modelId: 'other-native-id' },
+      ],
+      defaultModel: 'native-id',
+      defaultReasoningEffort: 'high',
+    };
+    const keys = [keyOf(f.ws.dir), keyOf(other.dir)];
+    const catalogId = createHash('sha256').update(JSON.stringify(oldCatalog)).digest('hex');
+    const stored =
+      version === 3
+        ? {
+            version,
+            ...(identityVersion === undefined ? {} : { identityVersion }),
+            directories: keys.map((key) => ({ key, catalog: catalogId })),
+            catalogs: [{ id: catalogId, ...oldCatalog }],
+          }
+        : { version, catalogs: keys.map((key) => ({ key, ...oldCatalog })) };
+    const directory = path.join(f.root, 'model-cache');
+    await mkdir(directory);
+    const file = path.join(directory, 'antigravity.json');
+    const original = JSON.stringify(stored);
+    await writeFile(file, original);
+    f.catalog.models = oldCatalog.models;
+    f.catalog.defaultModel = 'selection-a';
+    const service = createCapabilitiesService({ antigravity: f.provider }, f.options);
+
+    const unread = await service.read(f.ws, 'antigravity');
+    expect(unread).toMatchObject({ discovered: false, models: [] });
+    expect(unread.defaultModel).toBeUndefined();
+    expect(unread.defaultReasoningEffort).toBeUndefined();
+    expect(f.provider).not.toHaveBeenCalled();
+    expect(await readFile(file, 'utf8')).toBe(original);
+
+    expect((await service.refresh(f.ws, 'antigravity')).defaultModel).toBe('selection-a');
+    expect(f.provider).toHaveBeenCalledTimes(1);
+    const upgraded = JSON.parse(await readFile(file, 'utf8'));
+    expect(upgraded).toMatchObject({ version: 3, identityVersion: 1 });
+    const restarted = createCapabilitiesService({ antigravity: f.provider }, f.options);
+    expect(await restarted.read(f.ws, 'antigravity')).toMatchObject({
+      discovered: true,
+      models: f.catalog.models,
+      defaultModel: 'selection-a',
+    });
+    expect(await restarted.read(other, 'antigravity')).toMatchObject({ discovered: false, models: [] });
+    expect(f.provider).toHaveBeenCalledTimes(1);
+
+    await restarted.refresh(other, 'antigravity');
+    const deduplicated = JSON.parse(await readFile(file, 'utf8'));
+    expect(deduplicated.directories).toHaveLength(2);
+    expect(deduplicated.catalogs).toHaveLength(1);
+    const secondRestart = createCapabilitiesService({}, f.options);
+    expect((await secondRestart.read(f.ws, 'antigravity')).defaultModel).toBe('selection-a');
+    expect((await secondRestart.read(other, 'antigravity')).defaultModel).toBe('selection-a');
+  },
+);
 
 it('较大的正常模型目录完整缓存，相同内容只存一份且修改一个目录不影响另一个', async () => {
   const f = await fixture();
