@@ -65,6 +65,8 @@ it('常用模型表单只发送修改字段，空密码保留且显式清除使�
   expect(secret.type).toBe('password');
   expect(secret.value).toBe('');
   expect(secret.placeholder).toBe('••••••••');
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '显示API Key' }).disabled).toBe(true);
+  expect(screen.getByText('URL 和 Key 保存后，下次发送生效')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '更换API Key' }));
   expect(globalThis.document.activeElement).toBe(secret);
   fireEvent.change(model, { target: { value: 'custom-model' } });
@@ -146,10 +148,18 @@ it('Codex 登录或环境认证均可直接填写 Key，切换服务商丢弃旧
   render(<ProductSettingsDialog initialPage="codex" onClose={vi.fn()} onNative={vi.fn()} />);
   fireEvent.change(await screen.findByLabelText('服务地址'), { target: { value: 'https://draft.example/v1' } });
   fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'synthetic-draft-secret' } });
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  expect(screen.getByLabelText<HTMLInputElement>('API Key').type).toBe('text');
+  fireEvent.click(screen.getByRole('button', { name: '隐藏API Key' }));
+  expect(screen.getByLabelText<HTMLInputElement>('API Key').type).toBe('password');
+  expect(screen.getByLabelText<HTMLInputElement>('API Key').value).toBe('synthetic-draft-secret');
+  expect(modelSettingsApi.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
   fireEvent.click(screen.getByLabelText('服务商'));
   fireEvent.click(await screen.findByRole('option', { name: '第二服务' }));
   expect(screen.getByLabelText<HTMLInputElement>('服务地址').value).toBe('https://second.example/v1');
   expect(screen.getByLabelText<HTMLInputElement>('API Key').value).toBe('');
+  expect(screen.getByLabelText<HTMLInputElement>('API Key').type).toBe('password');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(modelSettingsApi.save).toHaveBeenCalled());
   expect(modelSettingsApi.save).toHaveBeenLastCalledWith(

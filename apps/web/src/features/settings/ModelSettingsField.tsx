@@ -1,8 +1,9 @@
-import { useId, useRef, type ReactNode, type RefObject } from 'react';
+import { useId, useRef, type ChangeEvent, type ReactNode, type RefObject } from 'react';
 import { CircleHelp } from 'lucide-react';
 import type { ModelSettingField } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { FieldSelect, FieldSuggestions } from '../../ui/FieldSelect';
+import { SecretInput } from '../../ui/SecretInput';
 type Props = {
   field: ModelSettingField;
   value: string;
@@ -93,21 +94,26 @@ function FieldControl({
         placeholder={placeholderFor(field, cleared)}
       />
     );
-  return (
+  const inputProps = {
+    id,
+    ref: inputRef,
+    className: `${inputClass} min-h-10 read-only:bg-muted/40 read-only:text-muted-foreground`,
+    value,
+    disabled,
+    readOnly: field.readOnly,
+    autoComplete: 'off',
+    spellCheck: false,
+    maxLength: 4096,
+    placeholder: placeholderFor(field, cleared),
+    onChange: (event: ChangeEvent<HTMLInputElement>) => change(event.target.value),
+  };
+  return field.secret ? (
+    <SecretInput {...inputProps} label={field.label} />
+  ) : (
     <input
-      id={id}
-      ref={inputRef}
-      type={field.secret ? 'password' : (field.inputType ?? 'text')}
-      className={`${inputClass} min-h-10 read-only:bg-muted/40 read-only:text-muted-foreground`}
-      value={value}
-      disabled={disabled}
-      readOnly={field.readOnly}
-      autoComplete="off"
-      spellCheck={false}
-      maxLength={4096}
+      {...inputProps}
+      type={field.inputType ?? 'text'}
       {...(field.inputType === 'number' ? { min: 1, step: 1 } : {})}
-      placeholder={placeholderFor(field, cleared)}
-      onChange={(event) => change(event.target.value)}
     />
   );
 }

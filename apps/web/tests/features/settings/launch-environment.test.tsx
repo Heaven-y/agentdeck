@@ -85,6 +85,11 @@ it('启动环境只显示来源，新值显式保存且保存后清空；重启�
   expect(secret.value).toBe('');
   expect(secret.type).toBe('password');
   fireEvent.change(secret, { target: { value: 'synthetic-new-secret' } });
+  const writesBefore = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT').length;
+  fireEvent.click(screen.getByRole('button', { name: '显示API 密钥新值' }));
+  expect(secret.type).toBe('text');
+  expect(secret.value).toBe('synthetic-new-secret');
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(writesBefore);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '重新启动 CLI' }).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '保存环境变量' }));
   await screen.findByText(/启动环境已保存/);
@@ -94,6 +99,7 @@ it('启动环境只显示来源，新值显式保存且保存后清空；重启�
     variables: [{ name: 'OPENAI_API_KEY', mode: 'set', value: 'synthetic-new-secret' }],
   });
   expect(screen.getByLabelText<HTMLInputElement>('API 密钥新值').value).toBe('');
+  expect(screen.getByLabelText<HTMLInputElement>('API 密钥新值').type).toBe('password');
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-new-secret');
   expect(fetchMock.mock.calls.some(([url]) => (url as string).endsWith('/restart'))).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '重新启动 CLI' }));

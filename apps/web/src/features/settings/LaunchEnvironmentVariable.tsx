@@ -1,5 +1,7 @@
 import type { LaunchEnvironmentDocument, LaunchVariableMode } from '@agentdeck/shared/settings';
+import { useId, type ChangeEvent } from 'react';
 import { inputClass } from '../../ui/styles';
+import { SecretInput } from '../../ui/SecretInput';
 
 export type LaunchVariable = LaunchEnvironmentDocument['variables'][number];
 export type LaunchVariableDraft = { mode: LaunchVariableMode; value: string };
@@ -71,26 +73,32 @@ export function LaunchEnvironmentVariable({ variable, draft, encryptionAvailable
 }
 
 function LaunchVariableValue({ variable, draft, encryptionAvailable, disabled, change }: VariableProps) {
+  const id = useId();
   const retainsValue = variable.mode === 'set' && variable.hasValue;
   const secretUnavailable = variable.sensitive && !encryptionAvailable;
+  const inputProps = {
+    id,
+    className: inputClass,
+    'aria-label': `${variable.label}新值`,
+    autoComplete: 'off',
+    spellCheck: false,
+    maxLength: 4096,
+    value: draft?.value ?? '',
+    disabled: disabled || secretUnavailable,
+    placeholder: retainsValue ? '留空保留已保存的值，填写以替换' : '填写新的值',
+    onChange: (event: ChangeEvent<HTMLInputElement>) => change({ value: event.target.value }),
+  };
   return (
-    <label className="block space-y-1 text-sm">
-      <span>新值</span>
-      <input
-        type={variable.sensitive ? 'password' : 'text'}
-        className={inputClass}
-        aria-label={`${variable.label}新值`}
-        autoComplete="off"
-        spellCheck={false}
-        maxLength={4096}
-        value={draft?.value ?? ''}
-        disabled={disabled || secretUnavailable}
-        placeholder={retainsValue ? '留空保留已保存的值，填写以替换' : '填写新的值'}
-        onChange={(event) => change({ value: event.target.value })}
-      />
+    <div className="space-y-1 text-sm">
+      <label htmlFor={id}>新值</label>
+      {variable.sensitive ? (
+        <SecretInput {...inputProps} label={`${variable.label}新值`} />
+      ) : (
+        <input {...inputProps} type="text" />
+      )}
       <span className="block text-xs leading-5 text-muted-foreground">
         {retainsValue ? '已有值不会回填。恢复继承会移除工作台保存的值。' : '单独设置需要填写新值。'}
       </span>
-    </label>
+    </div>
   );
 }
