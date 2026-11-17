@@ -1372,10 +1372,28 @@ it('错误条目可以手动关闭，且只移除目标条目', () => {
       { kind: 'error', id: 'error-2', message: '另一条错误' },
     ],
   });
-  useChat.getState().dismissNotice('error-1');
+  const conversationId = useChat.getState().conversationId;
+  useChat.getState().dismissNotice('error-1', conversationId);
   expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
-  useChat.getState().dismissNotice('missing');
+  useChat.getState().dismissNotice('missing', conversationId);
   expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
+});
+
+it('不同会话的错误编号相同时，只关闭指定会话的提示，切换后仍可关闭该会话提示', () => {
+  useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第一条会话错误' }] });
+  const first = useChat.getState().conversationId;
+  useChat.getState().newSession('codex');
+  const second = useChat.getState().conversationId;
+  useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第二条会话错误' }] });
+
+  useChat.getState().dismissNotice('error-0', second);
+  expect(useChat.getState().items).toEqual([]);
+  expect(useChat.getState().background[first]?.items).toMatchObject([{ kind: 'error', message: '第一条会话错误' }]);
+
+  useChat.getState().openConversation(first);
+  useChat.getState().dismissNotice('error-0', first);
+  expect(useChat.getState().items).toEqual([]);
+  expect(useChat.getState().background[second]?.items).toEqual([]);
 });
 
 it('后台会话里的错误也能关闭，不动当前会话正文', () => {
@@ -1392,7 +1410,7 @@ it('后台会话里的错误也能关闭，不动当前会话正文', () => {
       },
     },
   });
-  useChat.getState().dismissNotice('bg-error');
+  useChat.getState().dismissNotice('bg-error', origin);
   const state = useChat.getState();
   expect(state.background[origin]?.items.some((item) => item.kind === 'error')).toBe(false);
   expect(state.items).toEqual([]);

@@ -13,7 +13,9 @@ export function latestComposerStatistics(items: ChatItem[], running: boolean): S
   if (running) return;
   const start = items.findLastIndex((item) => item.kind === 'user');
   const current = items.slice(start + 1).filter((item): item is StatisticsItem => item.kind === 'statistics');
-  return current.findLast((item) => item.scope === 'turn') ?? current.at(-1);
+  const latest = current.findLast((item) => item.scope === 'turn') ?? current.at(-1);
+  const failed = current.some((item) => item.turnFailed || (item.scope === 'turn' && item.isError));
+  return latest && failed ? { ...latest, isError: true } : latest;
 }
 
 function statisticsHint(item: StatisticsItem | undefined, running: boolean): string {

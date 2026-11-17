@@ -11,7 +11,12 @@ import {
   type AntigravityLaunchSelection,
 } from './model-launch';
 import { AntigravityInvocationError, antigravityInvocationText } from './commands';
-import { antigravityDiagnostic, rateLimitFailure, serviceFailure } from './diagnostics';
+import {
+  additionalServiceDiagnostic,
+  antigravityDiagnostic,
+  rateLimitOnlyFailure,
+  serviceFailure,
+} from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
 import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
@@ -97,6 +102,7 @@ class AntigravityTurn {
   /** 原生结果已经确认时，进程清理与模型回合成功是两个独立状态。 */
   private closingAfterResult = false;
   private cleanupSignalSent = false;
+  private readonly cleanupSignals = new Set<NodeJS.Signals>();
   private readonly preparation = new AbortController();
   private selection?: AntigravityLaunchSelection;
   private nativeSettings?: Awaited<ReturnType<typeof prepareNativeSettings>>;
@@ -168,7 +174,7 @@ class AntigravityTurn {
     child.stderr.on('data', (chunk: Buffer) => this.consume(this.stderr, chunk));
     child.stdin.on('error', () => this.fail('Antigravity 未接收本轮输入。'));
     child.once('error', () => this.fail('Antigravity 进程启动失败，请检查安装与执行路径。'));
-    child.once('close', (code: number | null) => void this.finish(code));
+    child.once('close', (code: number | null, signal: NodeJS.Signals | null) => void this.finish(code, signal));
   }
 
   private consume(lines: AntigravityLines, chunk: Buffer): void {
@@ -245,8 +251,10 @@ class AntigravityTurn {
     // 同一行还包含认证等明确失败时，不能按可重试服务错误暂存。
     if (antigravityDiagnostic(withoutService)?.type === 'error') return false;
     const withoutRateLimit = plain.replace(/\b429\b/g, '');
-    const rateLimitOnly = rateLimitFailure(plain) && !serviceFailure(withoutRateLimit);
-    const other = antigravityDiagnostic(withoutRateLimit);
+    const rateLimitOnly = rateLimitOnlyFailure(plain);
+    const other =
+      antigravityDiagnostic(withoutRateLimit) ??
+      (rateLimitOnly ? undefined : additionalServiceDiagnostic(withoutRateLimit));
     this.rememberService(event, other, rateLimitOnly);
     this.armStall();
     return true;
@@ -289,11 +297,18 @@ class AntigravityTurn {
 
   private kill(signal: NodeJS.Signals): void {
     const sent = this.child?.kill(signal);
-    if (sent && this.closingAfterResult) this.cleanupSignalSent = true;
+    if (sent && this.closingAfterResult) {
+      this.cleanupSignalSent = true;
+      this.cleanupSignals.add(signal);
+    }
   }
 
-  private abnormalExit(code: number | null): boolean {
-    return code !== 0 && !this.cleanupSignalSent;
+  private cleanupExit(code: number | null, signal: NodeJS.Signals | null): boolean {
+    return this.cleanupSignalSent && (code === 0 || (code === null && !!signal && this.cleanupSignals.has(signal)));
+  }
+
+  private abnormalExit(code: number | null, signal: NodeJS.Signals | null): boolean {
+    return code !== 0 && !this.cleanupExit(code, signal);
   }
 
   private flushOutput(): void {
@@ -307,14 +322,14 @@ class AntigravityTurn {
     }
   }
 
-  private async finish(code: number | null): Promise<void> {
+  private async finish(code: number | null, signal: NodeJS.Signals | null = null): Promise<void> {
     if (this.ended || this.finishing) return;
     this.finishing = true;
     try {
       this.flushOutput();
       clearTimeout(this.timer);
       await this.completeResult(code);
-      this.finishTurn(code);
+      this.finishTurn(code, signal);
     } finally {
       this.ended = true;
       await this.nativeSettings?.close().catch(() => undefined);
@@ -322,9 +337,9 @@ class AntigravityTurn {
     }
   }
 
-  private finishTurn(code: number | null): void {
+  private finishTurn(code: number | null, signal: NodeJS.Signals | null): void {
     const result = this.mapper.result;
-    const isError = this.failed || !result || result.isError || this.abnormalExit(code);
+    const isError = this.failed || !result || result.isError || this.abnormalExit(code, signal);
     if (isError) this.reportFailure(result);
     this.input.emit({
       ...(result ?? { type: 'turn_end' as const }),
@@ -347,8 +362,7 @@ class AntigravityTurn {
 
   private async completeResult(code: number | null): Promise<void> {
     const naturalSuccess = code === 0 && !this.failed && !this.cleanupSignalSent && !this.nativeFailure;
-    // stdout 与 stderr 无严格先后；待确认服务故障不能仅凭直播答复消除。
-    if (!this.pendingService) this.mapper.complete(naturalSuccess);
+    // stdout 与 stderr 无严格先后；可复核的结果必须以完整本轮轨迹确认。
     const verified = naturalSuccess ? await this.reviewCompletion() : false;
     this.emitResult(naturalSuccess, verified);
   }
@@ -356,8 +370,8 @@ class AntigravityTurn {
   private emitResult(naturalSuccess: boolean, verified: boolean): void {
     const mayComplete = naturalSuccess && !this.failed && (!this.pendingService || verified);
     const diagnostics = this.mapper.complete(mayComplete, verified);
-    // 已有服务诊断时优先保留该原因，不叠加可能属于历史轮的累计结果错误。
-    if (!this.pendingService) for (const event of diagnostics) this.notice(event);
+    // 已有明确诊断时优先保留该原因，不叠加累计结果的归属不明提示。
+    if (!this.pendingService && !this.reportedError) for (const event of diagnostics) this.notice(event);
   }
 
   private reviewCompletion(): Promise<boolean> {

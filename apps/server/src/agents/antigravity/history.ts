@@ -1,11 +1,12 @@
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { mediaReference } from '../common/native-media';
 import { managementObject as object, managementText as text, type ManagementRecord } from './management-rpc';
-import { contextEvent, historyTiming, stepUsage } from './metrics';
+import { contextEvent, historyResponseTiming, historyTiming, stepUsage } from './metrics';
 import { historyGeneration } from './generation-timing';
 
 const DONE = 'CORTEX_STEP_STATUS_DONE';
 const FAILED = new Set(['CORTEX_STEP_STATUS_ERROR', 'CORTEX_STEP_STATUS_INVALID']);
+const CANCELLED = new Set(['CORTEX_STEP_STATUS_CANCELED', 'CORTEX_STEP_STATUS_INTERRUPTED']);
 const TOOL_TYPES = new Set([
   'CORTEX_STEP_TYPE_RUN_COMMAND',
   'CORTEX_STEP_TYPE_VIEW_FILE',
@@ -126,7 +127,7 @@ function checkpoint(step: ManagementRecord): AgentEvent[] {
 function activityStatus(status: unknown): Extract<AgentEvent, { type: 'activity' }>['status'] {
   if (status === DONE) return 'completed';
   if (FAILED.has(text(status))) return 'failed';
-  if (['CORTEX_STEP_STATUS_CANCELED', 'CORTEX_STEP_STATUS_INTERRUPTED'].includes(text(status))) return 'cancelled';
+  if (CANCELLED.has(text(status))) return 'cancelled';
   if (
     [
       'CORTEX_STEP_STATUS_RUNNING',
@@ -155,14 +156,32 @@ function activity(step: ManagementRecord, index: number): AgentEvent[] {
   ];
 }
 
-function response(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
+function responseContent(step: ManagementRecord): string {
   const planner = object(step.plannerResponse);
-  const content = text(planner.modifiedResponse) || text(planner.response);
+  return text(planner.modifiedResponse) || text(planner.response);
+}
+
+/** 后续完整答复可恢复步骤取消；明确失败另行保留。 */
+function pendingCancellation(step: ManagementRecord, previous: boolean): boolean {
+  if (CANCELLED.has(text(step.status))) return true;
+  return step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.status === DONE && !!responseContent(step).trim()
+    ? false
+    : previous;
+}
+
+function response(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
+  const content = responseContent(step);
   const events: AgentEvent[] = content ? [{ type: 'text', delta: content }] : [];
   const usage = stepUsage(object(step.metadata).modelUsage);
   if (step.status === DONE && usage) {
     const generation = historyGeneration(trajectory, step, index, usage);
-    events.push({ type: 'step_usage', id: `agy-step-${index}`, usage, ...(generation ? { generation } : {}) });
+    events.push({
+      type: 'step_usage',
+      id: `agy-step-${index}`,
+      usage,
+      ...historyResponseTiming(step.metadata),
+      ...(generation ? { generation } : {}),
+    });
   }
   return events;
 }
@@ -208,21 +227,25 @@ export function antigravityHistory(
   const events: AgentEvent[] = [];
   let forkPoint: string | undefined;
   let failed = false;
+  let cancelled = false;
   let started = false;
   list(trajectory.steps).forEach((value, index) => {
     const step = object(value);
     if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && started) {
-      events.push({ type: 'turn_end', isError: failed, ...(forkPoint ? { forkPoint } : {}) });
+      events.push({ type: 'turn_end', isError: failed || cancelled, ...(forkPoint ? { forkPoint } : {}) });
       forkPoint = undefined;
       failed = false;
+      cancelled = false;
     }
     started = true;
-    if (step.status === DONE && step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') forkPoint = String(index);
+    const status = text(step.status);
+    if (status === DONE && step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') forkPoint = String(index);
     else forkPoint = undefined;
-    failed ||= FAILED.has(text(step.status)) || !!errorMessage(step);
+    cancelled = pendingCancellation(step, cancelled);
+    failed ||= FAILED.has(status) || !!errorMessage(step);
     events.push(...stepEvents(step, index, options.preserveToolContent ?? false, trajectory));
   });
-  if (started) events.push({ type: 'turn_end', isError: failed, ...(forkPoint ? { forkPoint } : {}) });
+  if (started) events.push({ type: 'turn_end', isError: failed || cancelled, ...(forkPoint ? { forkPoint } : {}) });
   const last = object(list(trajectory.generatorMetadata).at(-1));
   const context = object(object(last.chatModel).chatStartMetadata).contextWindowMetadata;
   events.push(...contextEvent(context));

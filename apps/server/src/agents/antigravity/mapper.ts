@@ -1,7 +1,13 @@
 import path from 'node:path';
 import { NativeSessionIdSchema, type AgentEvent } from '@agentdeck/shared/conversation';
 import { stepDuration, stepUsage } from './metrics';
-import { ANTIGRAVITY_PERMISSION_NOTICE, antigravityDiagnostic, rateLimitFailure } from './diagnostics';
+import {
+  ANTIGRAVITY_PERMISSION_NOTICE,
+  additionalServiceDiagnostic,
+  antigravityDiagnostic,
+  rateLimitFailure,
+  rateLimitOnlyFailure,
+} from './diagnostics';
 import type { CompletionBoundary } from './completion';
 
 type RecordValue = Record<string, unknown>;
@@ -23,7 +29,7 @@ const terminalStepFailed = (type: string, state: string, failed: boolean) =>
   state === 'CANCELLED' || (failed && (state === 'ERROR' || (type === 'tool' && state === 'DONE')));
 function currentStepFailed(step: RecordValue): boolean {
   const error = record(record(step.tool_info).error);
-  // TOOL_ERROR 可由模型继续处理；保留工具失败，仅在后续最终答复和自然成功退出齐备时纠正旧结果。
+  // TOOL_ERROR 可由模型继续处理；工具自身仍保留失败状态。
   if (
     step.step_type === 'tool' &&
     toolFinished(step.state) &&
@@ -39,14 +45,21 @@ function currentStepFailed(step: RecordValue): boolean {
   );
 }
 
-function mayContainHistoricalError(result: RecordValue): boolean {
-  return (
-    result.status === 'ERROR' &&
-    !!text(result.error).trim() &&
-    !!text(result.response).trim() &&
-    Number.isSafeInteger(result.num_turns) &&
-    Number(result.num_turns) > 1
-  );
+function cumulativeResultDiagnostic(diagnostic?: DiagnosticEvent): DiagnosticEvent {
+  const message = diagnostic?.type === 'error' ? diagnostic.message : '';
+  const code = message.match(/\bHTTP [45]\d{2}\b/)?.[0];
+  return {
+    type: 'error',
+    message: `Antigravity 的累计结果包含${code ? ` ${code}` : '错误'}，无法确认是否属于本轮；请核对原生会话。`,
+  };
+}
+
+function resultDiagnosticFor(resultError: string, rateLimited: boolean): DiagnosticEvent | undefined {
+  const other = rateLimited ? resultError : resultError.replace(/\b429\b/g, '');
+  const diagnostic = antigravityDiagnostic(other);
+  if (diagnostic) return diagnostic;
+  if (rateLimited) return antigravityDiagnostic(resultError);
+  return rateLimitFailure(resultError) ? additionalServiceDiagnostic(other) : undefined;
 }
 
 /** 按官方 headless 的 event/payload 结构映射，不能把它当成 Claude stream-json。 */
@@ -60,13 +73,11 @@ export class AntigravityMapper {
   private checkpoints = new Set<number>();
   private subagents = new Map<number, string>();
   private inputIndex?: number;
-  private latestStep?: { index: number; type: string; state: string; hasText: boolean };
-  private currentFailure = false;
+  private latestIndex?: number;
   private uncertainBoundary = false;
   private terminalFailure = false;
   private errorIndices = new Set<number>();
   private rateLimitedResult = false;
-  private historicalErrorPossible = false;
   private resultReviewable = false;
   private resultDiagnostic?: DiagnosticEvent;
   result?: Extract<AgentEvent, { type: 'turn_end' }>;
@@ -128,7 +139,6 @@ export class AntigravityMapper {
 
   private observeCompletion(step: RecordValue): void {
     if (!Number.isSafeInteger(step.step_index) || Number(step.step_index) < 0) {
-      this.currentFailure = true;
       this.uncertainBoundary = true;
       return;
     }
@@ -138,17 +148,15 @@ export class AntigravityMapper {
     this.observeInput(index, type, state);
     // 输入边界前已出现步骤时，无法确定当前轮范围，后续不再纠正累计失败。
     if (this.inputIndex === undefined) {
-      this.currentFailure = true;
       this.uncertainBoundary = true;
       return;
     }
     if (index <= this.inputIndex) return;
     const failed = currentStepFailed(step);
-    this.currentFailure ||= failed;
     // 直播已确认的终态失败不能被同一步不一致的只读快照覆盖。
     this.terminalFailure ||= terminalStepFailed(type, state, failed);
     if (type === 'error_message') this.errorIndices.add(index);
-    this.observeLatest(index, type, state, step.text_delta);
+    this.latestIndex = Math.max(this.latestIndex ?? -1, index);
   }
 
   private observeInput(index: number, type: string, state: string): void {
@@ -156,53 +164,24 @@ export class AntigravityMapper {
       if (this.inputIndex === undefined) this.inputIndex = index;
       // 同一输入的重复事件不重置状态；多个不同输入边界不足以确认本轮。
       else if (this.inputIndex !== index) {
-        this.currentFailure = true;
         this.uncertainBoundary = true;
       }
     }
   }
 
-  private observeLatest(index: number, type: string, state: string, delta: unknown): void {
-    if (this.latestStep && index < this.latestStep.index) return;
-    const hasText = type === 'agent_response' && !!text(delta).trim();
-    this.latestStep = {
-      index,
-      type,
-      state,
-      hasText: hasText || (this.latestStep?.index === index && this.latestStep.hasText),
-    };
-  }
-
-  private completedResponse(): boolean {
-    return (
-      !!this.expectedId &&
-      this.inputIndex !== undefined &&
-      this.inputIndex > 0 &&
-      !this.currentFailure &&
-      this.latestStep?.type === 'agent_response' &&
-      this.latestStep.state === 'DONE' &&
-      this.latestStep.hasText
-    );
-  }
-
-  /** 原生累计 result 会保留历史 ERROR；只以本轮完整答复和自然退出的共同证据纠正。 */
+  /** 未经原生完整轨迹复核，不以直播答复推断累计结果是否完成。 */
   complete(naturalSuccess: boolean, verified = false): DiagnosticEvent[] {
-    const completed = verified || this.completedHistoricalResponse();
-    if (this.result && naturalSuccess && completed) this.result = { ...this.result, isError: false };
+    if (this.result && naturalSuccess && verified) this.result = { ...this.result, isError: false };
     return this.result?.isError && this.resultDiagnostic ? [this.resultDiagnostic] : [];
-  }
-
-  private completedHistoricalResponse(): boolean {
-    return !this.rateLimitedResult && this.completedResponse() && this.historicalErrorPossible;
   }
 
   completionBoundary(): CompletionBoundary | undefined {
     if (!this.canReviewCompletion()) return undefined;
-    if (this.inputIndex === undefined || !this.latestStep || !this.sessionId) return undefined;
+    if (this.inputIndex === undefined || this.latestIndex === undefined || !this.sessionId) return undefined;
     return {
       sessionId: this.sessionId,
       inputIndex: this.inputIndex,
-      latestIndex: this.latestStep.index,
+      latestIndex: this.latestIndex,
       errorIndices: [...this.errorIndices],
       rateLimitedResult: this.rateLimitedResult,
     };
@@ -305,13 +284,27 @@ export class AntigravityMapper {
   }
 
   private prepareResult(result: RecordValue): AgentEvent[] {
-    if (result.status !== 'SUCCESS') this.resultDiagnostic = antigravityDiagnostic(text(result.error));
-    this.rateLimitedResult = rateLimitFailure(text(result.error));
+    const resultError = text(result.error).trim();
+    this.rateLimitedResult = rateLimitOnlyFailure(resultError);
+    if (result.status !== 'SUCCESS') {
+      const diagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
+      this.resultDiagnostic = this.isResumedResultError(result, resultError)
+        ? cumulativeResultDiagnostic(diagnostic)
+        : diagnostic;
+    }
     const hasDeniedActions = Array.isArray(result.denied_actions) && result.denied_actions.length > 0;
-    this.historicalErrorPossible =
-      !hasDeniedActions && result.conversation_id === this.expectedId && mayContainHistoricalError(result);
     this.resultReviewable = !hasDeniedActions && this.reviewableResult(result);
     return hasDeniedActions ? [{ type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE }] : [];
+  }
+
+  private isResumedResultError(result: RecordValue, resultError: string): boolean {
+    return (
+      this.initialized &&
+      !!this.expectedId &&
+      result.conversation_id === this.expectedId &&
+      result.status === 'ERROR' &&
+      !!resultError
+    );
   }
 
   private reviewableResult(result: RecordValue): boolean {
@@ -320,6 +313,7 @@ export class AntigravityMapper {
       (!!this.expectedId || this.rateLimitedResult || this.errorIndices.size > 0) &&
       result.conversation_id === this.sessionId &&
       result.status === 'ERROR' &&
+      (!text(result.error).trim() || this.rateLimitedResult) &&
       // 续接的累计错误可能没有正文；只开放只读复核，不直接判为成功。
       reviewableError(result.error, !!this.expectedId)
     );

@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { AgentBadge } from '../../../src/features/sessions/AgentBadge';
 import { SessionHeader } from '../../../src/features/sessions/SessionHeader';
 import { SessionTimeline } from '../../../src/features/sessions/SessionTimeline';
+import { useChat } from '../../../src/features/chat/chat-store';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useChat.setState(useChat.getInitialState(), true);
+});
 
 const userEvent: AgentEvent = { type: 'user_message', text: '检查这个脚本' };
 const assistantEvent: AgentEvent = { type: 'text', delta: '已检查' };
@@ -15,6 +19,19 @@ it('渲染用户与助手消息', () => {
   render(<SessionTimeline events={[userEvent, assistantEvent]} />);
   expect(screen.getByText('检查这个脚本')).toBeTruthy();
   expect(screen.getByText('已检查')).toBeTruthy();
+});
+
+it('关闭只读历史的错误只影响该处展示，不误删主会话同编号错误', () => {
+  const items = [{ kind: 'error' as const, id: 'error-0', message: '主会话错误' }];
+  useChat.setState({ items });
+  const view = render(<SessionTimeline events={[{ type: 'error', message: '只读历史错误' }]} />);
+
+  fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
+
+  expect(screen.queryByText('只读历史错误')).toBeNull();
+  expect(useChat.getState().items).toEqual(items);
+  view.rerender(<SessionTimeline events={[{ type: 'error', message: '只读历史错误' }]} />);
+  expect(screen.getByText('只读历史错误')).toBeTruthy();
 });
 
 it('把连续文本增量合并成一条助手消息，并让流式状态落定', () => {

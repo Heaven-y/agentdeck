@@ -41,6 +41,54 @@ export const serviceFailure = (value: string): boolean =>
 export const rateLimitFailure = (value: string): boolean =>
   /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*429\b/i.test(stripVTControlCharacters(value));
 
+function agyShortError(value: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const data = parsed as Record<string, unknown>;
+    return Object.keys(data).length === 1 && typeof data.short_error === 'string' ? data.short_error.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 仅已确认的独立 429 或原生限流格式可作为恢复证据；未知附文保留失败。 */
+export function rateLimitOnlyFailure(value: string): boolean {
+  let plain = stripVTControlCharacters(value).trim();
+  if (!rateLimitFailure(plain)) return false;
+  for (let depth = 0; depth < 4; depth++) {
+    if (/^(?:error|http|status(?:[_ ]code)?)[\s:="']*429\.?$/i.test(plain)) return true;
+    if (
+      /^api\s+error\s*\(attempt\s+\d+\)\s*:\s*error[\s:="']*429\s*,\s*message\s*:\s*upstream\s+rate\s+limit\s+exceeded\s*,\s*please\s+retry\s+later\.?$/i.test(
+        plain,
+      )
+    )
+      return true;
+    const outer = /^error\s*:\s*/i.exec(plain);
+    if (outer) {
+      plain = plain.slice(outer[0].length).trim();
+      continue;
+    }
+    const agy = /^AGY_ERROR\s*:\s*/i.exec(plain);
+    if (!agy) return false;
+    const shortError = agyShortError(plain.slice(agy[0].length));
+    if (!shortError) return false;
+    plain = shortError;
+  }
+  return false;
+}
+
+/** 混合故障中的其他状态码只输出已脱敏的 HTTP 数字。 */
+export function additionalServiceDiagnostic(value: string): Extract<AgentEvent, { type: 'error' }> {
+  const code = value.match(/\b(?:error|http(?:\/\d(?:\.\d)?)?|status(?:[_ ]code)?|code)[\s:="']*([45]\d{2})\b/i)?.[1];
+  return {
+    type: 'error',
+    message: code
+      ? `Antigravity 的模型服务返回 HTTP ${code}，本轮未完成。请检查当前模型服务或稍后重试。`
+      : 'Antigravity 的模型服务还返回其他错误，本轮未完成。请检查当前模型服务或稍后重试。',
+  };
+}
+
 /** 只识别明确的原生错误或模式变化；固定文案不拼接诊断中的 URL、参数或凭据。 */
 export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'run'): DiagnosticEvent | undefined {
   const line = stripVTControlCharacters(value).trim();

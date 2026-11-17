@@ -4,6 +4,7 @@ import { forwardRef, StrictMode, useImperativeHandle, type ReactNode, type Ref }
 import { afterEach, expect, it, vi } from 'vitest';
 import { ChatTimeline } from '../../../src/features/chat/ChatTimeline';
 import type { ChatItem } from '../../../src/features/chat/chat-reducer';
+import { useChat } from '../../../src/features/chat/chat-store';
 
 const host: {
   scroll: ReturnType<typeof vi.fn>;
@@ -34,8 +35,47 @@ vi.mock('react-virtuoso', () => ({
 }));
 afterEach(() => {
   cleanup();
+  useChat.setState(useChat.getInitialState(), true);
   vi.clearAllMocks();
   vi.restoreAllMocks();
+});
+
+it('只读错误关闭后虚拟列表重新挂载仍隐藏，且不影响主会话同编号错误', () => {
+  const parent = [{ kind: 'error' as const, id: 'error-0', message: '主会话错误' }];
+  const child: ChatItem = { kind: 'error', id: 'error-0', message: '只读错误' };
+  useChat.setState({ items: parent });
+  const view = render(<ChatTimeline items={[child]} running={false} />);
+
+  fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
+  expect(screen.queryByText('只读错误')).toBeNull();
+  expect(useChat.getState().items).toEqual(parent);
+  view.rerender(<ChatTimeline items={[]} running={false} />);
+  view.rerender(<ChatTimeline items={[child]} running={false} />);
+  expect(screen.queryByText('只读错误')).toBeNull();
+});
+
+it('会话切换后关闭当前错误，不影响后台会话的同编号错误', () => {
+  useChat.setState({
+    workspaceId: 'project',
+    items: [{ kind: 'error', id: 'error-0', message: '第一条会话错误' }],
+  });
+  const first = useChat.getState().conversationId;
+  useChat.getState().newSession('codex');
+  useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第二条会话错误' }] });
+
+  function CurrentTimeline() {
+    const items = useChat((state) => state.items);
+    return <ChatTimeline items={items} running={false} />;
+  }
+  render(<CurrentTimeline />);
+  fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
+  expect(useChat.getState().items).toEqual([]);
+  expect(useChat.getState().background[first]?.items).toMatchObject([{ message: '第一条会话错误' }]);
+
+  act(() => useChat.getState().openConversation(first));
+  expect(screen.getByText('第一条会话错误')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
+  expect(useChat.getState().items).toEqual([]);
 });
 
 it('严格模式下按实际视口高亮消息，不把上方预渲染条目当作当前位置', async () => {

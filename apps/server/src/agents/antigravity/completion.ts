@@ -1,6 +1,6 @@
 import { managementObject as object, managementText as text, type ManagementRecord } from './management-rpc';
 import type { AntigravitySessionManagement } from './session-management-types';
-import { rateLimitFailure } from './diagnostics';
+import { rateLimitOnlyFailure } from './diagnostics';
 
 export type CompletionBoundary = {
   sessionId: string;
@@ -56,7 +56,7 @@ function rateLimitedStep(step: ManagementRecord): boolean {
     step.type === 'CORTEX_STEP_TYPE_ERROR_MESSAGE' &&
     step.status === DONE &&
     !step.error &&
-    rateLimitFailure(text(object(object(step.errorMessage).error).userErrorMessage))
+    rateLimitOnlyFailure(text(object(object(step.errorMessage).error).userErrorMessage))
   );
 }
 

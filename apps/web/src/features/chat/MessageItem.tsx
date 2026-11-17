@@ -1,5 +1,5 @@
 import { CircleAlert, X } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import type { ChatItem } from './chat-reducer';
 import { useChat } from './chat-store';
@@ -15,6 +15,37 @@ import { ActivityCard } from './ActivityCard';
 import { SessionReferenceText, sessionMarkdownComponents, sessionMarkdownUrl } from './SessionReferenceText';
 import { sessionRemarkPlugins } from './session-reference-markdown';
 import { AsyncQuestionCard } from './AsyncQuestionCard';
+
+type ErrorItem = Extract<ChatItem, { kind: 'error' }>;
+// 独立只读历史不属于 chat store；弱引用使关闭状态随条目回收，并跨虚拟列表重挂载保留。
+const dismissedReadOnlyErrors = new WeakSet<ErrorItem>();
+
+function ErrorMessage({ item }: { item: ErrorItem }) {
+  const owner = useChat((state) => (state.items.includes(item) ? state.conversationId : undefined));
+  const [, setDismissed] = useState<ErrorItem>();
+  if (owner === undefined && dismissedReadOnlyErrors.has(item)) return null;
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded-xl bg-destructive/8 px-3 py-2 text-[13px] leading-6">
+      <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <span className="min-w-0 flex-1 break-words text-destructive-foreground">{item.message}</span>
+      <button
+        type="button"
+        aria-label="关闭这条错误"
+        title="关闭"
+        className="-m-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        onClick={() => {
+          if (owner !== undefined) useChat.getState().dismissNotice(item.id, owner);
+          else {
+            dismissedReadOnlyErrors.add(item);
+            setDismissed(item);
+          }
+        }}
+      >
+        <X aria-hidden className="size-3.5" />
+      </button>
+    </div>
+  );
+}
 
 function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant' }> }) {
   return (
@@ -83,24 +114,7 @@ export const MessageItem = memo(function MessageItem({
     case 'interaction':
       return <InteractionCard item={item} />;
     case 'error':
-      return (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-xl bg-destructive/8 px-3 py-2 text-[13px] leading-6"
-        >
-          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <span className="min-w-0 flex-1 break-words text-destructive-foreground">{item.message}</span>
-          <button
-            type="button"
-            aria-label="关闭这条错误"
-            title="关闭"
-            className="-m-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={() => useChat.getState().dismissNotice(item.id)}
-          >
-            <X aria-hidden className="size-3.5" />
-          </button>
-        </div>
-      );
+      return <ErrorMessage item={item} />;
     default:
       return <MetadataMessage item={item} />;
   }

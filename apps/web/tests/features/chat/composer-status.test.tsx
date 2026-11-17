@@ -5,7 +5,9 @@ import { modelSettingsApi } from '../../../src/features/settings/model-settings-
 import { queryClient } from '../../../src/lib/query-client';
 import { ComposerStatus, latestComposerStatistics } from '../../../src/features/chat/ComposerStatus';
 import { useChat } from '../../../src/features/chat/chat-store';
-import type { ChatItem } from '../../../src/features/chat/chat-reducer';
+import { historyItems, type ChatItem } from '../../../src/features/chat/chat-reducer';
+import { StatisticsLine } from '../../../src/features/chat/StatisticsLine';
+import { antigravityHistory } from '../../../../server/src/agents/antigravity/history';
 
 const statistics: Extract<ChatItem, { kind: 'statistics' }> = {
   kind: 'statistics',
@@ -33,6 +35,102 @@ it('仅显示当前用户轮次的已完成统计，运行中或新轮缺值不�
     usage: { ...statistics.usage!, scope: 'step' as const },
   };
   expect(latestComposerStatistics([...first, { kind: 'user', id: 'two', text: '第二轮' }, step], false)).toBe(step);
+});
+
+function antigravityTurn(outcome: 'success' | 'error' | 'cancelled' | 'interrupted') {
+  const done = 'CORTEX_STEP_STATUS_DONE';
+  const tail =
+    outcome === 'error'
+      ? [
+          {
+            type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE',
+            status: done,
+            errorMessage: { shouldShowUser: true, error: { userErrorMessage: '示例错误' } },
+          },
+        ]
+      : outcome === 'success'
+        ? []
+        : [
+            {
+              type: 'CORTEX_STEP_TYPE_NEW_ACTIVITY',
+              status: outcome === 'cancelled' ? 'CORTEX_STEP_STATUS_CANCELED' : 'CORTEX_STEP_STATUS_INTERRUPTED',
+            },
+          ];
+  return [
+    { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: done, userInput: { query: '示例请求' } },
+    {
+      type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+      status: done,
+      plannerResponse: { response: '示例回复' },
+      metadata: {
+        createdAt: '2026-03-01T04:00:00Z',
+        finishedGeneratingAt: '2026-03-01T04:00:02Z',
+        modelUsage: { inputTokens: '100', outputTokens: '20' },
+      },
+    },
+    ...tail,
+  ];
+}
+
+it.each([
+  ['失败', 'error'],
+  ['取消', 'cancelled'],
+  ['中断', 'interrupted'],
+] as const)('历史回复步骤完成后本轮%s：页脚隐藏速度，步骤统计保留', (_label, outcome) => {
+  const events = antigravityHistory({ steps: antigravityTurn(outcome) });
+  expect(events.findLast((event) => event.type === 'turn_end')).toMatchObject({ isError: true });
+  expect(events.filter((event) => event.type === 'error')).toHaveLength(outcome === 'error' ? 1 : 0);
+  const items = historyItems(events);
+  const step = items.find((item) => item.kind === 'statistics' && item.scope === 'step');
+  if (!step || step.kind !== 'statistics') throw new Error('缺少步骤统计');
+  useChat.setState({ items: items.filter((item) => item.kind !== 'error') });
+  render(
+    <>
+      <ComposerStatus />
+      <StatisticsLine statistics={step} />
+    </>,
+  );
+  const footer = screen.getByRole('button', { name: '本轮统计详情' });
+  expect(footer.textContent).toContain('— tok/s');
+  expect(footer.getAttribute('title')).toBe('本轮未成功完成，不计算平均速度');
+  expect(screen.getByText('步骤平均 10.0 tok/s')).toBeTruthy();
+});
+
+it('历史失败轮不影响下一成功轮的页脚速度', () => {
+  const events = antigravityHistory({ steps: [...antigravityTurn('error'), ...antigravityTurn('success')] });
+  const items = historyItems(events);
+  useChat.setState({ items });
+  render(<ComposerStatus />);
+  expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('10.0 tok/s');
+});
+
+it('历史工具取消后仍有完整回复时，按成功回合显示页脚速度', () => {
+  const [user, response] = antigravityTurn('success');
+  const cancelled = { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', status: 'CORTEX_STEP_STATUS_CANCELED' };
+  const events = antigravityHistory({ steps: [user, cancelled, response] });
+  expect(events.findLast((event) => event.type === 'turn_end')).toMatchObject({ isError: false });
+  expect(events.some((event) => event.type === 'error')).toBe(false);
+  useChat.setState({ items: historyItems(events) });
+  render(<ComposerStatus />);
+  expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('10.0 tok/s');
+});
+
+it('取消后的空回复不算恢复，既有错误也不被后续完整回复抹除', () => {
+  const [user, response] = antigravityTurn('success');
+  const cancelled = { type: 'CORTEX_STEP_TYPE_RUN_COMMAND', status: 'CORTEX_STEP_STATUS_CANCELED' };
+  const failure = {
+    type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    errorMessage: { shouldShowUser: true, error: { userErrorMessage: '示例错误' } },
+  };
+  const empty = { ...response, plannerResponse: { response: '  ' } };
+  for (const steps of [
+    [user, cancelled, empty],
+    [user, failure, cancelled, response],
+  ]) {
+    const events = antigravityHistory({ steps });
+    expect(events.findLast((event) => event.type === 'turn_end')).toMatchObject({ isError: true });
+  }
 });
 
 it('底部摘要保留上下文与 tok/s，token 明细按需展开，运行中隐藏旧统计', async () => {

@@ -31,7 +31,7 @@ export type ChatItem =
       resolved?: InteractionResolution;
       responding?: boolean;
     }
-  | ({ kind: 'statistics'; id: string; nativeId?: string } & ChatStatistics)
+  | ({ kind: 'statistics'; id: string; nativeId?: string; turnFailed?: boolean } & ChatStatistics)
   | (Omit<Extract<AgentEvent, { type: 'activity' }>, 'type'> & {
       kind: 'activity';
       nativeId?: string;
@@ -230,10 +230,21 @@ function updateTool(
   });
 }
 
+function failedTurnFlag(item: ChatItem | undefined): { turnFailed?: boolean } {
+  return item?.kind === 'statistics' && item.turnFailed ? { turnFailed: true } : {};
+}
+
 function updateStepStatistics(items: ChatItem[], event: Extract<AgentEvent, { type: 'step_usage' }>): ChatItem[] {
   const index = currentNativeItem(items, 'statistics', event.id);
   const id = index < 0 ? nextId(items, 'step-statistics') : items[index]!.id;
-  const statistics: ChatItem = { kind: 'statistics', id, nativeId: event.id, scope: 'step', usage: event.usage };
+  const statistics: ChatItem = {
+    kind: 'statistics',
+    id,
+    nativeId: event.id,
+    scope: 'step',
+    usage: event.usage,
+    ...failedTurnFlag(items[index]),
+  };
   if (finiteCount(event.durationMs)) statistics.durationMs = event.durationMs;
   if (event.generation && finiteCount(event.generation.durationMs) && event.generation.durationMs > 0)
     statistics.generation = {
@@ -260,7 +271,7 @@ function finishActivity(item: ChatItem): ChatItem {
 }
 
 function finishTurn(items: ChatItem[], event: Extract<AgentEvent, { type: 'turn_end' }>): ChatItem[] {
-  const finished = finishStatistics(finishItems(items), event);
+  const finished = markStatisticsFailure(finishStatistics(finishItems(items), event), event.isError);
   const pointId = event.forkPoint;
   if (!pointId || !NativeSessionIdSchema.safeParse(pointId).success) return finished;
   if (items.some((item) => item.kind === 'fork-point' && item.pointId === pointId)) return finished;
@@ -269,7 +280,7 @@ function finishTurn(items: ChatItem[], event: Extract<AgentEvent, { type: 'turn_
 
 function finishStatistics(items: ChatItem[], event: Extract<AgentEvent, { type: 'turn_end' }>): ChatItem[] {
   const existing = lastTurnStatistics(items);
-  if (!finiteCount(event.durationMs) && !event.usage) return markStatisticsFailure(items, existing, event.isError);
+  if (!finiteCount(event.durationMs) && !event.usage) return items;
   const statistics: ChatItem = {
     ...existing,
     kind: 'statistics',
@@ -281,9 +292,14 @@ function finishStatistics(items: ChatItem[], event: Extract<AgentEvent, { type: 
   return existing ? items.map((item) => (item === existing ? statistics : item)) : [...items, statistics];
 }
 
-function markStatisticsFailure(items: ChatItem[], existing: ChatItem | undefined, isError: boolean): ChatItem[] {
-  if (!existing || !isError) return items;
-  return items.map((item) => (item === existing ? { ...item, isError: true } : item));
+/** 回合未完成只影响页脚摘要，不把已完成的模型步骤标成失败。 */
+function markStatisticsFailure(items: ChatItem[], isError: boolean): ChatItem[] {
+  if (!isError) return items;
+  const start = items.findLastIndex((item) => item.kind === 'user');
+  return items.map((item, index) => {
+    if (index <= start || item.kind !== 'statistics') return item;
+    return item.scope === 'turn' ? { ...item, isError: true } : { ...item, turnFailed: true };
+  });
 }
 
 function lastTurnStatistics(items: ChatItem[]): Extract<ChatItem, { kind: 'statistics' }> | undefined {

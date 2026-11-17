@@ -58,6 +58,38 @@ export function historyTiming(value: unknown): { durationMs?: number; timingSour
   return { durationMs: end - start, timingSource: 'native' };
 }
 
+function responseObjectTimestamp(value: unknown): number | undefined {
+  const parts = object(value);
+  const seconds = tokenCount(parts.seconds);
+  if (seconds === undefined || !Number.isSafeInteger(seconds * 1000)) return;
+  if (parts.nanos !== undefined && tokenCount(parts.nanos) === undefined) return;
+  return timestamp(value);
+}
+
+function responseTimestamp(value: unknown): number | undefined {
+  if (typeof value !== 'string') return responseObjectTimestamp(value);
+  const match =
+    /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d{1,9}))?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(
+      value,
+    );
+  if (!match) return;
+  const day = Date.parse(`${match[1]}T00:00:00Z`);
+  if (!Number.isFinite(day) || new Date(day).toISOString().slice(0, 10) !== match[1]) return;
+  const time = timestamp(value);
+  if (time === undefined) return;
+  const nanos = Number((match[2] ?? '').padEnd(9, '0'));
+  return time + (nanos % 1e6) / 1e6;
+}
+
+/** 回复创建至生成结束是步骤耗时，不使用工具起止或流式生成耗时代替。 */
+export function historyResponseTiming(value: unknown): { durationMs?: number; timingSource?: 'native' } {
+  const metadata = object(value);
+  const start = responseTimestamp(metadata.createdAt);
+  const end = responseTimestamp(metadata.finishedGeneratingAt);
+  if (start === undefined || end === undefined || end <= start) return {};
+  return { durationMs: end - start, timingSource: 'native' };
+}
+
 export function contextEvent(value: unknown): AgentEvent[] {
   const context = object(value);
   const used = tokenCount(context.estimatedTokensUsed);

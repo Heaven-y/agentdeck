@@ -526,7 +526,7 @@ describe('Antigravity 原生对话运行器', () => {
     expect(f.events.some((event) => event.type === 'error')).toBe(false);
     expect(f.child.kill).toHaveBeenCalledWith('SIGKILL');
     expect(f.events.some((event) => event.type === 'turn_end')).toBe(false);
-    f.child.emit('close', null);
+    f.child.emit('close', null, 'SIGKILL');
     await f.handle.done;
     expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: !accepted });
   });
