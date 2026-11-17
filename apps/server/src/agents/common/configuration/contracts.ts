@@ -4,6 +4,7 @@ import type {
   LaunchEnvironmentInput,
   NativeModelSettingsDocument,
   NativeModelSettingsInput,
+  ModelSecretInput,
 } from '@agentdeck/shared/settings';
 import type { ConfigObject } from './fields';
 import type { Builder, ResourceContext } from './resources';
@@ -28,6 +29,7 @@ export type CliConfiguration = {
     config: ConfigObject,
     snapshot?: EnvironmentSnapshot,
   ): Pick<NativeModelSettingsDocument, 'fields' | 'providers' | 'warnings'>;
+  readSecret(config: ConfigObject, input: ModelSecretInput, snapshot?: EnvironmentSnapshot): string;
   patch(content: string, config: ConfigObject, changes: NativeModelSettingsInput['changes']): string;
   readEnvironment(environment?: ModelSettingsEnvironment): Promise<EnvironmentSnapshot | undefined>;
   prepare(

@@ -234,12 +234,15 @@ function LaunchVariables({
   const common = document.variables.filter((variable) => !advanced.includes(variable));
   const renderVariable = (variable: LaunchVariable) => (
     <LaunchEnvironmentVariable
-      key={variable.name}
+      key={`${document.revision}:${variable.name}`}
       variable={variable}
       draft={draft[variable.name]}
       encryptionAvailable={document.encryptionAvailable}
       disabled={disabled}
       change={(patch) => change(variable, patch)}
+      readSecret={(signal) =>
+        settingsApi.readLaunchSecret(document.agent, { revision: document.revision, name: variable.name }, signal)
+      }
     />
   );
   return (

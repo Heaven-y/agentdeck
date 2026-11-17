@@ -1,5 +1,5 @@
 import { AgentKindSchema, type AgentKind } from '@agentdeck/shared/conversation';
-import { LaunchEnvironmentInputSchema } from '@agentdeck/shared/settings';
+import { LaunchEnvironmentInputSchema, LaunchSecretInputSchema } from '@agentdeck/shared/settings';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from 'fastify';
 import { z } from 'zod';
 import { NativeConfigError } from '../agents/common/configuration/legacy-errors';
@@ -44,6 +44,12 @@ export function registerLaunchEnvironmentRoutes(
     const input = LaunchEnvironmentInputSchema.safeParse(req.body);
     if (!input.success) throw new NativeConfigError('invalid_request');
     return deps.service.save(agent, input.data);
+  });
+  app.post('/api/settings/launch-environment/:agent/secret', options, (req) => {
+    const agent = agentOf(req.params, req.query);
+    const input = LaunchSecretInputSchema.safeParse(req.body);
+    if (!input.success) throw new NativeConfigError('invalid_request');
+    return deps.service.readSecret(agent, input.data);
   });
   app.post('/api/settings/launch-environment/:agent/restart', options, async (req, reply) => {
     const agent = agentOf(req.params, req.query);

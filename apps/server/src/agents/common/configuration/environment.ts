@@ -30,5 +30,5 @@ export const nativeConfigurationDefaults = {
       changes,
       connection: { save: () => Promise.resolve(undefined), restore: () => Promise.resolve() },
     }),
-  launchNote: '保存用于新启动的 CLI。已有会话可在空闲时重新启动；不会自动发送消息。旧值不会回填。',
+  launchNote: '保存用于新启动的 CLI。已有会话可在空闲时重新启动；不会自动发送消息。',
 } satisfies Pick<CliConfiguration, 'readEnvironment' | 'prepare' | 'launchNote'>;

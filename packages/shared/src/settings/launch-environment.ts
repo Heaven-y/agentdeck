@@ -20,6 +20,11 @@ export const LaunchEnvironmentInputSchema = z.strictObject({
     .max(16),
 });
 export type LaunchEnvironmentInput = z.infer<typeof LaunchEnvironmentInputSchema>;
+export const LaunchSecretInputSchema = z.strictObject({
+  revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
+  name: z.string().min(1).max(80),
+});
+export type LaunchSecretInput = z.infer<typeof LaunchSecretInputSchema>;
 export type LaunchVariableMode = z.infer<typeof LaunchVariableModeSchema>;
 export type LaunchEnvironmentDocument = {
   agent: AgentKind;

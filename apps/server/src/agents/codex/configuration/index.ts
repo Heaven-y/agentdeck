@@ -16,6 +16,11 @@ export const configuration: CliConfiguration = {
     ...codexFields(config),
     warnings: config.profile ? ['检测到旧版 profile 选择；新版 CLI 的 profile 格式已变化，请在原始配置中核对。'] : [],
   }),
+  readSecret: (config, input) =>
+    string(
+      object(object(config.model_providers)[input.provider || string(config.model_provider) || 'openai'])
+        .experimental_bearer_token,
+    ),
   advancedWarnings(config, environment) {
     const provider = string(config.model_provider) || 'openai';
     const names =

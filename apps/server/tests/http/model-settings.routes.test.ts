@@ -7,7 +7,8 @@ it('模型配置拒绝路径参数和未知请求体，响应不缓存且解析�
   const read = vi.fn();
   const save = vi.fn();
   const contextWindow = vi.fn(async () => ({ model: 'Custom', windowTokens: 1000000 }));
-  registerModelSettingsRoutes(app, { read, save, contextWindow });
+  const readSecret = vi.fn(async () => ({ value: 'synthetic-key' }));
+  registerModelSettingsRoutes(app, { read, save, contextWindow, readSecret });
   try {
     for (const url of ['/api/settings/models/unknown', '/api/settings/models/codex?path=elsewhere']) {
       const result = await app.inject({ url });
@@ -27,6 +28,27 @@ it('模型配置拒绝路径参数和未知请求体，响应不缓存且解析�
     }
     expect(read).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
+    for (const payload of [
+      { revision: 'missing', key: 'baseUrl' },
+      { revision: 'missing', key: 'apiKey', path: 'elsewhere' },
+    ]) {
+      const response = await app.inject({ method: 'POST', url: '/api/settings/models/codex/secret', payload });
+      expect(response.statusCode).toBe(400);
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+    expect(readSecret).not.toHaveBeenCalled();
+    const revealed = await app.inject({
+      method: 'POST',
+      url: '/api/settings/models/codex/secret',
+      payload: { revision: 'missing', key: 'apiKey', provider: 'demo' },
+    });
+    expect(revealed.json()).toEqual({ value: 'synthetic-key' });
+    expect(revealed.headers['cache-control']).toBe('no-store');
+    expect(readSecret).toHaveBeenCalledExactlyOnceWith('codex', {
+      revision: 'missing',
+      key: 'apiKey',
+      provider: 'demo',
+    });
     const window = await app.inject({ url: '/api/settings/models/antigravity/context-window?model=custom-id' });
     expect(window.json()).toEqual({ model: 'Custom', windowTokens: 1000000 });
     expect(window.headers['cache-control']).toBe('no-store');

@@ -1,5 +1,7 @@
 import {
   LaunchEnvironmentInputSchema,
+  LaunchSecretInputSchema,
+  type LaunchSecretInput,
   type LaunchEnvironmentDocument,
   type LaunchEnvironmentInput,
 } from '@agentdeck/shared/settings';
@@ -139,6 +141,29 @@ export function createLaunchEnvironment(deps: Deps) {
     }
   }
   return {
+    readSecret: (agent: AgentKind, input: LaunchSecretInput) =>
+      serial(async () => {
+        const parsed = LaunchSecretInputSchema.safeParse(input);
+        if (
+          !parsed.success ||
+          !cliConfigurations[agent].launchVariables.some((item) => item.name === parsed.data.name && item.sensitive)
+        )
+          throw new NativeConfigError('invalid_request');
+        const { stored, snapshot } = await load();
+        if (snapshot.revision !== parsed.data.revision) throw new NativeConfigError('revision_conflict');
+        const entry = stored[agent][parsed.data.name];
+        if (!entry) return { value: inherited[parsed.data.name] || null };
+        if (entry.mode === 'disabled') return { value: null };
+        const data = await protector.unprotect(
+          Buffer.from(entry.protected!, 'base64'),
+          entropy(agent, parsed.data.name),
+        );
+        try {
+          return { value: new TextDecoder('utf-8', { fatal: true }).decode(data) || null };
+        } finally {
+          data.fill(0);
+        }
+      }),
     read: (agent: AgentKind) =>
       serial(async () => {
         const { stored, snapshot } = await load();

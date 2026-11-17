@@ -13,10 +13,14 @@ it('启动环境路由拒绝未知来源/字段并对解析失败禁止缓存且
     variables: [],
   }));
   const save = vi.fn();
+  const readSecret = vi.fn(async () => ({ value: 'synthetic-key' }));
   const restart = vi.fn(async () => {
     throw new Error('internal-secret');
   });
-  registerLaunchEnvironmentRoutes(app, { service: { read, save } as unknown as LaunchEnvironment, restart });
+  registerLaunchEnvironmentRoutes(app, {
+    service: { read, save, readSecret } as unknown as LaunchEnvironment,
+    restart,
+  });
   try {
     for (const url of [
       '/api/settings/launch-environment/unknown',
@@ -44,6 +48,20 @@ it('启动环境路由拒绝未知来源/字段并对解析失败禁止缓存且
     expect(busy.body).not.toContain('internal-secret');
     expect(save).not.toHaveBeenCalled();
     expect(read).not.toHaveBeenCalled();
+    const invalidSecret = await app.inject({
+      method: 'POST',
+      url: '/api/settings/launch-environment/claude/secret',
+      payload: { revision: 'missing', name: 'ANTHROPIC_API_KEY', path: 'elsewhere' },
+    });
+    expect(invalidSecret.statusCode).toBe(400);
+    expect(readSecret).not.toHaveBeenCalled();
+    const secret = await app.inject({
+      method: 'POST',
+      url: '/api/settings/launch-environment/claude/secret',
+      payload: { revision: 'missing', name: 'ANTHROPIC_API_KEY' },
+    });
+    expect(secret.json()).toEqual({ value: 'synthetic-key' });
+    expect(secret.headers['cache-control']).toBe('no-store');
     expect(restart).toHaveBeenCalledExactlyOnceWith('claude');
   } finally {
     await app.close();

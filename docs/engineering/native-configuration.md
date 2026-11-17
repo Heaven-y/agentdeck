@@ -80,7 +80,7 @@ Antigravity 的 `customModelsConfig.customModels[*].modelName` 必须是原生�
 
 Codex 的 provider、端点与认证放在用户配置。当前原生版本会忽略项目 .codex/config.toml 中的这些字段，不能把项目表单当作有效服务商切换。已有高级认证命令、认证请求头、云认证以及内置服务商保持原生配置；简单 Key 表单不能覆盖。TOML 使用 AST 范围修改指定字段，保留注释、未知表、换行和 BOM；不能安全修改的结构转原文编辑，不整体重新序列化。JSON 表单保留未知字段、缩进与换行习惯。
 
-`/api/settings/models/:agent` 返回允许的字段及密钥存在状态；界面用圆点占位，输入新值替换、清除按钮删除。模型表单与启动环境表单的小眼睛只切换当前输入框的明文显示，不读取已保存密钥。秘密值不回填或进入模型缓存，空输入保留旧值。Claude/Codex 遵循原生文件格式；Antigravity URL/Key 从同一表单保存到启动环境，使用原生文件与环境的复合 revision，原生写入冲突时恢复本次连接改动。
+`/api/settings/models/:agent` 常规读取和保存响应只返回允许的字段及密钥存在状态；界面用圆点占位，输入新值替换、清除按钮删除。点击小眼睛时，`POST .../secret` 按 CLI、字段、所选 Codex 服务商及 revision 单独返回对应密钥；只支持表单中的 API Key 和 Claude Auth Token。查看值独立于修改草稿，隐藏、保存或切换配置时释放，迟到结果丢弃，不进入查询缓存或浏览器存储。空输入保留旧值。Claude/Codex 遵循原生文件格式；Antigravity URL/Key 从同一表单保存到启动环境，使用原生文件与环境的复合 revision，原生写入冲突时恢复本次连接改动。
 
 模型表单保存持有 CLI 空闲维护锁，成功后自动回收该 CLI 的空闲实例；新建和已有会话的下一次发送都会启动新进程并读取已保存的 URL、Key，无需重启 AgentDeck。当前会话显式模型、托管规则或原生更高优先级配置仍可能覆盖默认值；运行中保存会返回忙碌。高级“CLI 环境变量”页单独保存时仍保留已有实例的启动快照，使用该页的“重新启动 CLI”后续发才采用新环境。服务端与前端同时清理对应 CLI 的模型能力缓存，并拒绝旧刷新结果回填；下一次打开菜单按原生接口重新发现。
 
@@ -106,7 +106,7 @@ Codex 的自动压缩计数口径 `model_auto_compact_token_limit_scope` 和较�
 
 ## 启动环境
 
-`/api/settings/launch-environment/:agent` 只显示变量来源与状态，写入不回显已有值。每种 CLI 的白名单单独定义；禁止 PATH、NODE_OPTIONS、PYTHONPATH 等改变加载行为的变量。所有显式值以当前 Windows 用户的 DPAPI 密文保存，无法使用系统加密时不退回明文。
+`/api/settings/launch-environment/:agent` 常规读取只显示变量来源与状态，写入不回显已有值；`POST .../secret` 通过小眼睛按变量名称及 revision 读取该 CLI 白名单中的单个敏感值。密钥查看接口继承本机鉴权、Origin 校验和 `no-store`，不接受任意文件路径或变量名。每种 CLI 的白名单单独定义；禁止 PATH、NODE_OPTIONS、PYTHONPATH 等改变加载行为的变量。所有显式值以当前 Windows 用户的 DPAPI 密文保存，无法使用系统加密时不退回明文。
 
 | CLI | 允许的变量 |
 |---|---|

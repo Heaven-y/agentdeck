@@ -22,6 +22,7 @@ export const configuration: CliConfiguration = {
   launchVariables,
   instructionNames: ['AGENTS.md', 'GEMINI.md'],
   readEnvironment: readModelEnvironment,
+  readSecret: (_config, _input, snapshot) => snapshot?.resolved.GEMINI_API_KEY ?? '',
   describe: (config, snapshot) => ({
     fields: [...antigravityFields(config), ...modelConnectionFields(snapshot)],
     warnings: [
@@ -43,7 +44,7 @@ export const configuration: CliConfiguration = {
     return { changes: native, connection: prepareModelConnection(connection, services.environment, snapshot) };
   },
   launchNote:
-    'Gemini API 密钥须配合原生 settings.json 的 modelProvider="gemini"；ADC 使用 AGY_ADC_AUTH=true。保存用于新启动的 CLI，旧值不会回填。',
+    'Gemini API 密钥须配合原生 settings.json 的 modelProvider="gemini"；ADC 使用 AGY_ADC_AUTH=true。保存用于新启动的 CLI。',
   validateVariable(name, value) {
     if (name === 'AGY_ADC_AUTH' && !['true', 'false'].includes(value)) throw new NativeConfigError('invalid_request');
   },

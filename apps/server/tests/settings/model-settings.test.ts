@@ -38,6 +38,59 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
+it.each(['claude', 'codex', 'antigravity'] as const)(
+  '%s 密钥仅由显式读取返回，配置版本变化拒绝旧请求',
+  async (agent) => {
+    const { service, write } = await fixture();
+    const files = {
+      claude: '.claude/settings.json',
+      codex: '.codex/config.toml',
+      antigravity: '.gemini/antigravity-cli/settings.json',
+    };
+    await write(files[agent], agent === 'codex' ? '' : '{}');
+    const initial = await service.read(agent);
+    const saved = await service.save(agent, {
+      revision: initial.revision,
+      changes: {
+        apiKey: 'synthetic-saved-key',
+        ...(agent === 'codex' ? { provider: 'agentdeck' } : {}),
+      },
+    });
+    expect(JSON.stringify(saved)).not.toContain('synthetic-saved-key');
+    expect(JSON.stringify(await service.read(agent))).not.toContain('synthetic-saved-key');
+    expect(await service.readSecret(agent, { revision: saved.revision, key: 'apiKey' })).toEqual({
+      value: 'synthetic-saved-key',
+    });
+    await expect(service.readSecret(agent, { revision: initial.revision, key: 'apiKey' })).rejects.toMatchObject({
+      code: 'revision_conflict',
+    });
+    await expect(
+      service.readSecret(agent, { revision: saved.revision, key: 'apiKey', provider: 'unknown-provider' }),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+    const cleared = await service.save(agent, { revision: saved.revision, changes: { apiKey: null } });
+    expect(await service.readSecret(agent, { revision: cleared.revision, key: 'apiKey' })).toEqual({ value: null });
+  },
+);
+
+it('查看 Claude Token 和指定 Codex 服务商的 Key，不混入其他凭据', async () => {
+  const { service, write } = await fixture();
+  await write('.claude/settings.json', JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: 'fixture-token' } }));
+  expect(
+    await service.readSecret('claude', { revision: (await service.read('claude')).revision, key: 'authToken' }),
+  ).toEqual({ value: 'fixture-token' });
+  await write(
+    '.codex/config.toml',
+    'model_provider="first"\n[model_providers.first]\nexperimental_bearer_token="first-key"\n[model_providers.second]\nexperimental_bearer_token="second-key"',
+  );
+  const revision = (await service.read('codex')).revision;
+  expect(await service.readSecret('codex', { revision, key: 'apiKey', provider: 'second' })).toEqual({
+    value: 'second-key',
+  });
+  await expect(service.readSecret('codex', { revision, key: 'authToken' })).rejects.toMatchObject({
+    code: 'invalid_request',
+  });
+});
+
 it('Antigravity 原生保存冲突后恢复连接旧模式和值，不覆盖发生冲突的原生文件', async () => {
   const { service, write, environment } = await fixture();
   const file = await write('.gemini/antigravity-cli/settings.json', '{"model":"old"}');

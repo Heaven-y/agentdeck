@@ -65,7 +65,7 @@ it('常用模型表单只发送修改字段，空密码保留且显式清除使�
   expect(secret.type).toBe('password');
   expect(secret.value).toBe('');
   expect(secret.placeholder).toBe('••••••••');
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: '显示API Key' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '显示API Key' }).disabled).toBe(false);
   expect(screen.getByText('URL 和 Key 保存后，下次发送生效')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '更换API Key' }));
   expect(globalThis.document.activeElement).toBe(secret);
@@ -85,6 +85,38 @@ it('常用模型表单只发送修改字段，空密码保留且显式清除使�
     { revision: saved.revision, changes: { apiKey: null } },
     expect.any(AbortSignal),
   );
+});
+
+it.each(['claude', 'codex', 'antigravity'] as const)('%s 保存后可读取密钥，查看不产生保存草稿', async (agent) => {
+  const current: NativeModelSettingsDocument = {
+    ...document,
+    agent,
+    fields: [...document.fields, { key: 'modelProvider', label: '连接方式', value: 'gemini', group: 'connection' }],
+  };
+  vi.mocked(modelSettingsApi.read).mockResolvedValue(current);
+  vi.mocked(modelSettingsApi.save).mockResolvedValue({ ...current, revision: saved.revision });
+  const reveal = vi.spyOn(modelSettingsApi, 'readSecret').mockResolvedValue({ value: 'synthetic-saved-key' });
+  render(<ProductSettingsDialog initialPage={agent} onClose={vi.fn()} />);
+  const secret = await screen.findByLabelText<HTMLInputElement>('API Key');
+  expect(reveal).not.toHaveBeenCalled();
+  fireEvent.change(secret, { target: { value: 'synthetic-new-key' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await screen.findByText('配置已保存');
+  const savedSecret = screen.getByLabelText<HTMLInputElement>('API Key');
+  expect(savedSecret.value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  await waitFor(() => expect(savedSecret.value).toBe('synthetic-saved-key'));
+  expect(savedSecret.type).toBe('text');
+  expect(reveal).toHaveBeenLastCalledWith(
+    agent,
+    expect.objectContaining({ key: 'apiKey', revision: saved.revision }),
+    expect.any(AbortSignal),
+  );
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存配置' }).disabled).toBe(true);
+  expect(modelSettingsApi.save).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '隐藏API Key' }));
+  expect(savedSecret.value).toBe('');
+  expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-saved-key');
 });
 
 it('AGY 设置列表合并已确认的同名原生别名，选择当前 High 不改写已有值', async () => {
@@ -119,6 +151,7 @@ it('AGY 设置列表合并已确认的同名原生别名，选择当前 High 不
 });
 
 it('Codex 登录或环境认证均可直接填写 Key，切换服务商丢弃旧草稿', async () => {
+  const reveal = vi.spyOn(modelSettingsApi, 'readSecret').mockResolvedValue({ value: 'second-provider-key' });
   const providerFields = (value: string, mode: string) => [
     { key: 'baseUrl', label: '服务地址', value, group: 'connection' as const },
     { key: 'authMode', label: '认证方式', value: mode, group: 'connection' as const, advanced: true },
@@ -160,6 +193,13 @@ it('Codex 登录或环境认证均可直接填写 Key，切换服务商丢弃旧
   expect(screen.getByLabelText<HTMLInputElement>('服务地址').value).toBe('https://second.example/v1');
   expect(screen.getByLabelText<HTMLInputElement>('API Key').value).toBe('');
   expect(screen.getByLabelText<HTMLInputElement>('API Key').type).toBe('password');
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  await screen.findByDisplayValue('second-provider-key');
+  expect(reveal).toHaveBeenLastCalledWith(
+    'codex',
+    { revision: document.revision, key: 'apiKey', provider: 'second' },
+    expect.any(AbortSignal),
+  );
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(modelSettingsApi.save).toHaveBeenCalled());
   expect(modelSettingsApi.save).toHaveBeenLastCalledWith(
@@ -168,6 +208,33 @@ it('Codex 登录或环境认证均可直接填写 Key，切换服务商丢弃旧
     expect.any(AbortSignal),
   );
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-draft-secret');
+});
+
+it('读取失败可再点重试，编辑或切换 CLI 后丢弃迟到密钥', async () => {
+  const reveal = vi
+    .spyOn(modelSettingsApi, 'readSecret')
+    .mockRejectedValueOnce(new ApiError(409, '配置已改变，请重新读取'));
+  render(<ProductSettingsDialog onClose={vi.fn()} />);
+  const secret = await screen.findByLabelText<HTMLInputElement>('API Key');
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  await screen.findByText('配置已改变，请重新读取');
+  const late = deferred<{ value: string }>();
+  reveal.mockReturnValueOnce(late.promise);
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  fireEvent.change(secret, { target: { value: 'synthetic-draft' } });
+  expect(reveal.mock.calls.at(-1)![2]!.aborted).toBe(true);
+  await act(async () => late.resolve({ value: 'late-stale-key' }));
+  expect(secret.value).toBe('synthetic-draft');
+  fireEvent.change(secret, { target: { value: '' } });
+  const switching = deferred<{ value: string }>();
+  reveal.mockReturnValueOnce(switching.promise);
+  fireEvent.click(screen.getByRole('button', { name: '显示API Key' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
+  await waitFor(() => expect(modelSettingsApi.read).toHaveBeenCalledTimes(2));
+  expect(reveal.mock.calls.at(-1)![2]!.aborted).toBe(true);
+  await act(async () => switching.resolve({ value: 'wrong-cli-key' }));
+  expect(screen.getByLabelText<HTMLInputElement>('API Key').value).toBe('');
+  expect(modelSettingsApi.save).not.toHaveBeenCalled();
 });
 
 it('冲突保留草稿，侧栏、关闭、原始配置和重读共用未保存保护', async () => {

@@ -62,6 +62,7 @@ beforeEach(() => {
       });
     if (url === '/api/settings/environment') return Response.json({ tools: [], checkedAt: 1 });
     if (url.endsWith('/restart')) return new Response(null, { status: 204 });
+    if (url.endsWith('/secret')) return Response.json({ value: 'synthetic-saved-key' });
     if (init?.method === 'PUT' && conflict)
       return Response.json({ message: '启动环境已变化，请重新读取。' }, { status: 409 });
     if (url === '/api/settings/launch-environment/codex') return Response.json(response);
@@ -100,6 +101,12 @@ it('启动环境只显示来源，新值显式保存且保存后清空；重启�
   });
   expect(screen.getByLabelText<HTMLInputElement>('API 密钥新值').value).toBe('');
   expect(screen.getByLabelText<HTMLInputElement>('API 密钥新值').type).toBe('password');
+  expect(fetchMock.mock.calls.some(([url]) => (url as string).endsWith('/secret'))).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '显示API 密钥新值' }));
+  await screen.findByDisplayValue('synthetic-saved-key');
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存环境变量' }).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '隐藏API 密钥新值' }));
+  expect(screen.getByLabelText<HTMLInputElement>('API 密钥新值').value).toBe('');
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-new-secret');
   expect(fetchMock.mock.calls.some(([url]) => (url as string).endsWith('/restart'))).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '重新启动 CLI' }));

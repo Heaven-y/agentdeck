@@ -36,6 +36,19 @@ it('环境状态不返回旧值，设置加密保存，停用不会继续继承'
   });
   expect(JSON.stringify(saved)).not.toContain('fixture-new-secret');
   expect(JSON.stringify(initial)).not.toContain('inherited-secret');
+  expect(await service.readSecret('claude', { revision: saved.revision, name: 'ANTHROPIC_API_KEY' })).toEqual({
+    value: 'fixture-new-secret',
+  });
+  await expect(
+    service.readSecret('claude', { revision: initial.revision, name: 'ANTHROPIC_API_KEY' }),
+  ).rejects.toMatchObject({ code: 'revision_conflict' });
+  for (const name of ['PATH', 'OPENAI_API_KEY', 'ANTHROPIC_BASE_URL'])
+    await expect(service.readSecret('claude', { revision: saved.revision, name })).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
+  expect(await service.readSecret('claude', { revision: saved.revision, name: 'ANTHROPIC_AUTH_TOKEN' })).toEqual({
+    value: null,
+  });
   expect(await readFile(path.join(configDir, 'launch-environment.json'), 'utf8')).not.toContain('fixture-new-secret');
   expect(await service.resolve('claude')).toEqual({
     PATH: 'native-path',

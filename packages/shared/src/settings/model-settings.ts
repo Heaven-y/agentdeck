@@ -38,3 +38,10 @@ export const NativeModelSettingsInputSchema = z.strictObject({
   ),
 });
 export type NativeModelSettingsInput = z.infer<typeof NativeModelSettingsInputSchema>;
+export const ModelSecretInputSchema = z.strictObject({
+  revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
+  key: z.enum(['apiKey', 'authToken']),
+  provider: z.string().min(1).max(512).optional(),
+});
+export type ModelSecretInput = z.infer<typeof ModelSecretInputSchema>;
+export type SecretValue = { value: string | null };

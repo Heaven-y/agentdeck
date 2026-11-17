@@ -1,4 +1,4 @@
-import type { LaunchEnvironmentDocument, LaunchVariableMode } from '@agentdeck/shared/settings';
+import type { LaunchEnvironmentDocument, LaunchVariableMode, SecretValue } from '@agentdeck/shared/settings';
 import { useId, type ChangeEvent } from 'react';
 import { inputClass } from '../../ui/styles';
 import { SecretInput } from '../../ui/SecretInput';
@@ -28,8 +28,16 @@ type VariableProps = {
   encryptionAvailable: boolean;
   disabled: boolean;
   change(patch: Partial<LaunchVariableDraft>): void;
+  readSecret?(signal: AbortSignal): Promise<SecretValue>;
 };
-export function LaunchEnvironmentVariable({ variable, draft, encryptionAvailable, disabled, change }: VariableProps) {
+export function LaunchEnvironmentVariable({
+  variable,
+  draft,
+  encryptionAvailable,
+  disabled,
+  change,
+  readSecret,
+}: VariableProps) {
   const mode = draft?.mode ?? variable.mode;
   const secretUnavailable = variable.sensitive && !encryptionAvailable;
   return (
@@ -65,6 +73,7 @@ export function LaunchEnvironmentVariable({ variable, draft, encryptionAvailable
           encryptionAvailable={encryptionAvailable}
           disabled={disabled}
           change={change}
+          readSecret={readSecret}
         />
       )}
       {mode === 'disabled' && <p className="text-xs text-muted-foreground">启动该 CLI 时移除此变量，包括继承的值。</p>}
@@ -72,7 +81,7 @@ export function LaunchEnvironmentVariable({ variable, draft, encryptionAvailable
   );
 }
 
-function LaunchVariableValue({ variable, draft, encryptionAvailable, disabled, change }: VariableProps) {
+function LaunchVariableValue({ variable, draft, encryptionAvailable, disabled, change, readSecret }: VariableProps) {
   const id = useId();
   const retainsValue = variable.mode === 'set' && variable.hasValue;
   const secretUnavailable = variable.sensitive && !encryptionAvailable;
@@ -92,12 +101,16 @@ function LaunchVariableValue({ variable, draft, encryptionAvailable, disabled, c
     <div className="space-y-1 text-sm">
       <label htmlFor={id}>新值</label>
       {variable.sensitive ? (
-        <SecretInput {...inputProps} label={`${variable.label}新值`} />
+        <SecretInput
+          {...inputProps}
+          label={`${variable.label}新值`}
+          readSaved={retainsValue ? readSecret : undefined}
+        />
       ) : (
         <input {...inputProps} type="text" />
       )}
       <span className="block text-xs leading-5 text-muted-foreground">
-        {retainsValue ? '已有值不会回填。恢复继承会移除工作台保存的值。' : '单独设置需要填写新值。'}
+        {retainsValue ? '恢复继承会移除工作台保存的值。' : '单独设置需要填写新值。'}
       </span>
     </div>
   );

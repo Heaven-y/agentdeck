@@ -11,6 +11,7 @@ import { modelEfforts } from '../../cli/model-capabilities';
 import { antigravityModelSuggestions } from '../../cli/antigravity/model-suggestions';
 import { ModelVisibilityPanel } from './ModelVisibilityPanel';
 import { useVisibilityDraft } from './use-visibility-draft';
+import { modelSettingsApi } from './model-settings-api';
 
 type State = ReturnType<typeof useModelSettings>;
 function visibleFields(fields: ModelSettingField[], state: State) {
@@ -55,6 +56,8 @@ function FetchModels({ state }: { state: State }) {
   );
 }
 function Fields({ fields, state }: { fields: ModelSettingField[]; state: State }) {
+  const document = state.document!;
+  const provider = state.draft.provider ?? document.fields.find((field) => field.key === 'provider')?.value;
   return fields.map((field) => (
     <ModelSettingsField
       key={field.key}
@@ -65,6 +68,23 @@ function Fields({ fields, state }: { fields: ModelSettingField[]; state: State }
       change={(value) => state.change(field, value)}
       suggestions={suggestionsFor(field, state)}
       action={field.key === 'model' ? <FetchModels state={state} /> : undefined}
+      secretIdentity={JSON.stringify([
+        document.revision,
+        provider,
+        state.draft.authMode,
+        state.draft.modelProvider,
+        field.key,
+      ])}
+      readSecret={
+        field.key === 'apiKey' || field.key === 'authToken'
+          ? (signal) =>
+              modelSettingsApi.readSecret(
+                document.agent,
+                { revision: document.revision, key: field.key as 'apiKey' | 'authToken', provider },
+                signal,
+              )
+          : undefined
+      }
     />
   ));
 }

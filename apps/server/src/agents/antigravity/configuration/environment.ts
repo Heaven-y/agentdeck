@@ -14,7 +14,7 @@ type Changes = NativeModelSettingsInput['changes'];
 type Variable = LaunchEnvironmentInput['variables'][number];
 const connectionVariables = { baseUrl: 'GOOGLE_GEMINI_BASE_URL', apiKey: 'GEMINI_API_KEY' } as const;
 
-/** 读取回显与回滚所需的一致快照，密钥只保留在服务端的本次调用内。 */
+/** 读取配置回显、显式查看密钥和回滚所需的一致快照。 */
 export async function readModelEnvironment(environment?: ModelSettingsEnvironment): Promise<Snapshot | undefined> {
   if (!environment) return;
   const document = await environment.read('antigravity');

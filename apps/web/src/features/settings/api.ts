@@ -11,6 +11,8 @@ import type {
   NativeResourceSaved,
   LaunchEnvironmentDocument,
   LaunchEnvironmentInput,
+  LaunchSecretInput,
+  SecretValue,
   ProductSettingsDocument,
   ProductSettingsInput,
   EnvironmentReport,
@@ -63,6 +65,13 @@ export const settingsApi = {
     }),
   readLaunchEnvironment: (agent: AgentKind, signal?: AbortSignal) =>
     request<LaunchEnvironmentDocument>(`/api/settings/launch-environment/${agent}`, { signal, cache: 'no-store' }),
+  readLaunchSecret: (agent: AgentKind, input: LaunchSecretInput, signal?: AbortSignal) =>
+    request<SecretValue>(`/api/settings/launch-environment/${agent}/secret`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      signal,
+      cache: 'no-store',
+    }),
   saveLaunchEnvironment: (agent: AgentKind, input: LaunchEnvironmentInput, signal?: AbortSignal) =>
     request<LaunchEnvironmentDocument>(`/api/settings/launch-environment/${agent}`, {
       method: 'PUT',

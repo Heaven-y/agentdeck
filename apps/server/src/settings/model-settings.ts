@@ -1,6 +1,10 @@
 import type { AgentKind, AgentModel } from '@agentdeck/shared/conversation';
-import type { NativeModelSettingsDocument, NativeModelSettingsInput } from '@agentdeck/shared/settings';
-import { NativeModelSettingsInputSchema } from '@agentdeck/shared/settings';
+import type {
+  ModelSecretInput,
+  NativeModelSettingsDocument,
+  NativeModelSettingsInput,
+} from '@agentdeck/shared/settings';
+import { ModelSecretInputSchema, NativeModelSettingsInputSchema } from '@agentdeck/shared/settings';
 import type { EnvironmentSnapshot, ModelSettingsEnvironment } from '../agents/common/configuration/contracts';
 import { modelSettingsRevision } from '../agents/common/configuration/environment';
 import { NativeResourceError } from '../agents/common/configuration/errors';
@@ -19,6 +23,16 @@ type Deps = {
   antigravityModels?: () => Promise<AgentModel[]>;
 };
 type NativeDocument = Awaited<ReturnType<NativeResourcesService['open']>>;
+
+function secretProvider(input: ModelSecretInput, metadata: Pick<NativeModelSettingsDocument, 'fields' | 'providers'>) {
+  const provider = input.provider ?? metadata.fields.find((field) => field.key === 'provider')?.value;
+  const selected = metadata.providers?.find((item) => item.id === provider);
+  if (provider && !selected) throw new NativeResourceError('invalid_request');
+  const fields = selected?.fields ?? metadata.fields;
+  if (!fields.some((field) => field.key === input.key && field.secret))
+    throw new NativeResourceError('invalid_request');
+  return provider;
+}
 
 function describe(
   agent: AgentKind,
@@ -65,6 +79,18 @@ export function createModelSettingsService(deps: Deps = {}) {
     return result;
   }
   return {
+    async readSecret(agent: AgentKind, input: ModelSecretInput) {
+      const parsed = ModelSecretInputSchema.safeParse(input);
+      if (!parsed.success) throw new NativeResourceError('invalid_request');
+      const document = await open(agent);
+      const adapter = cliConfigurations[agent];
+      const environment = await adapter.readEnvironment(deps.environment);
+      if (parsed.data.revision !== modelSettingsRevision(document.revision, environment))
+        throw new NativeResourceError('revision_conflict');
+      const config = parseModelConfig(adapter.format, document.content);
+      const provider = secretProvider(parsed.data, adapter.describe(config, environment));
+      return { value: adapter.readSecret(config, { ...parsed.data, provider }, environment) || null };
+    },
     async contextWindow(agent: AgentKind, model?: string) {
       if (agent !== 'antigravity') return {};
       const document = await open(agent);

@@ -1,5 +1,5 @@
 import { AgentKindSchema } from '@agentdeck/shared/conversation';
-import { NativeModelSettingsInputSchema } from '@agentdeck/shared/settings';
+import { ModelSecretInputSchema, NativeModelSettingsInputSchema } from '@agentdeck/shared/settings';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { NativeResourceError, resourceError } from '../agents/common/configuration/errors';
@@ -45,6 +45,14 @@ export function registerModelSettingsRoutes(app: FastifyInstance, service: Model
     }),
   );
   app.get('/api/settings/models/:agent', options, (req, reply) => respond(reply, () => service.read(agentOf(req))));
+  app.post('/api/settings/models/:agent/secret', options, (req, reply) =>
+    respond(reply, () => {
+      const agent = agentOf(req);
+      const input = ModelSecretInputSchema.safeParse(req.body);
+      if (!input.success) throw new NativeResourceError('invalid_request');
+      return service.readSecret(agent, input.data);
+    }),
+  );
   app.put('/api/settings/models/:agent', options, (req, reply) =>
     respond(reply, () => {
       const agent = agentOf(req);

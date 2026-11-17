@@ -1,6 +1,6 @@
 import { useId, useRef, type ChangeEvent, type ReactNode, type RefObject } from 'react';
 import { CircleHelp } from 'lucide-react';
-import type { ModelSettingField } from '@agentdeck/shared/settings';
+import type { ModelSettingField, SecretValue } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { FieldSelect, FieldSuggestions } from '../../ui/FieldSelect';
 import { SecretInput } from '../../ui/SecretInput';
@@ -12,6 +12,8 @@ type Props = {
   change(value: string | null): void;
   suggestions?: Array<{ value: string; label: string }>;
   action?: ReactNode;
+  secretIdentity?: string;
+  readSecret?(signal: AbortSignal): Promise<SecretValue>;
 };
 
 function SecretActions({
@@ -68,6 +70,8 @@ function FieldControl({
   disabled,
   change,
   suggestions,
+  secretIdentity,
+  readSecret,
 }: Props & { id: string; inputRef: RefObject<HTMLInputElement | null> }) {
   if (field.options)
     return (
@@ -108,7 +112,12 @@ function FieldControl({
     onChange: (event: ChangeEvent<HTMLInputElement>) => change(event.target.value),
   };
   return field.secret ? (
-    <SecretInput {...inputProps} label={field.label} />
+    <SecretInput
+      key={`${secretIdentity}:${cleared}`}
+      {...inputProps}
+      label={field.label}
+      readSaved={field.hasValue && !cleared ? readSecret : undefined}
+    />
   ) : (
     <input
       {...inputProps}
@@ -118,7 +127,17 @@ function FieldControl({
   );
 }
 
-export function ModelSettingsField({ field, value, cleared, disabled, change, suggestions, action }: Props) {
+export function ModelSettingsField({
+  field,
+  value,
+  cleared,
+  disabled,
+  change,
+  suggestions,
+  action,
+  secretIdentity,
+  readSecret,
+}: Props) {
   const id = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const inlineHint = ['authMode', 'envKey'].includes(field.key);
@@ -133,7 +152,9 @@ export function ModelSettingsField({ field, value, cleared, disabled, change, su
         )}
       </label>
       <div className="model-field-row flex min-w-0 items-center gap-2">
-        <FieldControl {...{ id, inputRef, field, value, cleared, disabled, change, suggestions }} />
+        <FieldControl
+          {...{ id, inputRef, field, value, cleared, disabled, change, suggestions, secretIdentity, readSecret }}
+        />
         {action}
         <SecretActions field={field} cleared={cleared} disabled={disabled} change={change} inputRef={inputRef} />
       </div>
