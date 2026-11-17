@@ -1,5 +1,5 @@
 {
-  "name": "agent-deck",
+  "name": "agentdeck",
   "private": true,
   "type": "module",
   "description": "本机桌面端：统一管理 Claude Code / Codex / Antigravity 的原生会话，并附带 SSH 服务器控制台",

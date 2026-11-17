@@ -29,7 +29,6 @@ it('正式服务接通安装任务：受控子进程更新后重新读取版本�
   const server = await startServer(
     { port: 0, host: '127.0.0.1', configDir: path.join(root, 'config'), token: 'fixture-token' },
     {
-      legacyDir: path.join(root, 'legacy'),
       log: () => undefined,
       logError: () => undefined,
       probeRunner: async (_command, args) => ({

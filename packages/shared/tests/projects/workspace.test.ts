@@ -12,18 +12,14 @@ describe('WorkspaceInputSchema', () => {
     expect(WorkspaceInputSchema.safeParse({ name: 'x', dir: '' }).success).toBe(false);
   });
 
-  it('丢弃旧格式的 sync、policy、sshHost、localDir 与服务器绑定字段', () => {
+  it('项目输入只读取名称和目录，丢弃服务器绑定等无关字段', () => {
     const parsed = WorkspaceInputSchema.parse({
-      name: '旧项目',
+      name: '示例项目',
       dir: '/tmp/demo',
-      sshHost: 'my-server',
-      localDir: '/tmp/demo',
-      sync: { mode: 'bisync' },
-      policy: { disabledRules: ['privilege'] },
+      server: 'my-server',
+      remoteDir: '~/projects/demo',
     });
-    // 服务器绑定不属于项目：旧配置里的 server / remoteDir 与其它旧键一样被丢弃，
-    // 让旧文件能直接读入而不报错。
-    expect(parsed).toEqual({ name: '旧项目', dir: '/tmp/demo' });
+    expect(parsed).toEqual({ name: '示例项目', dir: '/tmp/demo' });
   });
 });
 

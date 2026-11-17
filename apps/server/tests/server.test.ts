@@ -21,17 +21,16 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup().catch(() => undefined)));
 });
 
-async function fixture(): Promise<{ configDir: string; legacyDir: string }> {
+async function fixture(): Promise<{ configDir: string }> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agentdeck-start-server-'));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
-  return { configDir: path.join(root, 'config'), legacyDir: path.join(root, 'legacy') };
+  return { configDir: path.join(root, 'config') };
 }
 
-async function launch(configDir: string, legacyDir: string): Promise<StartedServer> {
+async function launch(configDir: string): Promise<StartedServer> {
   const server = await startServer(
     { port: 0, host: '127.0.0.1', configDir, token: 'test-token' },
     {
-      legacyDir,
       probeRunner: inertRunner,
       log: () => undefined,
       logError: () => undefined,
@@ -55,7 +54,7 @@ function portIsOpen(port: number): Promise<boolean> {
 
 describe('startServer', () => {
   it('监听端口占用时保留原始启动错误', async () => {
-    const { configDir, legacyDir } = await fixture();
+    const { configDir } = await fixture();
     const occupied = net.createServer();
     await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
     cleanups.push(() => new Promise<void>((resolve) => occupied.close(() => resolve())));
@@ -65,7 +64,6 @@ describe('startServer', () => {
       startServer(
         { port: address.port, host: '127.0.0.1', configDir, token: 'test-token' },
         {
-          legacyDir,
           probeRunner: inertRunner,
           log: () => undefined,
           logError: () => undefined,
@@ -74,8 +72,8 @@ describe('startServer', () => {
     ).rejects.toMatchObject({ code: 'EADDRINUSE' });
   });
   it('返回可访问的本机地址，close 后端口不再监听', async () => {
-    const { configDir, legacyDir } = await fixture();
-    const server = await launch(configDir, legacyDir);
+    const { configDir } = await fixture();
+    const server = await launch(configDir);
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
 
     // 同源 POST 需带 Origin，与浏览器一致；这也是访问控制的一部分。
@@ -94,16 +92,16 @@ describe('startServer', () => {
   });
 
   it('close 可重复调用且只关闭一次', async () => {
-    const { configDir, legacyDir } = await fixture();
-    const server = await launch(configDir, legacyDir);
+    const { configDir } = await fixture();
+    const server = await launch(configDir);
     await Promise.all([server.close(), server.close()]);
     await expect(server.close()).resolves.toBeUndefined();
   });
 });
 
 it('完整启动接线在停用期间拒绝所有 SSH 路由，重新启用恢复且不影响项目接口', async () => {
-  const { configDir, legacyDir } = await fixture();
-  const server = await launch(configDir, legacyDir);
+  const { configDir } = await fixture();
+  const server = await launch(configDir);
   const origin = new URL(server.url).origin;
   const headers = { origin, cookie: 'AGENTDECK_session=test-token', 'content-type': 'application/json' };
   const request = (url: string, method = 'GET', body?: unknown) =>

@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME, legacyConfigDir, loadConfig } from '../src/config';
+import { CONFIG_DIR_NAME, loadConfig } from '../src/config';
 
 describe('loadConfig', () => {
   it('默认值', () => {
@@ -13,11 +13,9 @@ describe('loadConfig', () => {
     expect(c.devOrigin).toBeUndefined();
   });
 
-  it('旧数据目录与新目录是同级的不同目录', () => {
+  it('默认数据目录位于本机应用数据下的 AgentDeck', () => {
     const env = { LOCALAPPDATA: path.join(os.tmpdir(), 'agentdeck-localappdata') };
-    expect(loadConfig(env, []).configDir.endsWith(CONFIG_DIR_NAME)).toBe(true);
-    expect(legacyConfigDir(env).endsWith(LEGACY_CONFIG_DIR_NAME)).toBe(true);
-    expect(legacyConfigDir(env)).not.toBe(loadConfig(env, []).configDir);
+    expect(loadConfig(env, []).configDir).toBe(path.join(env.LOCALAPPDATA, 'AgentDeck'));
   });
 
   it('只允许监听本机地址', () => {

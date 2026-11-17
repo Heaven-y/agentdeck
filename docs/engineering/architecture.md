@@ -45,7 +45,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 | `apps/server/src/agents/{claude,codex,antigravity}` | 各 CLI 协议、历史、能力与 configuration；common 存契约辅助及同步目录归属规则 |
 | `apps/server/src/chat`、`sessions` | 回合与恢复缓存、能力目录、会话服务、归档和权限偏好 |
 | `apps/server/src/session-tools` | stdio 只读会话 MCP、原生历史根、签名分页与脱敏错误 |
-| `apps/server/src/workspaces`、`settings` | 项目、迁移、产品偏好、原生文件与配置事务协调 |
+| `apps/server/src/workspaces`、`settings` | 项目、产品偏好、原生文件与配置事务协调 |
 | `apps/server/src/platform/{files,process,secrets}` | 安全文件读写、文件事务、TOML 修改、子进程和 Windows DPAPI |
 | `apps/server/src/plugins` | 通用插件注册状态、包校验、权限和存储，不导入 SSH 实现 |
 | `apps/server/src/builtin-plugins/ssh-console` | manifest、注册、SSH 基础、console（概览、进程、作业、文件、终端）与 HTTP |
@@ -149,7 +149,7 @@ partysocket 的连接退避为 1–15 秒，发送缓冲关闭。`ResumeHub` 用
 
 默认目录为 `%LOCALAPPDATA%\AgentDeck`，可由 `AGENTDECK_CONFIG_DIR` 指定。非 Windows 的默认位置回退到用户 `.local/share`。项目、服务器档案、产品偏好、加密凭据、插件注册与安装副本、启动环境均属于工作台数据；CLI 原生会话及配置保持原位置。
 
-迁移先复制旧 `ssh-server` 目录的配置，再转换 `localDir`/`sshHost` 等旧字段。新目录已有文件不覆盖；转换前保留 `.bak`，旧目录不删，异常明确报告。当前格式只保留有效业务字段，不恢复同步与策略域。
+启动只打开生效配置目录，按当前结构读取数据，不扫描其他产品目录、不导入旧文件或转换字段。项目记录为 `{ id, name, dir }`；缺文件按空配置处理，格式损坏则保留原文件并报错，不能从历史目录重新填充。
 
 产品偏好保存默认 CLI、输入框光影开关、各 CLI 模型显示范围和旧资源工具参数；退休字段在磁盘读取边界定点剔除，公开写入仍严格校验。坏配置保留并返回错误，不用空对象掩盖损坏。
 

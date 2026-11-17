@@ -17,8 +17,6 @@ export const DEFAULT_PORT = 4317;
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 /** 当前数据目录名 */
 export const CONFIG_DIR_NAME = 'AgentDeck';
-/** 改名前的数据目录名，仅用于一次性迁移 */
-export const LEGACY_CONFIG_DIR_NAME = 'ssh-server';
 
 function localAppBase(env: NodeJS.ProcessEnv): string {
   return env.LOCALAPPDATA ?? path.join(os.homedir(), '.local', 'share');
@@ -26,11 +24,6 @@ function localAppBase(env: NodeJS.ProcessEnv): string {
 
 function defaultConfigDir(env: NodeJS.ProcessEnv): string {
   return path.join(localAppBase(env), CONFIG_DIR_NAME);
-}
-
-/** 改名前的默认数据目录；不存在则无需迁移 */
-export function legacyConfigDir(env: NodeJS.ProcessEnv): string {
-  return path.join(localAppBase(env), LEGACY_CONFIG_DIR_NAME);
 }
 
 function parsePort(raw: string | undefined): number {
