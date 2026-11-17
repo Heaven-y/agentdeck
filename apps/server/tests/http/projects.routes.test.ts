@@ -18,7 +18,7 @@ async function tempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-/** 用真实 store：PATCH 的「null 清除、缺省不动」语义必须穿过 store 的合并与校验，才证明路由没写错。 */
+/** 使用真实 store，验证 PATCH 的字段合并与校验。 */
 async function setup() {
   const configDir = await tempDir('agentdeck-projects-config-');
   const store = createWorkspaceStore({

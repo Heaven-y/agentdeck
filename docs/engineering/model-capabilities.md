@@ -4,7 +4,7 @@
 
 ## 工作台显示规则
 
-- 模型选择值、显示名称和底层真实型号是三个字段。输入区使用 CLI 图标和具体型号，目录标签仅保留作搜索信息，发送时保留 CLI 选择值原样。
+- 模型选择值、显示名称和底层真实型号是三个字段。输入区使用 CLI 图标和具体型号，目录标签用于搜索；发送前由适配器解析为原生选择值，AGY 条目键转为对应标签或模型 ID。
 - 没有显式覆盖时按原生会话配置、最近会话报告和原生默认依次显示已有型号；全都未知时仅显示模型入口图标。这些继承值不会被自动写成下一轮请求的显式覆盖。
 - Claude 的 `sonnet[1m]`、`opus[1m]`、`opusplan[1m]` 等后缀属于原生选择值。匹配能力时可去掉后缀，发送时必须保留后缀；显示上下文型号时也保留 `[1m]`，按钮独立显示 1M 标记。后缀表示原生选择，实际窗口仍以 CLI 报告为准；没有后缀不等于只有 200K，部分新型号原生就是 1M，禁用扩展上下文等原生设置也会影响窗口。
 - 推理强度先显示会话中的显式选择，其次显示适用于当前型号的已知配置档位；未确定时只显示强度图标。旧会话没有报告强度时不套用新会话的默认值。未选择或重置后不添加请求覆盖；仅原生报告支持的 `auto` 才作为“自动”档位列出并发送。Claude 自适应思考不属于此档位。
@@ -37,7 +37,7 @@ DeepSeek、Kimi、GLM、Qwen 的兼容协议字段并不相同。当前文档补
 | Codex | `model_context_window` 声明窗口，`model_auto_compact_token_limit` 设置自动压缩 token 阈值 | 模型设置中分别填写，留空使用原生默认；计数范围和轮末百分比仍在原始配置编辑 |
 | Antigravity | 自定义模型的 `maxTokens`，内置型号沿用原生元数据 | Gemini 自定义模型设置；没有经核实的通用压缩阈值表单 |
 
-配置声明和原生统计分开：用户填大数不会扩大服务端模型的真实容量，页脚始终展示 CLI 实际报告。
+窗口设置表达 CLI 的上下文预算，模型服务自身的容量限制仍生效。页脚的用量与当前有效窗口按[统计口径](cli-observability.md)显示。
 
 ## 缓存与刷新
 
@@ -55,4 +55,4 @@ DeepSeek、Kimi、GLM、Qwen 的兼容协议字段并不相同。当前文档补
 - [Qwen Responses compatibility](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-responses)
 - [Antigravity effort](https://antigravity.google/docs/cli/commands/effort) 与 [headless](https://antigravity.google/docs/cli/headless/)；本机 `agy --help` 确认 `--effort` 参数枚举。
 
-以上资料用于候选菜单提示，不替代本机 CLI 的实际能力报告。真实账号和模型请求仍按路线图中的受控验证边界执行。
+以上资料用于补全候选菜单；本机 CLI 的能力报告优先。

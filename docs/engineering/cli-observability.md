@@ -62,7 +62,7 @@ Turn 提供 durationMs 和起止时间；ThreadItem 有可选 startedAtMs/comple
 
 ## Antigravity 的接入点与限制
 
-ACP 与下述 headless 为不同运行路径。ACP prompt 响应在本机1.5.3隔离验证中提供该请求的 usage，普通单次prompt可标为本轮；存在引导时旧请求会提前结束，计数须由引导归属逻辑另行核对，不能套用普通回合规则。ACP公开通知用于文本、工具与计划；原始stderr不进入诊断内容。新接入状态见实施计划，不能用协议握手推定所有统计接口已可用。
+ACP 与 headless 使用不同运行路径。1.5.3 隔离验证中，ACP prompt 响应提供该请求的 usage；单次 prompt 对应本轮，引导时则按最新受理请求核对计量归属。公开通知用于文本、工具与计划，stderr 只映射脱敏诊断。当前支持范围见[能力矩阵](native-capability-matrix.md)。
 
 Antigravity 接入证据基线为 CLI 1.5.1。公开 headless result.usage 有 input_tokens、output_tokens、thinking_tokens、cache_read_tokens、total_tokens，另有 duration_seconds。step_update 在已知时可带 usage 和 duration_seconds，step_index 和状态可用于步骤归属。
 
@@ -82,7 +82,7 @@ AGY 历史现可读取同次生成的 `timeToFirstToken` 和 `streamingDuration`
 
 原生结果成功与进程退出分开：结果后等待超时只触发清理，收到真实 close 才释放会话；未成功发出清理信号后的异常退出、协议错误和主动停止继续标失败。
 
-429 作为可重试服务故障暂存；只有自然成功退出且只读轨迹证明同一轮明确的 429 后有最终完成答复，才消除累计失败。未知错误、未完成答复、后续错误及中断不能仅凭已有正文判为成功。
+headless 将 429 作为可重试服务故障暂存；自然成功退出且只读轨迹证明同一轮明确的 429 后有最终完成答复时，才消除累计失败。未知错误、未完成答复、后续错误及中断保留失败状态。ACP 的部分正文处理见[原生对话](native-dialogue.md#4-接口与实现选择)。
 
 本机固定响应服务还验证了自定义模型的请求路径：当前 CLI 把包含地址的 modelName 当成模型 ID，造成错误路由。表单将模型 ID、显示名称和原生选择项分别处理，URL 单独走启动环境，末尾重复版本段规范化；旧配置的读取与迁移规则见[模型连接说明](native-configuration.md#模型与服务连接)。
 
@@ -90,7 +90,7 @@ AGY 历史现可读取同次生成的 `timeToFirstToken` 和 `streamingDuration`
 
 已提供“对话 / 轨迹”切换、按轮虚拟步骤表和点击打开的右栏详情，复用同一会话条目。回合或步骤完成后显示对应 token、耗时及平均速度，输入区显示上下文占比。审批与停止在轨迹中仍可操作，视图切换保留草稿。
 
-当前验证覆盖统计去重、跨轮 ID、失败/取消、原生生成计时与界面；实际模型服务结果及未通过条件统一见[路线图](../roadmap.md#已有验收证据)。账号登录模式暂缓，不能从 URL/Key 或本机模型夹具外推。
+当前验证覆盖统计去重、跨轮 ID、失败/取消、原生生成计时与界面；外部模型服务结果和账号模式状态见[路线图](../roadmap.md#已有验收证据)。
 
 ## 证据入口
 

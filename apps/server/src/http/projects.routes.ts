@@ -6,8 +6,7 @@ import { WorkspaceStorageError, WorkspaceValidationError, type WorkspaceStore } 
 import { WorkspaceBusyError, type WorkspaceActivity } from '../workspaces/activity';
 
 const Params = z.object({ id: z.string().min(1) });
-// JSON 里没有 undefined：null 表示「清除这个字段」，没传的键表示「不要动它」。
-// 所以这里只判断键是否存在，再把 null 转成 undefined 交给 store，绝不整体透传。
+// 名称和目录按需提交；省略的字段保持原值。
 const PatchBody = z.object({
   name: z.string().optional(),
   dir: z.string().optional(),

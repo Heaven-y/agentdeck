@@ -68,7 +68,7 @@ Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 setti
 | Codex | model、model_provider、服务商 name、model_reasoning_effort、整数 model_context_window、model_auto_compact_token_limit | 自定义 provider 的 base_url 与 Responses 协议；直接填写 Key 使用 experimental_bearer_token，原生高级认证保留 |
 | Antigravity | model、modelProvider、自定义模型的 label/modelName/maxTokens | 同页配置 Gemini API URL 与 Key，分别映射 GOOGLE_GEMINI_BASE_URL、GEMINI_API_KEY，经加密启动环境交给新进程 |
 
-三者共用模型输入、缓存候选和“获取模型”操作。工作台分开保留 CLI 选择值、显示名称和底层真实型号；模型入口显示具体型号，名称仍可用于搜索，发送时使用原始选择值。Claude 的 `[1m]` 后缀在匹配模型能力时单独处理，不会从发送值中删除。推理强度优先采用模型目录报告，未报告时只按已核对的精确型号补全；未手动选择时省略覆盖参数，有适用的默认值则显示其档位，否则仅保留强度图标；这不等于原生 `auto`。Claude、Codex 与 Antigravity 的档位不能互相套用，详细表见[模型身份与推理强度](model-capabilities.md)。 Claude 的名称仍是 picker label，Codex 的名称仍是服务商名称；Claude 持久默认可写 low/medium/high/xhigh，max 仅用于会话。Antigravity 默认强度仍通过模型变体表示，不写不存在的顶层 effort 字段。
+三者共用模型输入、缓存候选和“获取模型”操作。工作台分开保留 CLI 选择值、显示名称和底层真实型号；模型入口显示具体型号，名称用于搜索，发送前由适配器解析原生选择值。Claude 的 `[1m]` 后缀在匹配模型能力时单独处理，不会从发送值中删除。推理强度优先采用模型目录报告，未报告时只按已核对的精确型号补全；未手动选择时省略覆盖参数，有适用的默认值则显示其档位，否则仅保留强度图标；这不等于原生 `auto`。Claude、Codex 与 Antigravity 的档位不能互相套用，详细表见[模型身份与推理强度](model-capabilities.md)。 Claude 的名称仍是 picker label，Codex 的名称仍是服务商名称；Claude 持久默认可写 low/medium/high/xhigh，max 仅用于会话。Antigravity 默认强度仍通过模型变体表示，不写不存在的顶层 effort 字段。
 
 上下文窗口按实际语义显示：Codex 可写数字 token 上限，自动压缩阈值独立填写 token 数并写入原生 model_auto_compact_token_limit，留空移除该覆盖；Antigravity 自定义模型写 maxTokens；Claude 默认显示“由模型决定”。Claude 的条件性网关窗口覆盖与压缩阈值继续留在原始配置，不自动关闭压缩，也不将压缩阈值冒充模型窗口。
 
@@ -82,9 +82,9 @@ Codex 的 provider、端点与认证放在用户配置。当前原生版本会�
 
 保存后，新的 CLI 进程读取更新文件；当前会话显式模型、托管规则或原生更高优先级配置仍可能覆盖默认值，运行中的进程不会被强制切换。服务端与前端同时清理对应 CLI 的模型能力缓存，并拒绝旧刷新结果回填；下一次打开菜单按原生接口重新发现。
 
-Antigravity 的 `customModelsConfig.customModels` 是对象映射，每个条目使用稳定键、裸 `modelName`、`label` 和可选 `maxTokens`。原生默认 `model` 保存 label，条目键也可用于显式 `--model`。保存模型选择时复用隔离的原生目录，把内置 ID 转成 label；未知服务型号自动登记自定义条目，不要求先填显示名或窗口。目录读取失败时保留用户输入，有明确自定义连接时仍可登记。
+Antigravity 的 `customModelsConfig.customModels` 是对象映射，每个条目使用稳定键、裸 `modelName`、`label` 和可选 `maxTokens`。条目键用于工作台选择，启动选择器将其解析为原生标签或模型 ID 后投递；持久 `model` 保存 label。保存时通过隔离的原生目录识别内置型号；明确的自定义连接可登记用户输入的未知型号。
 
-本机 agy 1.5.1 的 headless 默认选择自定义模型时可能返回空模型；工作台仅在未显式选择且原生默认命中自定义条目时补充 `--model` 键。读取采用本轮启动环境与原生配置，准备期间可取消；显式模型保持优先。此适配不修改外部 CLI 程序，也不表示其独立 headless 默认选择问题已修复。
+默认与显式选择共用上述选择器。读取采用本轮启动环境与原生配置，准备期间可取消；显式选择优先。
 
 服务地址唯一写入启动环境 `GOOGLE_GEMINI_BASE_URL`，不会再把地址拼进 `modelName`；读取旧的 `gemini-api://.../models/...` 条目时提取模型 ID，保存时标准化。提交的地址去掉末尾 `/v1beta`，由原生 CLI 添加版本路径，避免重复。已有环境地址优先，旧 URI 的地址只在环境没有显式值时迁移，用户明确停用时不恢复。仅 Gemini 模式使用这些条目，不能把 OpenAI Responses 地址当作 Gemini 地址。旧数组形式的说明已纠正，历史可从 `5d5d0c6` 追溯。
 
@@ -138,7 +138,7 @@ Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护
 
 Codex OAuth 由独立 app-server 承载，授权链接只在用户启动后出现；成功以同一 loginId 的完成通知为准。取消、超时或所绑定对话实例退出会关闭授权进程，迟到成功无效；关闭设置后再次打开可恢复未结束操作。该操作使用原生读取活动租约，不等待正在等待授权的回合空闲。Claude 2.1.317 的 `mcp login --no-browser` 实测仍要求交互终端，管道 stdin 不可用；此入口提供原生终端指引，对话内 SDK URL 请求继续通过问题卡片处理。真实第三方账号授权由用户操作，本轮仅验证本地合成服务。
 
-2026-11-11 隔离验证：Claude stdio/HTTP 连接与失败、user/local 原生命令增删；Codex stdio/HTTP 工具发现、线程状态与重载、OAuth 成功/失败/取消；Antigravity 原生 `mcp list` 识别配置及禁用均有实测记录。未修改真实用户 profile，未执行 MCP 工具。后台任务对维护空闲的裁决由后续子代理阶段接入，不能把当前回合结束当作所有后台任务完成。
+2026-11-11 隔离验证覆盖 Claude stdio/HTTP 连接与失败、user/local 原生命令增删，Codex 工具发现、线程状态与重载、合成 OAuth 流程，以及 Antigravity 原生配置和禁用识别。维护空闲判断现已包含会话级后台任务租约。
 
 ## Antigravity MCP 工具加载
 

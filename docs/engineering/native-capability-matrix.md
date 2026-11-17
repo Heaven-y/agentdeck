@@ -1,6 +1,6 @@
 # 三 CLI 原生能力矩阵
 
-核查日期：2026-11-12。证据基线为 Claude Code 2.1.317 / Agent SDK 0.3.286、Codex 0.166.0、Antigravity 1.5.3。本文记录本轮整合的实现与证据，P11 审阅和范围验收已完成；阶段状态见[实施计划](../plans/native-capability-parity.md)。“已接入”仍受下表的原生版本与验证范围约束。
+基础核查日期：2026-11-12。证据基线为 Claude Code 2.1.317 / Agent SDK 0.3.286、Codex 0.166.0、Antigravity 1.5.3。本文记录各项能力及验证范围，后续 AGY 上下文修订见[统计口径](cli-observability.md)。阶段记录见[历史追溯](decisions.md#历史追溯)。
 
 ## 判定口径
 
@@ -13,7 +13,7 @@
 | 协议限制 | 当前版本或运行路径没有所需能力，或还没有可靠执行证据；不伪造入口 |
 | 范围待定 | 会增加账号授权、持久调度、媒体采集或新的宿主执行环境，需要明确产品范围 |
 
-类型定义、官方说明、隔离实际运行、真实外部服务验收分别记录。类型中存在方法只能证明协议声明；本轮“原生实测”指真实本机 CLI 连接本机合成服务，不证明真实服务的模型质量、账号权益、视觉理解或第三方授权。升级后的 CLI 不自动继承本表结论。
+证据分为协议声明、本机隔离运行和外部服务验收。“原生实测”指本机 CLI 连接合成服务，验证协议与接线；模型质量、视觉理解及第三方授权需由外部服务验收确认。CLI 升级后按变化复核。
 
 ## 对话与原生运行
 
@@ -25,7 +25,7 @@
 | 运行中追加与待发队列 | **部分接入**：可见队列、编辑/清空/恢复；SDK priority 的实测边界不能保证同轮引导，因此没有“引导本轮” | **已接入**：宿主队列及 `turn/steer`，校验 expectedTurnId 与原生 clientId，未知受理不自动重发 | **部分接入**：ACP 支持队列和同轮引导，按最新 prompt 完成门结束；headless 只用宿主队列。失败/停止/失联/阻塞答复暂停队列。E04 |
 | 子代理独立历史与嵌套关系 | **已接入**：SDK 子代理 ID、消息、分页与独立媒体 | **已接入**：父活动发现子线程，再核验双 parent、cwd、depth；普通列表不保证枚举全部子线程 | **已接入**：父 `invokeSubagent.results` 定位子轨迹，核验 parent/root/depth/workspace。三者只读历史均与父正文、统计和分叉入口分离。E05 |
 | 子代理运行状态、批准与停止 | **部分接入**：本宿主实例任务状态、父回合结束后的批准、`stopTask`；原生前/后台子代理禁用 AskUserQuestion | **部分接入**：核实后的活动子 turn 可中断，父结束后仍能批准；默认子代理未开放异步问题工具 | **协议限制**：保留独立历史与整轮取消，尚无经验证的单子任务停止协议。不得把历史记录当活动任务。E05 |
-| 原生工具创建的后台终端 | **已接入**：后台 Bash 属于会话任务，原生终态后释放维护租约，父回合结束不丢失停止控制 | **已接入（P10e）**：固定到同一 RuntimeControl/app-server；分页有界、读取失败保留活动租约、停止需原生确认并复读列表、每5秒检查自然终态。新实例不能接管旧终端。E10 | **部分接入**：命令调用、输出和原生轨迹可展示；尚未证实独立后台终端枚举/单项停止的公开 ACP 入口。E05、E10 |
+| 原生工具创建的后台终端 | **已接入**：后台 Bash 属于会话任务，原生终态后释放维护租约，父回合结束不丢失停止控制 | **已接入**：固定到同一 RuntimeControl/app-server；分页有界、读取失败保留活动租约、停止需原生确认并复读列表、每5秒检查自然终态。新实例不能接管旧终端。E10 | **部分接入**：命令调用、输出和原生轨迹可展示；尚未证实独立后台终端枚举/单项停止的公开 ACP 入口。E05、E10 |
 | 计划与执行模式 | **已接入**：原生 plan 权限模式及计划工具事件；模式语义沿用 Claude | **已接入**：显式 default/plan，通过 `collaborationMode/list` 核对并协商实验字段；不为触发问题自动换模式 | **部分接入**：原生模式/模型配置映射与 ACP `/plan`；计划内容由 CLI 执行和返回，不复制原生提示词。E09 |
 | 长期目标 | **原生 CLI 管理**：可由原生技能/代理工作流执行；本轮不另建 goal 管理器 | **原生 Codex 管理**：active 与 resume active 会触发自主回合，pause 不取消当前轮；用户决定由原生端管理。AgentDeck 仅在续聊前检查 active 并阻止普通回合，不显示或控制 goal。E10 | **原生 ACP 命令**：`/goal` 分派已验证，可产生多次请求并支持整轮取消；持续生命周期由原生 CLI 管理。E09、E10 |
 | 专用代码审查 | **部分接入**：通过原生技能和普通对话审查；没有假造 Codex 式 review RPC | **已接入**：`review/start` inline，默认审查未提交改动，或使用明确目标；不伪装普通提示词发送 | **部分接入**：原生工具、技能和差异记录继续显示；未另造 IDE 专用审查面板。E09 |
@@ -50,7 +50,7 @@
 
 ## 宿主外工作流
 
-这些功能的 CLI、桌面端、IDE 扩展或云端产品可能不同；工作台不会因为看见 slash 命令、schema 方法或官方产品页面就声明自己支持其完整生命周期。
+下表区分本机 CLI、桌面端、IDE 扩展和云端各自提供的功能。
 
 | 能力 | Claude Code | Codex | Antigravity |
 |---|---|---|---|
@@ -63,6 +63,8 @@
 | 自动化 / 定时任务 | **原生 Claude 管理**：session Cron/Create 依赖 CLI 进程、空闲时机和项目身份；Cloud/Desktop scheduled task 属于其他宿主。AgentDeck 不提供跨应用调度 | **原生 Codex 管理**：active goal 不是 cron；Codex 应用 Automations 也不由本机 CLI adapter 管理。AgentDeck 不接管持续目标或定时任务 | **原生 CLI 管理/生命周期未验证**：ACP目录可出现 `schedule`，但 AgentDeck 未验证其恢复、取消和跨进程寿命，也不接管调度。E10、E17 |
 
 ## 证据索引
+
+以下报告存于本机忽略目录，阶段结果见 `b1ec36f:docs/plans/native-capability-parity.md`。
 
 | 编号 | 证据 |
 |---|---|
@@ -90,7 +92,7 @@
 |---|---|
 | 原生响应与轨迹映射 | [Claude mapper](../../apps/server/src/agents/claude/mapper.ts)、[Codex mapper](../../apps/server/src/agents/codex/mapper.ts)、[Antigravity mapper](../../apps/server/src/agents/antigravity/mapper.ts)、[ACP runtime](../../apps/server/src/agents/antigravity/acp/runtime.ts) |
 | 子代理与后台任务 | [Claude tasks](../../apps/server/src/agents/claude/tasks.ts)、[Codex child tasks](../../apps/server/src/agents/codex/tasks.ts)、[AGY subagents](../../apps/server/src/agents/antigravity/subagents.ts)、[Codex background terminal helper](../../apps/server/src/agents/codex/background-terminals.ts) |
-| P10 专用命令、审查与回退 | [Claude native actions](../../apps/server/src/agents/claude/native-actions.ts)、[Codex native actions](../../apps/server/src/agents/codex/native-actions.ts)、[Codex history actions](../../apps/server/src/agents/codex/history-actions.ts)、[AGY ACP commands](../../apps/server/src/agents/antigravity/acp/commands.ts) |
+| 专用命令、审查与回退 | [Claude native actions](../../apps/server/src/agents/claude/native-actions.ts)、[Codex native actions](../../apps/server/src/agents/codex/native-actions.ts)、[Codex history actions](../../apps/server/src/agents/codex/history-actions.ts)、[AGY ACP commands](../../apps/server/src/agents/antigravity/acp/commands.ts) |
 | Skills、MCP、插件和规则 | [Native configuration](native-configuration.md)及其列出的三CLI配置适配器；状态/隔离验收见E06–E08 |
 | 本机协议类型 | Claude使用当前安装SDK的`node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`；Codex 0.166.0 schema由本机app-server `generate-json-schema --experimental`生成；AGY依据ACP initialize和本机CLI/管理协议。schema与SDK声明只说明字段/方法，不代替E索引中的真实隔离执行证据 |
 
@@ -100,4 +102,4 @@
 
 用户已决定 Codex goal 和各 CLI 定时任务由原生端管理，AgentDeck 不接管；实时音频对话不纳入本轮计划。
 
-这些选择不阻止可独立实施的原生会话能力。Codex 后台终端清单/停止已由同一 RuntimeControl 接入；active goal 检测与续聊守卫也已实现。P11独立审阅未发现新的可确认代码缺陷，P06b修复复核也已关闭；隔离测试覆盖对接线、失联和终态处理。
+Codex 后台终端清单和停止使用同一 RuntimeControl，active goal 检测与续聊守卫已接入；审阅和验证结果见路线图。

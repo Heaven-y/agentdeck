@@ -1,10 +1,10 @@
 # 本地安装与打包
 
-本项目支持 Windows x64 本地分发；当前源码与既有安装包是不同交付状态。最新源码尚未重新成包，不上传 GitHub Releases、不接通在线更新，状态见[路线图](../roadmap.md)。
+支持 Windows x64 本地安装版和便携版。现有包为 0.1.1，最新源码尚未打包，进度见[路线图](../roadmap.md)。
 
-历史记录：**0.1.1** 于 2026-11-05 完成本地构建，解压应用与便携版的首屏、预加载隔离、单实例和退出清理通过当时验收。此结论只对应该版本，不覆盖后续源码。
+**0.1.1** 于 2026-11-05 完成本地构建，解压应用与便携版的首屏、预加载隔离、单实例和退出清理通过验收。
 
-同版本首轮候选 NSIS 曾完成隔离安装、启动和卸载；后续应用重建的安装器机制沿用候选证据，没有逐次重装。原记录及当时报告路径见 `b053fe1:docs/guides/local-installation.md`；本文不保证忽略目录里的历史产物仍完整可用。
+同版本首轮候选 NSIS 完成过隔离安装、启动和卸载；后续重建沿用候选验证，未逐次重装。原记录见 `b053fe1:docs/guides/local-installation.md`。
 
 ## 选择安装方式
 
@@ -24,9 +24,9 @@
 
 同一用户正常只运行一个实例，再次启动会聚焦现有窗口。退出会停止本机服务并清理本应用持有的连接与子进程。卸载安装版保留工作台数据及 CLI 原生文件。
 
-当前通过退出旧版本后手动运行新安装包或替换便携包更新。没有后台自动下载或发布动作；正式签名、在线更新和发布渠道等用户决定启用后再配置。
+更新时退出旧版本，再运行新安装包或替换便携包。签名、在线更新和公开发布渠道尚未启用。
 
-日常源码修改和 Git 同步不自动升级版本。准备制作新版本安装包或发布时，先说明变更范围、拟用版本号并询问用户；旧 0.1.1 不会随开发源码变化。
+制作新包前确认变更范围和版本，规则见[开发指南](dev-environment.md#3-启动与隔离验证)。
 
 ## 从源码构建
 
@@ -41,17 +41,17 @@ npm.cmd run package:desktop
 
 产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。不同版本的 exe 可以保留在 `release/`；`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们。
 
-桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程，远端文件辅助脚本随包携带。没有打入 SDK 附带的 CLI 平台二进制，SSH 的可选原生加速模块使用 JavaScript 回退。
+桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI，SSH 的可选原生加速模块采用 JavaScript 回退。
 
 ## 验收与核对
 
 `node --import tsx scripts/packaging/smoke.ts` 把 `release/win-unpacked` 复制到仓库外的临时目录，并隔离用户、应用数据和 PATH。通过本机调试接口检查首屏、preload 隔离、空初始数据、第二实例退出、正常关窗及端口释放，最后清理临时目录。
 
-验收报告和截图写入 `release/verification/`，不会加入公开仓库。默认检查解压应用；追加 `--portable <exe路径>` 检查便携版，`--installed <应用目录>` 检查已安装版。NSIS 的安装与卸载还需核对注册项、快捷方式和安装目录，不能从解压版启动推定安装器成功。
+验收报告和截图写入 `release/verification/`。默认检查解压应用；追加 `--portable <exe路径>` 检查便携版，`--installed <应用目录>` 检查已安装版。NSIS 安装与卸载另查注册项、快捷方式和安装目录。
 
-Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/packaging/installer-smoke.ps1` 验证 NSIS。脚本默认选择 desktop 清单当前版本，发现已有安装、同名快捷方式或缓存时停止，避免覆盖。旧报告路径只作历史索引；新交付必须对实际文件重新生成报告和摘要。
+Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/packaging/installer-smoke.ps1` 验证 NSIS。脚本选择 desktop 清单中的当前版本，发现已有安装、同名快捷方式或缓存时停止。每次交付按实际产物生成报告和摘要。
 
-`node --import tsx scripts/packaging/record.ts` 核对包内版本、主进程、preload、辅助脚本和网页入口与当前构建一致，记录相关源文件指纹、Git 提交和成品摘要。它仅选择 desktop 清单当前版本的两种 x64 exe，缺少任一种都会失败；旧包保留且不加入本次摘要。`release/SHA256SUMS.txt` 与 `release/verification/build-record.json` 对应当前版本，仅写入本地。
+`node --import tsx scripts/packaging/record.ts` 核对包内版本、主进程、preload 和网页入口，记录源文件指纹、Git 提交和成品摘要。它检查 desktop 清单当前版本的两种 x64 exe，任一缺失时失败。结果写入 `release/SHA256SUMS.txt` 与 `release/verification/build-record.json`。
 
 最终交付附 SHA-256 清单。可用 PowerShell 核对下载或复制后的文件：
 
@@ -60,8 +60,8 @@ Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.1-x64-setup.
 Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.1-x64-portable.exe
 ```
 
-上述安装包冒烟脚本不向真实模型发送消息，也不登录实际 SSH 服务器；这两类外部链路的限制由各接入说明和路线图分别记录。
+安装冒烟使用隔离环境；模型和 SSH 链路的验证结果见路线图。
 
 ## 会话链接的安装验收边界
 
-新源码已实现初始参数、第二实例和页面订阅后的会话链接分发；现存旧安装包不包含此能力。下次获准制作安装包后，应在独立 Windows 用户环境验证协议登记、冷启动和运行中打开链接、卸载协议清理。已有协议所有者必须保留，不能为了验收覆盖当前安装。源码和模拟桌面事件通过不代替操作系统级验证。
+会话链接已接入初始参数、第二实例和页面订阅后的分发，系统安装验收待下次打包完成。验证使用独立 Windows 用户，检查协议登记、冷启动、运行中打开链接及卸载清理，并保留已有协议所有者。
