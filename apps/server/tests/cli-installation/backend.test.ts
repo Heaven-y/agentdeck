@@ -1,17 +1,33 @@
-import { mkdtemp, mkdir, writeFile, rm, readFile, symlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, writeFile, rm, readFile, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createCliInstallationBackend } from '../../src/cli-installation';
+import { createCliInstallationBackend, type BackendOptions } from '../../src/cli-installation';
+import { installationContext, checkedInstallation } from '../../src/cli-installation/installation-context';
+import { executeInstallation } from '../../src/cli-installation/installer';
+import type { CliInstallation } from '../../src/cli-installation/types';
 import type { ProcessRunner, ProcessOptions } from '../../src/platform/process/run';
 import { runProcess } from '../../src/platform/process/run';
+
+// 这里单测安装器的参数和来源。正式后端只开放包含占用检查、验证和回滚的事务。
+function adapter(options: BackendOptions) {
+  const context = installationContext(options);
+  return {
+    ...createCliInstallationBackend(options),
+    execute: async (installation: CliInstallation, version: string, signal: AbortSignal) => {
+      const current = await checkedInstallation(context, installation, signal);
+      await executeInstallation(context, current, version, signal);
+    },
+  };
+}
 
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 async function fixture() {
-  const root = await mkdtemp(path.join(tmpdir(), 'agentdeck-cli-install-'));
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), 'agentdeck-cli-install-'));
   roots.push(root);
   const prefix = path.join(root, 'node');
   const windows = process.platform === 'win32';
@@ -44,7 +60,13 @@ async function fixture() {
   const calls: { executable: string; args: string[]; options: ProcessOptions }[] = [];
   const run: ProcessRunner = async (executable, args, options) => {
     calls.push({ executable, args, options });
-    const stdout = args.includes('--version') ? '2.1.100 (Claude Code)' : args.includes('prefix') ? prefix : '';
+    const stdout = args.some((arg) => arg.includes('Get-CimInstance'))
+      ? JSON.stringify([{ image: null, name: 'explorer.exe' }])
+      : args.includes('--version')
+        ? '2.1.100 (Claude Code)'
+        : args.includes('prefix')
+          ? prefix
+          : '';
     return { stdout: Buffer.from(stdout), stderr: Buffer.alloc(0), exitCode: 0 };
   };
   const npm = async () => {
@@ -119,7 +141,7 @@ describe('CLI 安装后端', () => {
         }
         return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), exitCode: 0 };
       };
-      const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run });
+      const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run });
       await backend.execute(await backend.inspect(agent), '1.2.3', new AbortController().signal);
       expect(actualValues[0]).toBe('https://registry.npmjs.org');
       expect(actualValues[1]).toBe('true');
@@ -133,7 +155,7 @@ describe('CLI 安装后端', () => {
     const f = await fixture();
     await f.npm();
     await f.claude();
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run: f.run,
@@ -158,6 +180,7 @@ describe('CLI 安装后端', () => {
       '--registry=https://registry.npmjs.org',
       '--@anthropic-ai:registry=https://registry.npmjs.org',
       '--strict-ssl=true',
+      '--include=optional',
       '@anthropic-ai/claude-code@2.1.101',
     ]);
     expect(install.options.env).not.toHaveProperty('ANTHROPIC_API_KEY');
@@ -170,7 +193,7 @@ describe('CLI 安装后端', () => {
     const f = await fixture();
     await f.npm();
     await f.claude('unexpected-package');
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     const current = await backend.inspect('claude');
     expect(current).toMatchObject({ installed: true, source: 'unknown', canUpdate: false });
     await expect(backend.execute(current, '2.1.101', new AbortController().signal)).rejects.toThrow();
@@ -184,10 +207,10 @@ describe('CLI 安装后端', () => {
     const other = path.join(f.root, 'other.exe');
     await f.put(other);
     await f.launcher('claude', other);
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     expect(await backend.inspect('claude')).toMatchObject({ source: 'unknown', canUpdate: false });
     await f.claude();
-    const mismatch = createCliInstallationBackend({
+    const mismatch = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run: async (...args) =>
@@ -202,7 +225,7 @@ describe('CLI 安装后端', () => {
     const f = await fixture();
     await f.npm();
     const dir = await f.claude();
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     const current = await backend.inspect('claude');
     await f.put(
       path.join(dir, 'package.json'),
@@ -216,14 +239,14 @@ describe('CLI 安装后端', () => {
   it('缺失 CLI 时只允许能被当前启动环境找到的 npm 全局安装目录', async () => {
     const f = await fixture();
     await f.npm();
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     expect(await backend.inspect('codex')).toMatchObject({
       installed: false,
       source: 'missing',
       canInstall: true,
       prefix: f.prefix,
     });
-    const hidden = createCliInstallationBackend({
+    const hidden = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run: async (...args) =>
@@ -234,14 +257,25 @@ describe('CLI 安装后端', () => {
     expect(await hidden.inspect('codex')).toMatchObject({ canInstall: false });
   });
 
-  it.runIf(process.platform === 'win32')('Claude 原生更新读取 stable 通道且保持原生命令', async () => {
+  it.runIf(process.platform === 'win32')('Claude 原生更新读取 stable 通道并将精确版本写到当前入口', async () => {
     const f = await fixture();
     const bin = path.join(f.homeDir, '.local/bin');
     await f.put(path.join(bin, 'claude.exe'));
     const settings = path.join(f.homeDir, '.claude/settings.json');
     await f.put(settings, JSON.stringify({ autoUpdatesChannel: 'stable' }));
-    const fetcher = vi.fn<typeof fetch>(async () => new Response('2.1.101'));
-    const backend = createCliInstallationBackend({
+    const body = 'Claude fixture';
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      if (typeof url === 'string' && url.endsWith('/stable')) return new Response('2.1.101');
+      if (typeof url === 'string' && url.endsWith('/manifest.json'))
+        return Response.json({
+          version: '2.1.101',
+          platforms: {
+            'win32-x64': { checksum: createHash('sha256').update(body).digest('hex') },
+          },
+        });
+      return new Response(body);
+    });
+    const backend = adapter({
       environment: async () => ({ ...f.env, PATH: bin }),
       homeDir: f.homeDir,
       run: f.run,
@@ -252,28 +286,41 @@ describe('CLI 安装后端', () => {
     expect(await backend.latest(current)).toEqual({ version: '2.1.101' });
     expect(fetcher.mock.calls[0]?.[0]).toBe('https://downloads.claude.ai/claude-code-releases/stable');
     await backend.execute(current, '2.1.101', new AbortController().signal);
-    expect(f.calls.at(-1)?.args).toEqual(['update']);
+    expect(await readFile(path.join(bin, 'claude.exe'), 'utf8')).toBe(body);
     await f.put(settings, JSON.stringify({ autoUpdatesChannel: 'latest' }));
     expect((await backend.inspect('claude')).identity).not.toBe(current.identity);
   });
 
-  it('AGY 默认目录识别原生版本并使用 update', async () => {
+  it('AGY 默认目录识别原生版本并按已确认清单替换实际入口', async () => {
     const f = await fixture();
     await f.put(path.join(f.localAppData, 'agy/bin/agy.exe'));
     const run: ProcessRunner = async (...args) =>
       args[1].includes('--version')
         ? { stdout: Buffer.from('1.5.3'), stderr: Buffer.alloc(0), exitCode: 0 }
         : f.run(...args);
-    const backend = createCliInstallationBackend({
+    const body = 'AGY fixture';
+    const manifest = {
+      version: '1.5.4',
+      sha512: createHash('sha512').update(body).digest('hex'),
+      url: 'https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.4-build/windows-x64/cli_windows_x64.exe',
+    };
+    const fetcher = vi.fn<typeof fetch>(async (url) =>
+      url === manifest.url ? new Response(body) : Response.json(manifest),
+    );
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       platform: 'win32',
       run,
+      fetch: fetcher,
     });
     const current = await backend.inspect('antigravity');
     expect(current).toMatchObject({ source: 'native', version: '1.5.3', canUpdate: true });
     await backend.execute(current, '1.5.4', new AbortController().signal);
-    expect(f.calls.at(-1)?.args).toEqual(['update']);
+    expect(await readFile(path.join(f.localAppData, 'agy/bin/agy.exe'), 'utf8')).toBe(body);
+    manifest.sha512 = '0'.repeat(128);
+    await expect(backend.execute(current, '1.5.4', new AbortController().signal)).rejects.toThrow();
+    expect(await readFile(path.join(f.localAppData, 'agy/bin/agy.exe'), 'utf8')).toBe(body);
   });
 
   it('下载官方安装脚本到临时文件再执行，失败不泄露 stderr，结束清理文件', async () => {
@@ -286,7 +333,7 @@ describe('CLI 安装后端', () => {
       return { stdout: Buffer.alloc(0), stderr: Buffer.from('private-error-secret'), exitCode: 1 };
     };
     const fetcher = vi.fn<typeof fetch>(async () => new Response('Write-Host install'));
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run,
@@ -306,7 +353,7 @@ describe('CLI 安装后端', () => {
     const fetcher = vi.fn<typeof fetch>(
       async () => new Response(JSON.stringify({ version: '1.2.3', token: 'private' })),
     );
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run: f.run,
@@ -327,7 +374,7 @@ describe('CLI 安装后端', () => {
     await f.npm();
     await f.claude();
     await f.put(path.join(f.homeDir, '.claude/settings.json'), JSON.stringify({ env: { DISABLE_UPDATES: '1' } }));
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     const current = await backend.inspect('claude');
     expect(current).toMatchObject({ source: 'npm', canUpdate: false });
     await expect(backend.execute(current, '2.1.101', new AbortController().signal)).rejects.toThrow();
@@ -352,12 +399,12 @@ describe('CLI 安装后端', () => {
       args[1].includes('--version')
         ? { stdout: Buffer.from('codex-cli 0.100.0'), stderr: Buffer.alloc(0), exitCode: 0 }
         : f.run(...args);
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run });
     const current = await backend.inspect('codex');
     expect(current).toMatchObject({ source: 'npm', canUpdate: true, version: '0.100.0' });
     await backend.execute(current, '0.101.0', new AbortController().signal);
     expect(f.calls.at(-1)?.args.at(-1)).toBe('@openai/codex@0.101.0');
-    const changed = createCliInstallationBackend({
+    const changed = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       run,
@@ -374,8 +421,18 @@ describe('CLI 安装后端', () => {
       path.join(dir, 'package.json'),
       JSON.stringify({ name: '@anthropic-ai/claude-code', version: '2.0.0', bin: { claude: 'bin/claude.exe' } }),
     );
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
-    expect(await backend.inspect('claude')).toMatchObject({ canUpdate: false });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    expect(await backend.inspect('claude')).toMatchObject({
+      canUpdate: false,
+      canRepair: true,
+      message: expect.stringMatching(/版本不一致.*修复/),
+    });
+    await rm(path.join(dir, 'bin/claude.exe'));
+    expect(await backend.inspect('claude')).toMatchObject({
+      canUpdate: false,
+      canRepair: true,
+      message: expect.stringMatching(/入口.*修复/),
+    });
   });
 
   it('官方名称包的 bin 链接到包外程序时不能伪装 npm 来源', async () => {
@@ -387,7 +444,7 @@ describe('CLI 安装后端', () => {
     await f.put(external);
     await rm(entry);
     await symlink(external, entry, 'file');
-    const backend = createCliInstallationBackend({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
+    const backend = adapter({ environment: async () => f.env, homeDir: f.homeDir, run: f.run });
     expect(await backend.inspect('claude')).toMatchObject({ source: 'unknown', canUpdate: false });
   });
 
@@ -405,7 +462,7 @@ describe('CLI 安装后端', () => {
           }),
         ),
     );
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       arch: 'arm64',
@@ -440,13 +497,13 @@ describe('CLI 安装后端', () => {
   it('用户显式失效路径不触发新安装，非支持平台不猜测原生包管理器', async () => {
     const f = await fixture();
     await f.npm();
-    const overridden = createCliInstallationBackend({
+    const overridden = adapter({
       environment: async () => ({ ...f.env, AGENTDECK_CODEX: path.join(f.root, 'missing.exe') }),
       homeDir: f.homeDir,
       run: f.run,
     });
     expect(await overridden.inspect('codex')).toMatchObject({ installed: false, canInstall: false });
-    const unsupported = createCliInstallationBackend({
+    const unsupported = adapter({
       platform: 'linux',
       environment: async () => ({ PATH: '' }),
       homeDir: f.homeDir,
@@ -458,7 +515,7 @@ describe('CLI 安装后端', () => {
   it('Codex 官方安装器 403 只报告失败，既不执行内容也不换镜像', async () => {
     const f = await fixture();
     const fetcher = vi.fn<typeof fetch>(async () => new Response('private failure', { status: 403 }));
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       platform: 'win32',
@@ -480,7 +537,7 @@ describe('CLI 安装后端', () => {
         ? new Response(null, { status: 302, headers: { location: 'https://releases.openai.com/codex/install.ps1' } })
         : new Response('Write-Host install'),
     );
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       platform: 'win32',
@@ -504,7 +561,9 @@ describe('CLI 安装后端', () => {
     const releaseBin = path.join(f.homeDir, '.codex/packages/standalone/releases/0.100.0-x86_64-pc-windows-msvc/bin');
     await f.put(path.join(releaseBin, 'codex.exe'));
     await mkdir(path.dirname(bin), { recursive: true });
-    await symlink(releaseBin, bin, 'junction');
+    const currentLink = path.join(f.homeDir, '.codex/packages/standalone/current');
+    await symlink(path.dirname(releaseBin), currentLink, 'junction');
+    await symlink(path.join(currentLink, 'bin'), bin, 'junction');
     const run: ProcessRunner = async (...args) =>
       args[1].includes('--version')
         ? { stdout: Buffer.from('codex-cli 0.100.0'), stderr: Buffer.alloc(0), exitCode: 0 }
@@ -514,7 +573,7 @@ describe('CLI 安装后端', () => {
         ? new Response(JSON.stringify({ tag_name: 'rust-v0.101.0', assets: [] }))
         : new Response('Write-Host install'),
     );
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => ({ ...f.env, PATH: bin }),
       homeDir: f.homeDir,
       run,
@@ -532,7 +591,7 @@ describe('CLI 安装后端', () => {
 
   it('缺失 Claude 时无需预先把已知原生目录加入 PATH', async () => {
     const f = await fixture();
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => f.env,
       homeDir: f.homeDir,
       platform: 'win32',
@@ -550,7 +609,7 @@ describe('CLI 安装后端', () => {
       args[1].includes('prefix')
         ? { stdout: Buffer.from(prefix), stderr: Buffer.alloc(0), exitCode: 0 }
         : f.run(...args);
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => ({ ...f.env, APPDATA: appData }),
       homeDir: f.homeDir,
       run,
@@ -560,7 +619,7 @@ describe('CLI 安装后端', () => {
 
   it('原生自定义安装目录无法发现时不进行首次安装', async () => {
     const f = await fixture();
-    const backend = createCliInstallationBackend({
+    const backend = adapter({
       environment: async () => ({ ...f.env, CODEX_INSTALL_DIR: path.join(f.root, 'custom-bin') }),
       homeDir: f.homeDir,
       platform: 'win32',

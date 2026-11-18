@@ -1,3 +1,5 @@
+import { readlink } from 'node:fs/promises';
+import { existing } from './protection';
 import path from 'node:path';
 import { resolveNodeExecutable, type ResolvedCommand } from '../platform/process/executable';
 import type { AgentKind } from '@agentdeck/shared/conversation';
@@ -120,4 +122,50 @@ export async function officialNpmSource(input: {
   if (!(await matchesPackageEntry(info, command, { agent, context }))) return undefined;
   // 对比真实入口与官方包声明的 bin，同时绑定完整清单；不依赖路径片段推断来源。
   return { identity: info.text, version: info.manifest.version };
+}
+/** 入口已损坏时仍可用当前全局位置和包清单确定修复对象。 */
+export async function brokenNpmPackage(
+  agent: AgentKind,
+  npm: NpmInstallation | undefined,
+  context: BackendContext,
+): Promise<OfficialPackage | undefined> {
+  if (!npm || agent === 'antigravity') return undefined;
+  const root = path.join(
+    npm.prefix,
+    context.platform === 'win32' ? 'node_modules' : 'lib/node_modules',
+    PACKAGES[agent],
+  );
+  const info = await packageInfo(root, PACKAGES[agent]);
+  if (!info || !declaredBin(info, agent)) return undefined;
+  return { identity: info.text, version: info.manifest.version };
+}
+/** 除正在使用的入口外，npm 还会生成其它 shell 的同名入口；不能据文件名认领它们。 */
+export async function ownsNpmLaunchers(
+  root: string,
+  launchers: string[],
+  agent: 'claude' | 'codex',
+  platform: NodeJS.Platform,
+): Promise<boolean> {
+  const info = await packageInfo(root, PACKAGES[agent]);
+  if (!info) return false;
+  const entry = declaredBin(info, agent);
+  if (!entry) return false;
+  for (const file of launchers) {
+    const link = await existing(file);
+    if (!link) continue;
+    if (link.isSymbolicLink()) {
+      if (!samePath(path.resolve(path.dirname(file), await readlink(file)), entry, platform)) return false;
+    } else if (!link.isFile() || platform !== 'win32' || !shimPointsTo(await readSmallFile(file), file, entry))
+      return false;
+  }
+  return true;
+}
+
+function shimPointsTo(contents: string, file: string, entry: string): boolean {
+  const directory = path.dirname(file);
+  const text = contents.replace(/%(?:~dp0|dp0%)|\$(?:basedir|psscriptroot)/gi, directory + path.sep);
+  return [...text.matchAll(/["']([^"'\r\n]+)["']/g)].some((match) => {
+    const quoted = match[1]!;
+    return path.isAbsolute(quoted) && samePath(quoted, entry, 'win32');
+  });
 }

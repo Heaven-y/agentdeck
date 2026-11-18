@@ -1,15 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentKind } from '@agentdeck/shared/conversation';
-import type { CliInstallInput, CliInstallationStatus } from '@agentdeck/shared/settings';
+import {
+  CLI_INSTALL_RELEASE_TTL_MS,
+  type CliInstallInput,
+  type CliInstallationStatus,
+} from '@agentdeck/shared/settings';
 import type { CliInstallation, CliInstallationBackend } from './types';
 import { CliInstallationError, installationFailure } from './service-errors';
 
 type Deps = {
   backend: CliInstallationBackend;
   withIdleAgent<T>(agent: AgentKind, operation: () => Promise<T>): Promise<T>;
-  restart(agent: AgentKind): Promise<void>;
   onChanged(agent: AgentKind): Promise<void>;
-  verify?(agent: AgentKind): Promise<boolean>;
+  verify?(agent: AgentKind, installation: CliInstallation): Promise<boolean>;
   now?: () => number;
 };
 export type CliInstallationService = {
@@ -34,7 +37,6 @@ type Operation = {
   controller: AbortController;
   accepted: boolean;
 };
-const RELEASE_TTL = 15 * 60 * 1_000;
 
 function fingerprint(installation: CliInstallation): string {
   const { installed, version, source, identity, command, prefix, npm, channel, canInstall, canUpdate } = installation;
@@ -115,21 +117,24 @@ function origin(installation: CliInstallation): string {
 function validateResult(before: CliInstallation, after: CliInstallation, target: string): void {
   const targetComparison = compareVersions(after.version, target);
   const currentComparison = before.version === null ? 0 : compareVersions(after.version, before.version);
-  if (!after.installed || targetComparison === null || targetComparison < 0)
-    throw new CliInstallationError('verification_failed');
+  if (!after.installed || targetComparison !== 0) throw new CliInstallationError('verification_failed');
   if (currentComparison === null || currentComparison < 0) throw new CliInstallationError('verification_failed');
+  if (after.source === 'npm' && !after.canUpdate) throw new CliInstallationError('verification_failed');
   validateOrigin(before, after);
 }
 
 function validateOrigin(before: CliInstallation, after: CliInstallation): void {
-  if (before.installed && origin(before) !== origin(after)) throw new CliInstallationError('verification_failed');
+  if (before.installed && before.command && origin(before) !== origin(after))
+    throw new CliInstallationError('verification_failed');
+  if (!before.installed && after.source !== (before.prefix ? 'npm' : 'native'))
+    throw new CliInstallationError('verification_failed');
   if (before.prefix && normalizePath(before.prefix) !== normalizePath(after.prefix))
     throw new CliInstallationError('verification_failed');
 }
 
 function canUpdate(installation: CliInstallation, latest: string | null): boolean {
   if (!installation.installed || !installation.canUpdate) return false;
-  if (installation.version === null) return true;
+  if (installation.version === null) return false;
   const comparison = compareVersions(latest, installation.version);
   return comparison !== null && comparison > 0;
 }
@@ -138,7 +143,7 @@ function validateAction(installation: CliInstallation, action: CliInstallInput['
   const permitted =
     action === 'install'
       ? !installation.installed && installation.canInstall
-      : installation.installed && installation.canUpdate;
+      : installation.installed && (action === 'repair' ? installation.canRepair : installation.canUpdate);
   if (!permitted) throw new CliInstallationError('unsupported');
   if (action === 'update' && !canUpdate(installation, target)) throw new CliInstallationError('check_required');
 }
@@ -182,7 +187,7 @@ class InstallationService implements CliInstallationService {
   private fresh(release: Release | undefined): boolean {
     if (!release) return false;
     const age = this.now() - release.checkedAt;
-    return age >= 0 && age <= RELEASE_TTL;
+    return age >= 0 && age <= CLI_INSTALL_RELEASE_TTL_MS;
   }
 
   private status(entry: Entry): CliInstallationStatus {
@@ -213,6 +218,7 @@ class InstallationService implements CliInstallationService {
     const idle = !this.active && entry.phase !== 'checking';
     return {
       updateAvailable: comparison !== null && comparison > 0,
+      canRepair: idle && !!installation.canRepair,
       canInstall: idle && !installation.installed && installation.canInstall,
       canUpdate: idle && this.fresh(release) && canUpdate(installation, latestVersion),
     };
@@ -295,7 +301,9 @@ class InstallationService implements CliInstallationService {
       .then(() =>
         this.deps.withIdleAgent(agent, async () => {
           const installation = await this.prepare(operation, input);
-          entry.phase = input.action === 'install' ? 'installing' : 'updating';
+          entry.phase = { install: 'installing', update: 'updating', repair: 'repairing' }[
+            input.action
+          ] as CliInstallationStatus['phase'];
           entry.operationId = randomUUID();
           entry.message = null;
           operation.accepted = true;
@@ -336,34 +344,38 @@ class InstallationService implements CliInstallationService {
   private async perform(operation: Operation, installation: CliInstallation, target: string): Promise<void> {
     const { entry, agent, controller } = operation;
     let failure: CliInstallationError | undefined;
+    let notice: string | void = undefined;
     try {
-      await this.deps.restart(agent);
-      controller.signal.throwIfAborted();
-      await this.deps.backend.execute(installation, target, controller.signal);
-      entry.phase = 'verifying';
-      await this.refresh(entry, agent, controller.signal);
-      controller.signal.throwIfAborted();
-      validateResult(installation, entry.installation!, target);
-      if (this.deps.verify && !(await this.deps.verify(agent))) throw new CliInstallationError('incompatible');
-      controller.signal.throwIfAborted();
+      notice = await this.deps.backend.transact(installation, target, controller.signal, async () => {
+        entry.phase = 'verifying';
+        await this.refresh(entry, agent, controller.signal);
+        controller.signal.throwIfAborted();
+        validateResult(installation, entry.installation!, target);
+        if (this.deps.verify) {
+          const identity = entry.installation!.identity;
+          if (!(await this.deps.verify(agent, entry.installation!))) throw new CliInstallationError('incompatible');
+          await this.refresh(entry, agent, controller.signal);
+          if (entry.installation!.identity !== identity) throw new CliInstallationError('verification_failed');
+        }
+        controller.signal.throwIfAborted();
+      });
     } catch (error) {
       failure = installationFailure(error, 'install_failed');
     }
-    failure = await this.finish(operation, failure);
+    const cacheNotice = await this.finish(operation, failure);
+    notice ??= cacheNotice;
     entry.phase = failure ? 'failed' : 'succeeded';
-    entry.message = failure?.message ?? 'CLI 安装已验证完成';
+    entry.message = failure?.message ?? notice ?? 'CLI 安装已验证完成';
   }
 
-  private async finish(
-    operation: Operation,
-    failure: CliInstallationError | undefined,
-  ): Promise<CliInstallationError | undefined> {
+  private async finish(operation: Operation, failure: CliInstallationError | undefined): Promise<string | undefined> {
     const { entry, agent, controller } = operation;
     entry.release = undefined;
+    let notice: string | undefined;
     try {
       await this.deps.onChanged(agent);
-    } catch (error) {
-      failure ??= installationFailure(error, 'install_failed');
+    } catch {
+      notice = 'CLI 已验证可用，请重新检测运行环境以刷新状态。';
     }
     // 即使安装进程部分失败，也重新读取本机状态；退出时沿用已取消信号，避免启动新进程。
     if (failure) {
@@ -373,7 +385,7 @@ class InstallationService implements CliInstallationService {
         /* 保留最后一次已知安装信息，错误正文不能进入状态。 */
       }
     }
-    return failure;
+    return notice;
   }
 
   async dispose(): Promise<void> {

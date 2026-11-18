@@ -46,7 +46,7 @@ it('正式服务接通安装任务：受控子进程更新后重新读取版本�
           checks++;
           return { version: '2.0.0' };
         },
-        execute: async (_installation, target, signal) => {
+        transact: async (_installation, target, signal, verify) => {
           executes++;
           const result = await runProcess(
             process.execPath,
@@ -54,6 +54,7 @@ it('正式服务接通安装任务：受控子进程更新后重新读取版本�
             { timeoutMs: 3000, outputCap: 1024, signal },
           );
           expect(result.exitCode).toBe(0);
+          await verify();
         },
       },
     },

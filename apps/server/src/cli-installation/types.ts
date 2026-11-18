@@ -15,6 +15,7 @@ export type CliInstallation = {
   channel?: 'latest' | 'stable';
   canInstall: boolean;
   canUpdate: boolean;
+  canRepair?: boolean;
   message: string | null;
   guideUrl: string;
 };
@@ -23,5 +24,10 @@ export type CliRelease = { version: string };
 export type CliInstallationBackend = {
   inspect(agent: AgentKind, signal?: AbortSignal): Promise<CliInstallation>;
   latest(installation: CliInstallation, signal?: AbortSignal): Promise<CliRelease>;
-  execute(installation: CliInstallation, version: string, signal: AbortSignal): Promise<void>;
+  transact(
+    installation: CliInstallation,
+    version: string,
+    signal: AbortSignal,
+    verify: () => Promise<void>,
+  ): Promise<string | void>;
 };

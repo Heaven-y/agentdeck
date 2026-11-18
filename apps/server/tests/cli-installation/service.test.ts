@@ -37,19 +37,26 @@ function fixture() {
     ['claude', installation()],
     ['codex', installation('codex')],
   ]);
-  const execute = vi.fn<CliInstallationBackend['execute']>(async () => undefined);
+  const execute = vi.fn<(installation: CliInstallation, version: string, signal: AbortSignal) => Promise<void>>(
+    async () => undefined,
+  );
   const inspect = vi.fn<CliInstallationBackend['inspect']>(async (agent) => ({ ...values.get(agent)! }));
   const latest = vi.fn<CliInstallationBackend['latest']>(async () => ({ version: '2.0.0' }));
   const onChanged = vi.fn(async () => undefined);
-  const restart = vi.fn(async () => undefined);
   const verify = vi.fn(async () => true);
   const lock = vi.fn(async <T>(_agent: AgentKind, operation: () => Promise<T>) => operation());
   let time = 1_000;
   const service = createCliInstallationService({
-    backend: { inspect, latest, execute },
+    backend: {
+      inspect,
+      latest,
+      transact: async (installation, version, signal, verifyResult) => {
+        await execute(installation, version, signal);
+        await verifyResult();
+      },
+    },
     withIdleAgent: <T>(agent: AgentKind, operation: () => Promise<T>) => lock(agent, operation) as Promise<T>,
     onChanged,
-    restart,
     verify,
     now: () => time,
   });
@@ -61,7 +68,6 @@ function fixture() {
     latest,
     execute,
     onChanged,
-    restart,
     verify,
     lock,
     advance: () => (time += 900_001),
@@ -142,17 +148,16 @@ describe('CLI 安装后台任务', () => {
         code: 'installation_busy',
       });
     }
-    f.values.set('claude', { ...installation(), identity: 'updated', version: '2.1.0' });
+    f.values.set('claude', { ...installation(), identity: 'updated', version: '2.0.0' });
     execution.resolve();
     await vi.waitFor(async () =>
       expect(await f.service.read('claude')).toMatchObject({
         phase: 'succeeded',
-        currentVersion: '2.1.0',
+        currentVersion: '2.0.0',
         operationId: started.operationId,
       }),
     );
     expect(f.onChanged).toHaveBeenCalledExactlyOnceWith('claude');
-    expect(f.restart).toHaveBeenCalledExactlyOnceWith('claude');
     f.latest.mockRejectedValueOnce(new Error('fixture-network'));
     expect(await f.service.check('claude')).toMatchObject({ phase: 'failed', operationId: null });
     expect(f.onChanged).toHaveBeenCalledTimes(1);
@@ -237,7 +242,7 @@ describe('CLI 安装后台任务', () => {
     await expect(f.service.check('claude')).rejects.toMatchObject({ code: 'service_closed' });
   });
 
-  it('首次安装必须产生可用版本，版本未知的既有安装仍可谨慎更新', async () => {
+  it('首次安装必须产生可用版本，已识别的损坏安装可修复', async () => {
     const f = fixture();
     f.values.set('claude', {
       ...installation(),
@@ -266,13 +271,13 @@ describe('CLI 安装后台任务', () => {
         currentVersion: '2.0.0',
       }),
     );
-    f.values.set('codex', { ...installation('codex'), version: null });
+    f.values.set('codex', { ...installation('codex'), version: null, canUpdate: false, canRepair: true });
     f.execute.mockImplementationOnce(async () => {
       f.values.set('codex', { ...installation('codex'), version: '2.0.0' });
     });
     const unknown = await f.service.check('codex');
-    expect(unknown.canUpdate).toBe(true);
-    await f.service.start('codex', { action: 'update', revision: unknown.revision });
+    expect(unknown).toMatchObject({ canRepair: true, canUpdate: false });
+    await f.service.start('codex', { action: 'repair', revision: unknown.revision });
     await vi.waitFor(async () => expect(await f.service.read('codex')).toMatchObject({ phase: 'succeeded' }));
   });
 

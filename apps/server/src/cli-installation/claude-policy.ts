@@ -61,9 +61,10 @@ export async function claudePolicy(env: NodeJS.ProcessEnv, context: BackendConte
 
 export function applyClaudePolicy(installation: CliInstallation, settings: ClaudePolicy): void {
   installation.channel = settings.channel;
-  if (!settings.disabled && !settings.invalid && !(settings.constrained && installation.npm)) return;
+  if (!settings.disabled && !settings.invalid && !settings.constrained) return;
   installation.canInstall = false;
   installation.canUpdate = false;
+  installation.canRepair = false;
   if (settings.disabled) installation.message = 'Claude 配置已禁用更新，请先在原生配置中调整 DISABLE_UPDATES。';
   else if (settings.invalid) installation.message = 'Claude 更新配置无法读取或识别，请先检查原生设置。';
   else installation.message = 'Claude 配置了版本限制，请通过原生命令按现有策略更新。';

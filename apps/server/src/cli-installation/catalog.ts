@@ -98,7 +98,7 @@ function jsonObject(text: string): Record<string, unknown> {
   throw new BackendError('release_invalid', '官方版本数据格式无法识别，请稍后重试。');
 }
 
-async function agyRelease(context: BackendContext, signal?: AbortSignal): Promise<CliRelease> {
+export async function agyManifest(context: BackendContext, signal?: AbortSignal) {
   if (context.platform !== 'win32' || (context.arch !== 'x64' && context.arch !== 'arm64'))
     throw new BackendError('unsupported_platform', '当前平台的 Antigravity 版本查询暂未适配，请查看官方指引。');
   const data = jsonObject(await officialText(context, AGY_RELEASES[context.arch], { signal }));
@@ -112,7 +112,7 @@ async function agyRelease(context: BackendContext, signal?: AbortSignal): Promis
     !/^[a-fA-F0-9]{128}$/.test(data.sha512)
   )
     throw new BackendError('release_invalid', '官方发布清单无法验证，请稍后重试。');
-  return release(data.version);
+  return { ...release(data.version), url: data.url, checksum: data.sha512.toLowerCase() };
 }
 
 export async function latestRelease(
@@ -120,7 +120,7 @@ export async function latestRelease(
   installation: CliInstallation,
   signal?: AbortSignal,
 ): Promise<CliRelease> {
-  if (installation.agent === 'antigravity') return agyRelease(context, signal);
+  if (installation.agent === 'antigravity') return { version: (await agyManifest(context, signal)).version };
   if (installation.agent === 'codex' && !installation.npm) {
     const tag = jsonObject(await officialText(context, CODEX_RELEASE, { signal })).tag_name;
     return release(typeof tag === 'string' ? tag.replace(/^rust-v/, '') : tag);
@@ -132,4 +132,14 @@ export async function latestRelease(
     return release(await officialText(context, CLAUDE_RELEASES[installation.channel ?? 'latest'], { signal }));
   }
   return release(jsonObject(await officialText(context, NPM_RELEASES[installation.agent], { signal })).version);
+}
+
+export async function claudeAsset(context: BackendContext, version: string, signal: AbortSignal) {
+  const platform = `win32-${context.arch}`;
+  const releaseUrl = `https://downloads.claude.ai/claude-code-releases/${version}`;
+  const data = jsonObject(await officialText(context, `${releaseUrl}/manifest.json`, { signal }));
+  const checksum = objectValue(objectValue(data.platforms)?.[platform])?.checksum;
+  if (data.version !== version || typeof checksum !== 'string' || !/^[a-f0-9]{64}$/i.test(checksum))
+    throw new BackendError('release_invalid', 'Claude 官方清单的版本、平台或校验值无法确认。');
+  return { url: `${releaseUrl}/${platform}/claude.exe`, checksum: checksum.toLowerCase(), version };
 }

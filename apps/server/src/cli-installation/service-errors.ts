@@ -12,8 +12,8 @@ const ERRORS = {
   service_closed: [503, '服务正在关闭，请稍后重试'],
   check_failed: [502, '检查最新版本失败，请稍后重试'],
   install_failed: [500, 'CLI 安装或更新失败，请检查本机状态后重试'],
-  verification_failed: [500, '安装后验证未通过，请检查 CLI 版本与安装来源'],
-  incompatible: [500, 'CLI 已更改，但工作台兼容性检查未通过，请使用官方指南检查安装'],
+  verification_failed: [500, 'CLI 最终入口或版本验证未通过'],
+  incompatible: [500, '新版 CLI 的工作台接口验证未通过'],
   internal_error: [500, '无法读取 CLI 安装状态，请稍后重试'],
 } as const;
 type FailureCode = keyof typeof ERRORS;

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { CliInstallation } from './types';
@@ -12,6 +12,8 @@ import {
   VERSION,
   type BackendContext,
 } from './backend-support';
+import { updateNativeBinary } from './native-binary';
+import { nativeProtectionPaths } from './native-installation';
 import { INSTALLERS, officialText } from './catalog';
 
 async function executeCommand(
@@ -43,8 +45,8 @@ async function nativeInstaller(
     cap: 512 * 1024,
   });
   const dir = await mkdtemp(path.join(tmpdir(), 'agentdeck-cli-installer-'));
+  const file = path.join(dir, 'install.ps1');
   try {
-    const file = path.join(dir, 'install.ps1');
     await writeFile(file, contents, { encoding: 'utf8', mode: 0o600 });
     const systemRoot = envValue(input.env, 'SystemRoot') ?? process.env.SystemRoot ?? 'C:\\Windows';
     const args = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', file];
@@ -61,7 +63,8 @@ async function nativeInstaller(
       input.signal,
     );
   } finally {
-    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    await unlink(file).catch(() => undefined);
+    await rmdir(dir).catch(() => undefined);
   }
 }
 
@@ -80,6 +83,7 @@ function npmInstallCommand(installation: CliInstallation, version: string): Reso
       '--registry=https://registry.npmjs.org',
       `--${scope}:registry=https://registry.npmjs.org`,
       '--strict-ssl=true',
+      '--include=optional',
       `${PACKAGES[installation.agent]}@${version}`,
     ],
   };
@@ -99,18 +103,10 @@ export async function executeInstallation(
   try {
     if (npm) {
       await executeCommand(context, npm, env, signal);
-    } else if (
-      installation.installed &&
-      installation.source === 'native' &&
-      installation.command &&
-      installation.agent !== 'codex'
-    ) {
-      await executeCommand(
-        context,
-        { command: installation.command.command, args: [...installation.command.args, 'update'] },
-        env,
-        signal,
-      );
+    } else if (installation.installed && installation.source === 'native') {
+      await nativeProtectionPaths(context, installation, version);
+      if (installation.agent === 'codex') await nativeInstaller(context, installation, { env, version, signal });
+      else await updateNativeBinary(context, installation, version, signal);
     } else await nativeInstaller(context, installation, { env, version, signal });
   } catch (error) {
     throw safeFailure(error);

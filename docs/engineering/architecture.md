@@ -196,6 +196,7 @@ API 和 WebSocket 继续校验会话及来源；主应用禁止被 iframe 嵌入
 | 模型设置 | `/api/settings/models/:agent` 读取与保存表单；`/catalog` 的 GET 只读缓存，POST 原生获取，工作目录由可选 projectId 解析；`/context-window` 只读 AGY 当前模型窗口，可选 model 使用启动选择器相同的身份 |
 | 插件 | `/api/plugins/*`，安装注册、启停、静态页面与权限内的设置存储 |
 | 对话 | `/ws`，恢复握手/有序补收、发送、停止、审批答复及回合事件 |
+| CLI 维护 | `/api/settings/cli-installation/:agent` 读取本机状态，`/check` 查新，`/operations` 安装、更新或修复。详见[程序版本管理](native-configuration.md#cli-程序版本管理) |
 | 会话引用工具 | `/api/session-tools/:agent`，只读 MCP 的登记状态、启停与原生配置事务 |
 | SSH 档案 | `/api/ssh-targets`、`/api/ssh/*`，档案、认证、信任 |
 | SSH Console | `/api/ssh-console/:serverId/*`，alias 定位概览、进程、作业、只读文件和终端 |

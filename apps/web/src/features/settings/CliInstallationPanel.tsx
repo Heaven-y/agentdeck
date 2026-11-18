@@ -2,8 +2,7 @@ import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { CliInstallationStatus, CliInstallPhase, EnvironmentTool } from '@agentdeck/shared/settings';
 import { RefreshCw } from 'lucide-react';
 import { buttonClass } from '../../ui/styles';
-import { useChat } from '../chat/chat-store';
-import { conversationBusy, conversationViews } from '../chat/conversations';
+import { availableAction, validRelease } from './cli-installation-actions';
 import { nativeAgentNames } from './native-resource-labels';
 import { cliInstallationError, useCliInstallation } from './use-cli-installation';
 
@@ -12,19 +11,11 @@ const progress: Partial<Record<CliInstallPhase, string>> = {
   checking: '正在检查更新…',
   installing: '正在安装…',
   updating: '正在更新…',
+  repairing: '正在修复…',
   verifying: '正在验证安装结果…',
 };
-const pendingPhase = { check: 'checking', install: 'installing', update: 'updating' } as const;
-const sourceLabels = { npm: 'npm 安装', native: '原生安装', unknown: '安装来源未知', missing: '尚未安装' };
-
-function versionsChecked(status: CliInstallationStatus) {
-  return status.installed && !!status.currentVersion && !!status.latestVersion && status.checkedAt !== null;
-}
-function availableAction(status: CliInstallationStatus) {
-  if (!status.installed && status.canInstall) return 'install';
-  if (status.installed && status.canUpdate && status.updateAvailable) return 'update';
-  return undefined;
-}
+const pendingText = { check: '正在检查更新…', install: '正在准备安装…', update: '正在更新…', repair: '正在准备修复…' };
+const actionLabels = { install: '安装', update: '更新', repair: '修复' };
 function needsGuide(status: CliInstallationStatus | undefined, health?: EnvironmentTool) {
   return (
     status &&
@@ -33,22 +24,16 @@ function needsGuide(status: CliInstallationStatus | undefined, health?: Environm
 }
 function InstallationVersions({ status }: { status: CliInstallationStatus }) {
   return (
-    <>
-      <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-xs leading-5">
-        <div className="flex min-w-0 gap-2">
-          <dt className="shrink-0 text-muted-foreground">当前版本</dt>
-          <dd className="break-all">{status.installed ? (status.currentVersion ?? '版本未知') : '未安装'}</dd>
-        </div>
-        <div className="flex min-w-0 gap-2">
-          <dt className="shrink-0 text-muted-foreground">最新版本</dt>
-          <dd className="break-all">{status.latestVersion ?? '尚未检查'}</dd>
-        </div>
-        <div className="text-muted-foreground">
-          <dt className="sr-only">安装来源</dt>
-          <dd>{sourceLabels[status.source]}</dd>
-        </div>
-      </dl>
-    </>
+    <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-xs leading-5">
+      <div className="flex min-w-0 gap-2">
+        <dt className="shrink-0 text-muted-foreground">当前版本</dt>
+        <dd className="break-all">{status.installed ? (status.currentVersion ?? '版本未知') : '未安装'}</dd>
+      </div>
+      <div className="flex min-w-0 gap-2">
+        <dt className="shrink-0 text-muted-foreground">最新版本</dt>
+        <dd className="break-all">{status.latestVersion ?? '尚未检查'}</dd>
+      </div>
+    </dl>
   );
 }
 function InstallationActions({ state, disabled }: { state: State; disabled: boolean }) {
@@ -56,7 +41,7 @@ function InstallationActions({ state, disabled }: { state: State; disabled: bool
   if (!status) return null;
   const action = availableAction(status);
   const checking = state.pendingAction === 'check' || status.phase === 'checking';
-  const blocked = state.busy || state.status.isFetching;
+  const blocked = disabled || state.busy || state.status.isFetching;
   return (
     <div className="flex flex-wrap gap-2">
       <button type="button" className={buttonClass('ghost')} disabled={blocked} onClick={() => state.act('check')}>
@@ -67,17 +52,26 @@ function InstallationActions({ state, disabled }: { state: State; disabled: bool
         <button
           type="button"
           className={buttonClass('outline')}
-          disabled={disabled || blocked || state.status.isError}
+          disabled={blocked || state.writesBlocked}
           onClick={() => state.act(action)}
         >
-          {action === 'install' ? '安装' : '更新'}
+          {actionLabels[action]}
         </button>
       )}
     </div>
   );
 }
+function showVersionResult(status: CliInstallationStatus, healthy: boolean) {
+  return (
+    status.installed &&
+    status.currentVersion &&
+    !status.canRepair &&
+    status.source !== 'unknown' &&
+    validRelease(status) &&
+    (healthy || status.updateAvailable)
+  );
+}
 function InstallationResult({ status, healthy }: { status: CliInstallationStatus; healthy: boolean }) {
-  const checked = versionsChecked(status) && status.phase !== 'failed' && (healthy || status.updateAvailable);
   return (
     <>
       {status.message && (
@@ -88,7 +82,7 @@ function InstallationResult({ status, healthy }: { status: CliInstallationStatus
           {status.message}
         </p>
       )}
-      {checked && (
+      {showVersionResult(status, healthy) && (
         <p role="status" className={`text-xs ${status.updateAvailable ? 'text-muted-foreground' : 'text-success'}`}>
           {status.updateAvailable ? '有新版本可用' : '已是最新版本'}
         </p>
@@ -98,7 +92,7 @@ function InstallationResult({ status, healthy }: { status: CliInstallationStatus
 }
 function InstallationFeedback({ state, healthy }: { state: State; healthy: boolean }) {
   const status = state.status.data;
-  const phase = state.pendingAction ? pendingPhase[state.pendingAction] : status?.phase;
+  const phase = status?.phase;
   if (state.error)
     return (
       <p role="alert" className="text-xs leading-5 text-destructive-foreground">
@@ -108,8 +102,8 @@ function InstallationFeedback({ state, healthy }: { state: State; healthy: boole
   if (state.busy)
     return (
       <div role="status" className="space-y-1 text-xs leading-5 text-muted-foreground">
-        <p>{state.pendingAction === 'install' ? '正在准备安装…' : phase && progress[phase]}</p>
-        {phase !== 'checking' && <p>可关闭设置或切换 CLI，任务会继续进行。</p>}
+        <p>{state.pendingAction ? pendingText[state.pendingAction] : phase && progress[phase]}</p>
+        {state.pendingAction !== 'check' && phase !== 'checking' && <p>可关闭设置或切换 CLI，任务会继续进行。</p>}
       </div>
     );
   if (!status)
@@ -141,9 +135,6 @@ export function CliInstallationPanel({
   health?: EnvironmentTool;
 }) {
   const state = useCliInstallation(agent);
-  const running = useChat((chat) =>
-    conversationViews(chat).some((view) => view.agent === agent && conversationBusy(view)),
-  );
   const status = state.status.data;
   return (
     <section
@@ -153,7 +144,7 @@ export function CliInstallationPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-[13px] font-medium">{nativeAgentNames[agent]} CLI</h4>
-        <InstallationActions state={state} disabled={disabled || running} />
+        <InstallationActions state={state} disabled={disabled} />
       </div>
       {status && <InstallationVersions status={status} />}
       <InstallationHealth health={health} />
@@ -163,7 +154,12 @@ export function CliInstallationPanel({
           重试读取
         </button>
       )}
-      {running && <p className="text-xs leading-5 text-muted-foreground">结束此 CLI 的运行会话后再安装或更新。</p>}
+      {state.running && (
+        <p className="text-xs leading-5 text-muted-foreground">工作台正在使用此 CLI，结束会话后可安装、更新或修复。</p>
+      )}
+      {state.otherWriting && (
+        <p className="text-xs leading-5 text-muted-foreground">其他 CLI 的维护任务完成后可操作。</p>
+      )}
       {needsGuide(status, health) && (
         <a
           className="inline-flex min-h-8 items-center text-xs text-accent underline underline-offset-2"

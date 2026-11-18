@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { CliInstallationStatus } from '@agentdeck/shared/settings';
@@ -24,7 +24,7 @@ const initial: CliInstallationStatus = {
   message: null,
   guideUrl: 'https://code.claude.com/docs/en/setup',
 };
-const newer = { ...initial, latestVersion: '2.0.0', checkedAt: 1, updateAvailable: true };
+const newer = { ...initial, latestVersion: '2.0.0', checkedAt: Date.now(), updateAvailable: true };
 const missing: CliInstallationStatus = {
   ...initial,
   installed: false,
@@ -71,6 +71,7 @@ it('只显式检查官方新版，等待期间禁止重复检查，有新版才�
   mount();
   await screen.findByText('1.0.0');
   expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('安装来源')).toBeNull();
   expect(screen.queryByText('已是最新版本')).toBeNull();
   expect(screen.queryByRole('button', { name: '更新' })).toBeNull();
   const button = screen.getByRole('button', { name: '检查更新' });
@@ -84,11 +85,12 @@ it('只显式检查官方新版，等待期间禁止重复检查，有新版才�
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在检查…' }).disabled).toBe(true);
   await act(async () => check.resolve(json(newer)));
   await screen.findByText('2.0.0');
+  expect(screen.getByText('有新版本可用')).toBeTruthy();
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '更新' }).disabled).toBe(false);
 });
 
 it('点击安装先检查并使用新revision提交，关闭再打开恢复任务，成功后刷新缓存且停止轮询', async () => {
-  const checked = { ...missing, latestVersion: '2.0.0', checkedAt: 2, revision: 'b'.repeat(64) };
+  const checked = { ...missing, latestVersion: '2.0.0', checkedAt: Date.now(), revision: 'b'.repeat(64) };
   const pending = { ...initial, installed: false, phase: 'installing', operationId: 'operation-1', message: null };
   const done = {
     ...initial,
@@ -321,6 +323,7 @@ it('请求失败隐藏外部错误原文，服务端失败状态不会显示已�
   );
   fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
   await screen.findByText('版本检查失败，请稍后重试。');
+  expect(screen.queryByText('安装来源')).toBeNull();
   expect(screen.queryByText('已是最新版本')).toBeNull();
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '检查更新' }).disabled).toBe(false);
 });
@@ -347,15 +350,15 @@ it('仅阻止同一CLI的前后台运行回合，无关CLI不影响更新', asyn
   expect(update.disabled).toBe(false);
   act(() => useChat.setState({ background: { task: { ...useChat.getState(), agent: 'claude', running: true } } }));
   expect(update.disabled).toBe(true);
-  expect(screen.getByText(/结束此 CLI 的运行会话后再安装或更新/)).toBeTruthy();
+  expect(screen.getByText(/工作台正在使用此 CLI/)).toBeTruthy();
 });
 
 it.each([
   ['agent_busy', /结束该 CLI 会话后重试/],
   ['check_required', /先重新检查最新版本/],
   ['revision_conflict', /本机安装状态已变化/],
-  ['installation_busy', /已有安装或更新任务/],
-  ['unsupported', /当前安装来源不支持/],
+  ['installation_busy', /已有 CLI 维护任务/],
+  ['unsupported', /当前 CLI 不支持此操作/],
 ])('更新被拒绝时区分%s原因，且不输出接口的原始详情', async (code, message) => {
   fetchMock
     .mockResolvedValueOnce(json(newer))
@@ -365,4 +368,155 @@ it.each([
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(message));
   expect(screen.queryByText(/synthetic-private-detail/)).toBeNull();
   expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ action: 'update', revision: initial.revision }));
+  if (code === 'revision_conflict' || code === 'check_required')
+    expect(screen.queryByRole('button', { name: '更新' })).toBeNull();
+});
+
+const broken = { ...initial, canRepair: true, message: '当前 CLI 需要修复。' };
+
+it('修复先查新，使用新的 revision，受理后在卡片关闭时仍跟踪修复结果', async () => {
+  const checked = { ...broken, latestVersion: '1.0.0', checkedAt: Date.now(), revision: 'c'.repeat(64) };
+  const repairing = { ...checked, phase: 'repairing', operationId: 'repair-1' };
+  fetchMock
+    .mockResolvedValueOnce(json(broken))
+    .mockResolvedValueOnce(json(checked))
+    .mockResolvedValueOnce(json(repairing, 202));
+  const view = mount();
+  const repair = await screen.findByRole('button', { name: '修复' });
+  fireEvent.click(repair);
+  fireEvent.click(repair);
+  await screen.findByText('正在修复…');
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '检查更新' }).disabled).toBe(true);
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    '/api/settings/cli-installation/claude',
+    '/api/settings/cli-installation/claude/check',
+    '/api/settings/cli-installation/claude/operations',
+  ]);
+  expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({ action: 'repair', revision: checked.revision }));
+  view.unmount();
+  fetchMock.mockResolvedValueOnce(json({ ...initial, phase: 'succeeded', operationId: 'repair-1' }));
+  await waitFor(
+    () => expect(client.getQueryData(['cli-installation', 'claude'])).toMatchObject({ phase: 'succeeded' }),
+    { timeout: 2500 },
+  );
+});
+
+it.each([
+  { label: '缺少版本', change: { latestVersion: null } },
+  { label: '缺少检查时间', change: { checkedAt: null } },
+  { label: '版本检查已过期', change: { checkedAt: Date.now() - 16 * 60_000 } },
+  { label: 'revision 无效', change: { revision: 'old' } },
+  { label: '检查已失败', change: { phase: 'failed' } },
+])('$label 时不能用旧结果更新', async ({ change }) => {
+  fetchMock.mockResolvedValueOnce(json({ ...newer, ...change }));
+  mount();
+  await screen.findByRole('button', { name: '检查更新' });
+  expect(screen.queryByRole('button', { name: '更新' })).toBeNull();
+});
+
+it('修复预检期间工作台开始使用该 CLI，停止提交，保留手动检查入口', async () => {
+  const check = deferred<Response>();
+  fetchMock.mockResolvedValueOnce(json(broken)).mockReturnValueOnce(check.promise);
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '修复' }));
+  await screen.findByText('正在准备修复…');
+  act(() => useChat.setState({ pendingClientTurnId: 'pending-turn' }));
+  await act(async () => check.resolve(json({ ...newer, canRepair: true })));
+  await screen.findByRole('alert');
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '修复' }).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '检查更新' }).disabled).toBe(false);
+});
+
+it('预检前后修复能力变化，只展示当前操作，不自动改成更新', async () => {
+  fetchMock.mockResolvedValueOnce(json(broken)).mockResolvedValueOnce(json(newer));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '修复' }));
+  await screen.findByRole('button', { name: '更新' });
+  expect(screen.queryByRole('button', { name: '修复' })).toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it('另一张卡片在修复预检和已受理期间只能查新，完成后恢复操作', async () => {
+  const check = deferred<Response>();
+  const accepted = { ...broken, phase: 'repairing', operationId: 'repair-2' };
+  let current: CliInstallationStatus = broken;
+  fetchMock.mockImplementation(async (url, options) => {
+    if (typeof url !== 'string') throw new Error('测试请求缺少路径');
+    if (url.endsWith('/codex/check')) return json({ ...newer, agent: 'codex', canUpdate: false });
+    if (url.endsWith('/check')) return check.promise;
+    if (options?.method === 'POST') return json(accepted, 202);
+    return json(url.endsWith('/codex') ? { ...newer, agent: 'codex' } : current);
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <CliInstallationPanel agent="claude" />
+      <CliInstallationPanel agent="codex" />
+    </QueryClientProvider>,
+  );
+  const codex = within(screen.getByRole('region', { name: /Codex/ }));
+  const update = await codex.findByRole<HTMLButtonElement>('button', { name: '更新' });
+  fireEvent.click(await screen.findByRole('button', { name: '修复' }));
+  await screen.findByText('正在准备修复…');
+  expect(update.disabled).toBe(true);
+  expect(codex.getByRole<HTMLButtonElement>('button', { name: '检查更新' }).disabled).toBe(false);
+  await act(async () => check.resolve(json({ ...newer, canRepair: true })));
+  await screen.findByText('正在修复…');
+  expect(update.disabled).toBe(true);
+  fireEvent.click(codex.getByRole('button', { name: '检查更新' }));
+  await waitFor(() => expect(codex.queryByRole('button', { name: '更新' })).toBeNull());
+  current = { ...broken, phase: 'succeeded', operationId: 'repair-2', canRepair: false };
+  const restored = await codex.findByRole<HTMLButtonElement>('button', { name: '更新' }, { timeout: 2500 });
+  expect(restored.disabled).toBe(false);
+});
+
+it('修复检查返回无效 revision 时保留重新检查入口', async () => {
+  fetchMock
+    .mockResolvedValueOnce(json(broken))
+    .mockResolvedValueOnce(json({ ...newer, canRepair: true, revision: '' }));
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '修复' }));
+  await screen.findByText(/先重新检查最新版本/);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it('已查到新版后重新查新遇到网络错误，旧版本不可继续用于更新', async () => {
+  fetchMock.mockResolvedValueOnce(json(newer)).mockRejectedValueOnce(new Error('synthetic-network-failure'));
+  mount();
+  await screen.findByRole('button', { name: '更新' });
+  fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('button', { name: '更新' })).toBeNull();
+});
+
+it('修复预检返回前本机状态已被重读，保留新状态并终止旧请求', async () => {
+  const check = deferred<Response>();
+  fetchMock.mockResolvedValueOnce(json(broken)).mockReturnValueOnce(check.promise);
+  mount();
+  fireEvent.click(await screen.findByRole('button', { name: '修复' }));
+  await screen.findByText('正在准备修复…');
+  act(() => {
+    client.setQueryData(['cli-installation', 'claude'], { ...missing, revision: 'd'.repeat(64) });
+  });
+  await act(async () => check.resolve(json({ ...newer, canRepair: true })));
+  await screen.findByRole('alert');
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: '安装' })).toBeTruthy();
+});
+
+it('卡片停留至检查结果过期时撤下更新入口，仍可手动查新', async () => {
+  vi.useFakeTimers();
+  const checkedAt = Date.now() - 15 * 60_000 + 3000;
+  fetchMock.mockResolvedValueOnce(json({ ...newer, checkedAt }));
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2);
+  });
+  expect(screen.getByRole('button', { name: '更新' })).toBeTruthy();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(screen.queryByRole('button', { name: '更新' })).toBeNull();
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '检查更新' }).disabled).toBe(false);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

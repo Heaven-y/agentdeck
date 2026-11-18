@@ -3,7 +3,6 @@ import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ResolvedCommand } from '../platform/process/executable';
 import type { CliInstallation } from './types';
 import {
-  canonical,
   commandFingerprint,
   envValue,
   EXECUTABLES,
@@ -16,12 +15,16 @@ import {
   type BackendContext,
 } from './backend-support';
 import {
+  brokenNpmPackage,
   discoverNpm,
   npmBinDirectory,
   officialNpmSource,
   type NpmInstallation,
   type OfficialPackage,
 } from './npm-source';
+import { isNativeEntry } from './native-layout';
+import { hardlinkFingerprint } from './native-binary';
+import { nativeRepairIdentity } from './native-history';
 import { applyClaudePolicy, claudePolicy } from './claude-policy';
 
 async function currentVersion(
@@ -46,42 +49,6 @@ async function currentVersion(
   } catch {
     return null;
   }
-}
-
-function nativeFile(agent: AgentKind, env: NodeJS.ProcessEnv, context: BackendContext): string | undefined {
-  if (context.platform !== 'win32' || !['x64', 'arm64'].includes(context.arch)) return undefined;
-  if (agent === 'claude') return path.join(context.homeDir, '.local/bin/claude.exe');
-  const local = envValue(env, 'LOCALAPPDATA');
-  if (agent === 'antigravity' && local) return path.join(local, 'agy/bin/agy.exe');
-  if (agent === 'codex' && local)
-    return path.join(envValue(env, 'CODEX_INSTALL_DIR') ?? path.join(local, 'Programs/OpenAI/Codex/bin'), 'codex.exe');
-  return undefined;
-}
-
-async function codexNativeTarget(actual: string, env: NodeJS.ProcessEnv, context: BackendContext): Promise<boolean> {
-  const home = envValue(env, 'CODEX_HOME') ?? path.join(context.homeDir, '.codex');
-  const releases = await canonical(path.join(home, 'packages/standalone/releases'));
-  if (!releases) return false;
-  const relative = path.relative(releases, actual).replaceAll('\\', '/');
-  // 官方 installer 建立 visible bin -> current -> releases/VERSION-TARGET 的目录链接。
-  const target = context.arch === 'arm64' ? 'aarch64-pc-windows-msvc' : 'x86_64-pc-windows-msvc';
-  const [versionTarget, ...entry] = relative.split('/');
-  if (!versionTarget?.endsWith(`-${target}`)) return false;
-  const version = versionTarget.slice(0, -target.length - 1);
-  return VERSION.test(version) && ['bin/codex.exe', 'codex.exe'].includes(entry.join('/'));
-}
-
-async function isNative(
-  agent: AgentKind,
-  command: ResolvedCommand,
-  env: NodeJS.ProcessEnv,
-  context: BackendContext,
-): Promise<boolean> {
-  const known = nativeFile(agent, env, context);
-  if (!known || command.args.length > 0) return false;
-  const [expected, actual] = await Promise.all([canonical(known), canonical(command.command)]);
-  if (!expected || !actual || !samePath(expected, actual, context.platform)) return false;
-  return agent !== 'codex' || codexNativeTarget(actual, env, context);
 }
 
 function explicitPath(agent: AgentKind, env: NodeJS.ProcessEnv): string | undefined {
@@ -145,17 +112,51 @@ async function installedSource(
   installation.version = await currentVersion(command, { context, env, signal });
   const info = npm ? await officialNpmSource({ agent: installation.agent, command, npm, context }) : undefined;
   if (info) installation.source = 'npm';
-  else if (await isNative(installation.agent, command, env, context)) installation.source = 'native';
-  installation.canUpdate = installation.source !== 'unknown' && installation.version !== null;
-  if (info && info.version !== installation.version) installation.canUpdate = false;
-  if (!installation.canUpdate) installation.message = '无法确认 CLI 的官方安装来源或当前版本；请使用原安装方式更新。';
+  else if (!command.args.length && (await isNativeEntry(context, env, installation.agent, command.command)))
+    installation.source = 'native';
+  installation.canRepair =
+    installation.version === null && (info !== undefined || (await nativeRepairIdentity(context, installation, env)));
+  applyUpdateCapability(installation, info);
   return info;
+}
+
+function applyUpdateCapability(installation: CliInstallation, info?: OfficialPackage) {
+  installation.canUpdate = installation.source !== 'unknown' && installation.version !== null;
+  if (installation.version !== null && info && info.version !== installation.version) {
+    installation.canRepair = true;
+    installation.canUpdate = false;
+    installation.message = 'npm 包清单与实际程序版本不一致，可修复此安装。';
+    return;
+  }
+  if (installation.canRepair) installation.message = '无法读取程序版本，安装可能已损坏，可修复此安装。';
+  if (!installation.canUpdate && !installation.canRepair)
+    installation.message = '无法确认 CLI 的官方安装来源或当前版本；请使用原安装方式更新。';
 }
 
 function attachNpm(installation: CliInstallation, npm?: NpmInstallation): void {
   if (!npm || (installation.installed && installation.source !== 'npm')) return;
   installation.npm = npm.command;
   installation.prefix = npm.prefix;
+}
+
+async function discoverMissing(
+  installation: CliInstallation,
+  input: { context: BackendContext; env: NodeJS.ProcessEnv; npm?: NpmInstallation },
+) {
+  const { context, env, npm } = input;
+  const agent = installation.agent;
+  const info = !explicitPath(agent, env) ? await brokenNpmPackage(agent, npm, context) : undefined;
+  if (info) {
+    installation.installed = true;
+    installation.source = 'npm';
+    installation.canRepair = true;
+    installation.message = '已找到 npm 包，但启动入口缺失或损坏，可修复此安装。';
+  } else {
+    const capability = missingCapability({ agent, ...input });
+    installation.canInstall = capability.allowed;
+    installation.message = capability.message;
+  }
+  return info;
 }
 
 export async function inspectInstallation(
@@ -185,19 +186,14 @@ export async function inspectInstallation(
     message: null,
     guideUrl: GUIDES[agent],
   };
-  let packageIdentity: OfficialPackage | undefined;
-  if (command) {
-    packageIdentity = await installedSource(installation, { context, env, signal, npm });
-  } else {
-    const capability = missingCapability({ agent, npm, env: inherited, context });
-    installation.canInstall = capability.allowed;
-    installation.message = capability.message;
-  }
+  const packageIdentity = command
+    ? await installedSource(installation, { context, env, signal, npm })
+    : await discoverMissing(installation, { context, env: inherited, npm });
   attachNpm(installation, npm);
   if (settings) applyClaudePolicy(installation, settings);
   installation.identity = hash({
     installation,
-    files: await commandFingerprint(command),
+    files: (await hardlinkFingerprint(installation, signal)) ?? (await commandFingerprint(command)),
     packageIdentity,
     npm: npm?.identity,
     settings: settings?.identity,

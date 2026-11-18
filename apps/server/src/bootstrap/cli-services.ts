@@ -9,12 +9,12 @@ import { inputCapabilities } from '../chat/input-capabilities';
 import type { AgentTurnInput } from '../agents/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
-import { createAgentProbes, createLocalRunner } from '../agents/common/probe';
+import { createAgentProbes } from '../agents/common/probe';
 import { createCliInstallationBackend } from '../cli-installation';
 import type { CliInstallationBackend } from '../cli-installation/types';
 import { createCliInstallationService } from '../cli-installation/service';
 import { registerCliInstallationRoutes } from '../http/cli-installation.routes';
-import type { ProcessRunner } from '../platform/process/run';
+import { runProcess, type ProcessRunner } from '../platform/process/run';
 import { createAntigravityRunner } from '../agents/antigravity/adapter';
 import { invalidateAntigravityModelCatalog } from '../agents/antigravity/context-window';
 import { discoverAntigravityCapabilities } from '../agents/antigravity/capabilities';
@@ -222,15 +222,24 @@ export function createCliServices({
     backend:
       installationBackend ?? createCliInstallationBackend({ environment: (agent) => launchEnvironment.resolve(agent) }),
     withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, () => nativeActivity.exclusive(agent, operation)),
-    restart: (agent) => runners[agent].restart(),
     onChanged: async (agent) => {
       if (agent === 'antigravity') invalidateAntigravityModelCatalog();
       await capabilities.invalidate(agent);
       sessions.invalidate(agent);
     },
-    verify: async (agent) => {
-      const env = await launchEnvironment.resolve(agent);
-      const probes = createAgentProbes({ run: probeRunner ?? createLocalRunner(() => env) });
+    verify: async (agent, installation) => {
+      const cli = installation.command;
+      if (!cli) return false;
+      const env = {
+        ...(await launchEnvironment.resolve(agent)),
+        AGY_CLI_DISABLE_AUTO_UPDATE: 'true',
+        DISABLE_AUTOUPDATER: '1',
+      };
+      const probes = createAgentProbes({
+        run:
+          probeRunner ??
+          ((_name, args, options) => runProcess(cli.command, [...cli.args, ...args], { ...options, env })),
+      });
       return (await probes.probe(agent)).status === 'available';
     },
   });
