@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { NativeSessionIdSchema, type AgentEvent } from '@agentdeck/shared/conversation';
-import { stepDuration, stepUsage } from './metrics';
+import { historyResponseTiming, stepDuration, stepUsage } from './metrics';
 import {
   ANTIGRAVITY_PERMISSION_NOTICE,
   additionalServiceDiagnostic,
@@ -8,10 +8,20 @@ import {
   rateLimitFailure,
   rateLimitOnlyFailure,
 } from './diagnostics';
-import type { CompletionBoundary } from './completion';
+import type { CompletionBoundary, CurrentTurnReview } from './completion';
 
 type RecordValue = Record<string, unknown>;
 type DiagnosticEvent = Extract<AgentEvent, { type: 'error' | 'activity' }>;
+type StepStatistics = Extract<AgentEvent, { type: 'step_usage' }>;
+type ReviewedReply = Extract<CurrentTurnReview, { status: 'completed' }>;
+const USAGE_FIELDS = [
+  'inputTokens',
+  'outputTokens',
+  'cachedInputTokens',
+  'cacheWriteInputTokens',
+  'reasoningOutputTokens',
+  'totalTokens',
+] as const;
 const record = (value: unknown): RecordValue =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as RecordValue) : {};
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
@@ -45,21 +55,23 @@ function currentStepFailed(step: RecordValue): boolean {
   );
 }
 
-function cumulativeResultDiagnostic(diagnostic?: DiagnosticEvent): DiagnosticEvent {
-  const message = diagnostic?.type === 'error' ? diagnostic.message : '';
-  const code = message.match(/\bHTTP [45]\d{2}\b/)?.[0];
-  return {
-    type: 'error',
-    message: `Antigravity 的累计结果包含${code ? ` ${code}` : '错误'}，无法确认是否属于本轮；请核对原生会话。`,
-  };
-}
-
 function resultDiagnosticFor(resultError: string, rateLimited: boolean): DiagnosticEvent | undefined {
   const other = rateLimited ? resultError : resultError.replace(/\b429\b/g, '');
   const diagnostic = antigravityDiagnostic(other);
   if (diagnostic) return diagnostic;
   if (rateLimited) return antigravityDiagnostic(resultError);
   return rateLimitFailure(resultError) ? additionalServiceDiagnostic(other) : undefined;
+}
+
+function supplementUsage(live: StepStatistics['usage'], native?: StepStatistics['usage']): StepStatistics['usage'] {
+  if (
+    !native ||
+    USAGE_FIELDS.some(
+      (field) => live[field] !== undefined && native[field] !== undefined && live[field] !== native[field],
+    )
+  )
+    return live;
+  return { ...native, ...live };
 }
 
 /** 按官方 headless 的 event/payload 结构映射，不能把它当成 Claude stream-json。 */
@@ -69,17 +81,20 @@ export class AntigravityMapper {
   private tools = new Set<string>();
   private results = new Set<string>();
   private initialized = false;
-  private statistics = new Set<number>();
+  private statistics = new Map<number, StepStatistics>();
+  private durations = new Map<number, ReturnType<typeof stepDuration>>();
+  private replySteps = new Set<number>();
   private checkpoints = new Set<number>();
   private subagents = new Map<number, string>();
   private inputIndex?: number;
   private latestIndex?: number;
   private uncertainBoundary = false;
-  private terminalFailure = false;
+  terminalFailure = false;
   private errorIndices = new Set<number>();
   private rateLimitedResult = false;
   private resultReviewable = false;
-  private resultDiagnostic?: DiagnosticEvent;
+  cumulativeResult = false;
+  resultDiagnostic?: DiagnosticEvent;
   result?: Extract<AgentEvent, { type: 'turn_end' }>;
 
   constructor(
@@ -156,6 +171,7 @@ export class AntigravityMapper {
     // 直播已确认的终态失败不能被同一步不一致的只读快照覆盖。
     this.terminalFailure ||= terminalStepFailed(type, state, failed);
     if (type === 'error_message') this.errorIndices.add(index);
+    if (type === 'agent_response' && text(step.text_delta)) this.replySteps.add(index);
     this.latestIndex = Math.max(this.latestIndex ?? -1, index);
   }
 
@@ -169,36 +185,94 @@ export class AntigravityMapper {
     }
   }
 
-  /** 未经原生完整轨迹复核，不以直播答复推断累计结果是否完成。 */
-  complete(naturalSuccess: boolean, verified = false): DiagnosticEvent[] {
-    if (this.result && naturalSuccess && verified) this.result = { ...this.result, isError: false };
-    return this.result?.isError && this.resultDiagnostic ? [this.resultDiagnostic] : [];
+  get canRecoverCompletion(): boolean {
+    return this.resultReviewable && this.latestIndex !== undefined && !this.terminalFailure;
+  }
+
+  get currentStepFailure(): boolean {
+    return this.terminalFailure || (!this.uncertainBoundary && this.errorIndices.size > 0);
+  }
+
+  confirmCompletion(reply?: ReviewedReply): AgentEvent[] {
+    if (this.result) this.result = { ...this.result, isError: false };
+    return this.verifiedReply(reply);
+  }
+
+  markUnconfirmed(reply?: ReviewedReply): AgentEvent[] {
+    if (!this.result) return [];
+    this.result = {
+      ...this.result,
+      outcome: 'unconfirmed',
+      ...(reply ? { completedReplyStepId: `agy-step-${reply.finalIndex}` } : {}),
+    };
+    return this.verifiedReply(reply);
+  }
+
+  private verifiedReply(reply?: ReviewedReply): AgentEvent[] {
+    if (!reply) return [];
+    const response = record(reply.finalStep.plannerResponse);
+    const content = text(response.modifiedResponse) || text(response.response);
+    const events: AgentEvent[] = [];
+    // 只有该步骤完全没有直播正文时才补整段，避免被统计事件分隔成两条回复。
+    if (!this.replySteps.has(reply.finalIndex) && content) events.push({ type: 'text', delta: content });
+    const statistics = this.finalReplyStatistics(
+      `agy-step-${reply.finalIndex}`,
+      reply.finalIndex,
+      record(reply.finalStep.metadata),
+    );
+    if (statistics) events.push(statistics);
+    return events;
+  }
+
+  private finalReplyStatistics(id: string, index: number, metadata: RecordValue): StepStatistics | undefined {
+    const live = this.statistics.get(index);
+    const nativeUsage = stepUsage(metadata.modelUsage);
+    const timing = this.durations.get(index) ?? historyResponseTiming(metadata);
+    if (live) {
+      const usage = supplementUsage(live.usage, nativeUsage);
+      const addedUsage = USAGE_FIELDS.some((field) => usage[field] !== live.usage[field]);
+      const durationMs = live.durationMs ?? timing.durationMs;
+      if (!addedUsage && durationMs === live.durationMs) return;
+      return { ...live, usage, ...(durationMs === undefined ? {} : { durationMs }) };
+    }
+    if (!nativeUsage) return;
+    return { type: 'step_usage', id, usage: nativeUsage, ...timing };
   }
 
   completionBoundary(): CompletionBoundary | undefined {
-    if (!this.canReviewCompletion()) return undefined;
-    if (this.inputIndex === undefined || this.latestIndex === undefined || !this.sessionId) return undefined;
+    if (
+      !this.result?.isError ||
+      (!this.resultReviewable && !this.cumulativeResult) ||
+      this.uncertainBoundary ||
+      this.inputIndex === undefined ||
+      !this.sessionId
+    )
+      return undefined;
     return {
       sessionId: this.sessionId,
       inputIndex: this.inputIndex,
-      latestIndex: this.latestIndex,
+      latestIndex: this.latestIndex ?? this.inputIndex,
       errorIndices: [...this.errorIndices],
       rateLimitedResult: this.rateLimitedResult,
     };
   }
 
-  private canReviewCompletion(): boolean {
-    return this.resultReviewable && this.result?.isError === true && !this.uncertainBoundary && !this.terminalFailure;
-  }
-
   private stepStatistics(step: RecordValue): AgentEvent[] {
     if (!Number.isSafeInteger(step.step_index) || Number(step.step_index) < 0 || step.state !== 'DONE') return [];
     const index = Number(step.step_index);
+    const duration = stepDuration(step.duration_seconds);
+    if (duration.durationMs !== undefined && !this.durations.has(index)) this.durations.set(index, duration);
     if (this.statistics.has(index)) return [];
     const usage = stepUsage(step.usage, true);
     if (!usage) return [];
-    this.statistics.add(index);
-    return [{ type: 'step_usage', id: `agy-step-${index}`, usage, ...stepDuration(step.duration_seconds) }];
+    const statistics: StepStatistics = {
+      type: 'step_usage',
+      id: `agy-step-${index}`,
+      usage,
+      ...this.durations.get(index),
+    };
+    this.statistics.set(index, statistics);
+    return [statistics];
   }
 
   private checkpoint(step: RecordValue): AgentEvent[] {
@@ -271,10 +345,10 @@ export class AntigravityMapper {
     if (this.result) return [];
     if (result.status === 'SUCCESS' && !this.initialized) throw new Error('Antigravity 未完成会话初始化');
     if (result.status === 'SUCCESS' || result.conversation_id) this.identity(result.conversation_id);
-    const events: AgentEvent[] = [];
-    if (!this.streamed && text(result.response)) events.push({ type: 'text', delta: text(result.response) });
+    const events = this.prepareResult(result);
+    if (!(this.expectedId && result.status === 'ERROR') && !this.streamed && text(result.response))
+      events.unshift({ type: 'text', delta: text(result.response) });
     const isError = result.status !== 'SUCCESS';
-    events.push(...this.prepareResult(result));
     this.result = {
       type: 'turn_end',
       isError,
@@ -286,24 +360,17 @@ export class AntigravityMapper {
   private prepareResult(result: RecordValue): AgentEvent[] {
     const resultError = text(result.error).trim();
     this.rateLimitedResult = rateLimitOnlyFailure(resultError);
-    if (result.status !== 'SUCCESS') {
-      const diagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
-      this.resultDiagnostic = this.isResumedResultError(result, resultError)
-        ? cumulativeResultDiagnostic(diagnostic)
-        : diagnostic;
-    }
+    this.cumulativeResult = this.isResumedResultError(result);
+    if (result.status !== 'SUCCESS' && !this.cumulativeResult)
+      this.resultDiagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
     const hasDeniedActions = Array.isArray(result.denied_actions) && result.denied_actions.length > 0;
     this.resultReviewable = !hasDeniedActions && this.reviewableResult(result);
     return hasDeniedActions ? [{ type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE }] : [];
   }
 
-  private isResumedResultError(result: RecordValue, resultError: string): boolean {
+  private isResumedResultError(result: RecordValue): boolean {
     return (
-      this.initialized &&
-      !!this.expectedId &&
-      result.conversation_id === this.expectedId &&
-      result.status === 'ERROR' &&
-      !!resultError
+      this.initialized && !!this.expectedId && result.conversation_id === this.expectedId && result.status === 'ERROR'
     );
   }
 

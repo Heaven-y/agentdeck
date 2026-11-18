@@ -18,7 +18,7 @@ import {
   serviceFailure,
 } from './diagnostics';
 import { antigravityBackgroundEnvironment } from './process-environment';
-import { verifyAntigravityCompletion, type TrajectoryReader } from './completion';
+import { reviewAntigravityCurrentTurn, type CurrentTurnReview, type TrajectoryReader } from './completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { createAntigravityAcpRunner } from './acp/runtime';
 import { prepareNativeSettings } from './native-settings-override';
@@ -78,6 +78,8 @@ function argumentsFor(input: AgentTurnInput, settings?: string): string[] {
   args.push(...antigravityPermissionArgs(input.permission));
   return args;
 }
+
+type ResultExit = 'success' | 'native-failure' | 'cleanup' | 'abnormal';
 
 /** 每轮关闭 stdin，下一轮以原生 id 续接；不保存第二份会话正文。 */
 class AntigravityTurn {
@@ -328,7 +330,7 @@ class AntigravityTurn {
     try {
       this.flushOutput();
       clearTimeout(this.timer);
-      await this.completeResult(code);
+      await this.completeResult(code, signal);
       this.finishTurn(code, signal);
     } finally {
       this.ended = true;
@@ -340,7 +342,7 @@ class AntigravityTurn {
   private finishTurn(code: number | null, signal: NodeJS.Signals | null): void {
     const result = this.mapper.result;
     const isError = this.failed || !result || result.isError || this.abnormalExit(code, signal);
-    if (isError) this.reportFailure(result);
+    if (isError && result?.outcome !== 'unconfirmed') this.reportFailure(result);
     this.input.emit({
       ...(result ?? { type: 'turn_end' as const }),
       isError,
@@ -360,26 +362,62 @@ class AntigravityTurn {
     });
   }
 
-  private async completeResult(code: number | null): Promise<void> {
-    const naturalSuccess = code === 0 && !this.failed && !this.cleanupSignalSent && !this.nativeFailure;
-    // stdout 与 stderr 无严格先后；可复核的结果必须以完整本轮轨迹确认。
-    const verified = naturalSuccess ? await this.reviewCompletion() : false;
-    this.emitResult(naturalSuccess, verified);
+  private resultExit(code: number | null, signal: NodeJS.Signals | null): ResultExit {
+    if (this.cleanupExit(code, signal)) return 'cleanup';
+    if (signal || this.cleanupSignalSent) return 'abnormal';
+    if (code === 0) return 'success';
+    return code === 3 ? 'native-failure' : 'abnormal';
   }
 
-  private emitResult(naturalSuccess: boolean, verified: boolean): void {
-    const mayComplete = naturalSuccess && !this.failed && (!this.pendingService || verified);
-    const diagnostics = this.mapper.complete(mayComplete, verified);
-    // 已有明确诊断时优先保留该原因，不叠加累计结果的归属不明提示。
-    if (!this.pendingService && !this.reportedError) for (const event of diagnostics) this.notice(event);
+  private async completeResult(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+    if (!this.mapper.result?.isError || this.failed || this.reportedError || this.hasDecisiveFailure()) return;
+    const exit = this.resultExit(code, signal);
+    const review = exit === 'success' || exit === 'native-failure' ? await this.reviewCompletion() : undefined;
+    if (!this.failed) this.applyCompletion(review, exit);
   }
 
-  private reviewCompletion(): Promise<boolean> {
+  private hasDecisiveFailure(): boolean {
+    return this.nativeFailure || (!!this.pendingService && !this.pendingServiceRateLimitOnly);
+  }
+
+  private applyCompletion(review: CurrentTurnReview | undefined, exit: ResultExit): void {
+    const completed = review?.status === 'completed' && !this.mapper.terminalFailure ? review : undefined;
+    if (exit === 'success' && completed?.verifiedCompletion && this.mapper.canRecoverCompletion) {
+      for (const event of this.mapper.confirmCompletion(completed)) this.emit(event);
+      return;
+    }
+    if (!this.reportCurrentFailure(review, !!completed)) this.reportRemainingResult(completed, exit);
+  }
+
+  private reportRemainingResult(
+    completed: Extract<CurrentTurnReview, { status: 'completed' }> | undefined,
+    exit: ResultExit,
+  ) {
+    const ended = exit === 'success' || exit === 'cleanup';
+    if (this.mapper.cumulativeResult && ended && (!this.pendingService || completed?.verifiedCompletion)) {
+      // 只有答复可确认时才补齐对应步骤；累计结果不能写入正文或放行待发。
+      for (const event of this.mapper.markUnconfirmed(completed)) this.emit(event);
+    } else if (!this.pendingService && this.mapper.resultDiagnostic) {
+      this.notice(this.mapper.resultDiagnostic);
+    }
+  }
+
+  private reportCurrentFailure(review: CurrentTurnReview | undefined, completed: boolean): boolean {
+    if (review?.status === 'error') {
+      this.notice({ type: 'error', message: review.message });
+      return true;
+    }
+    if (!this.mapper.currentStepFailure || completed) return false;
+    if (!this.pendingService)
+      this.notice({ type: 'error', message: 'Antigravity 原生会话记录了本轮错误，请核对原生会话。' });
+    return true;
+  }
+
+  private reviewCompletion(): Promise<CurrentTurnReview> | undefined {
     const boundary = this.mapper.completionBoundary();
-    if (this.reportedError || !boundary || !this.services.readTrajectory) return Promise.resolve(false);
-    if (this.pendingService && !this.pendingServiceRateLimitOnly) return Promise.resolve(false);
+    if (!boundary || !this.services.readTrajectory) return undefined;
     if (this.pendingService) boundary.rateLimitedResult = true;
-    return verifyAntigravityCompletion(
+    return reviewAntigravityCurrentTurn(
       this.services.readTrajectory,
       { sessionId: boundary.sessionId, cwd: this.input.workspace.dir, boundary },
       this.preparation.signal,

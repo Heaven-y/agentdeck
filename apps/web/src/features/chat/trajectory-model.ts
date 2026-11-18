@@ -135,6 +135,7 @@ export function trajectoryCategory(item: TrajectoryItem): string {
       interaction: '提问',
       'async-question': '补充问题',
       error: '错误',
+      'turn-status': '状态',
       compaction: '压缩',
       statistics: '统计',
       activity: '活动',
@@ -156,6 +157,8 @@ export function trajectorySummary(item: TrajectoryItem): string {
       return `${shortToolName(item.toolName)} ${toolPrimaryArgument(item.input) ?? ''}`.trim();
     case 'error':
       return item.message;
+    case 'turn-status':
+      return '本轮结果待核实';
     case 'compaction':
       return compactionSummary(item);
     case 'statistics':
@@ -209,6 +212,7 @@ function otherStatus(item: TrajectoryItem): { label: string; tone: string } | un
   if (item.kind === 'interaction' || item.kind === 'permission') return interactionStatus(item);
   if (item.kind === 'assistant' && item.streaming) return { label: '生成中', tone: 'text-muted-foreground' };
   if (item.kind === 'error') return { label: '失败', tone: 'text-destructive-foreground' };
+  if (item.kind === 'turn-status') return { label: '待核实', tone: 'text-muted-foreground' };
   if (item.kind !== 'compaction') return;
   const label = item.incomplete
     ? '未完成'

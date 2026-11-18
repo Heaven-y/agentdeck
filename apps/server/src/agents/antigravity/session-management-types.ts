@@ -16,6 +16,8 @@ export type AntigravitySessionManagement = {
     dir: string,
     signal?: AbortSignal,
   ): Promise<{ trajectory: Record<string, unknown>; status?: string }>;
+  /** 回合判定需要已核对完整性和空闲状态的轨迹；不可用时保留结果未确认。 */
+  readTurnTrajectory?: AntigravitySessionManagement['readTrajectory'];
   rename?(id: string, dir: string, title: string): Promise<void>;
   delete(id: string, dir: string): Promise<void>;
   fork(id: string, dir: string, input: SessionForkInput): Promise<{ sessionId: string }>;

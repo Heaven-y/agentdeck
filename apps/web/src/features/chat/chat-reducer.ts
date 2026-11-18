@@ -32,6 +32,7 @@ export type ChatItem =
       responding?: boolean;
     }
   | ({ kind: 'statistics'; id: string; nativeId?: string; turnFailed?: boolean } & ChatStatistics)
+  | { kind: 'turn-status'; id: string; completedReplyStepId?: string }
   | (Omit<Extract<AgentEvent, { type: 'activity' }>, 'type'> & {
       kind: 'activity';
       nativeId?: string;
@@ -271,11 +272,33 @@ function finishActivity(item: ChatItem): ChatItem {
 }
 
 function finishTurn(items: ChatItem[], event: Extract<AgentEvent, { type: 'turn_end' }>): ChatItem[] {
-  const finished = markStatisticsFailure(finishStatistics(finishItems(items), event), event.isError);
+  const unconfirmed = event.isError && event.outcome === 'unconfirmed';
+  let finished = markStatisticsFailure(finishStatistics(finishItems(items), event), event.isError && !unconfirmed);
+  if (unconfirmed) finished = addUnconfirmedStatus(finished, event.completedReplyStepId);
+  else if (event.isError) finished = removeUnconfirmedStatus(finished);
   const pointId = event.forkPoint;
   if (!pointId || !NativeSessionIdSchema.safeParse(pointId).success) return finished;
   if (items.some((item) => item.kind === 'fork-point' && item.pointId === pointId)) return finished;
   return [...finished, { kind: 'fork-point', id: nextId(items, 'fork-point'), pointId }];
+}
+
+/** 本轮的诊断状态独立于成功与统计；重复结束事件不创建第二条。 */
+function addUnconfirmedStatus(items: ChatItem[], completedReplyStepId?: string): ChatItem[] {
+  const start = items.findLastIndex((item) => item.kind === 'user');
+  if (items.some((item, index) => index > start && item.kind === 'turn-status')) return items;
+  return [
+    ...items,
+    {
+      kind: 'turn-status',
+      id: nextId(items, 'turn-status'),
+      ...(completedReplyStepId ? { completedReplyStepId } : {}),
+    },
+  ];
+}
+
+function removeUnconfirmedStatus(items: ChatItem[]): ChatItem[] {
+  const start = items.findLastIndex((item) => item.kind === 'user');
+  return items.filter((item, index) => index <= start || item.kind !== 'turn-status');
 }
 
 function finishStatistics(items: ChatItem[], event: Extract<AgentEvent, { type: 'turn_end' }>): ChatItem[] {
@@ -303,7 +326,9 @@ function markStatisticsFailure(items: ChatItem[], isError: boolean): ChatItem[] 
 }
 
 function lastTurnStatistics(items: ChatItem[]): Extract<ChatItem, { kind: 'statistics' }> | undefined {
-  const tail = items.findLast((item) => item.kind !== 'fork-point' && item.kind !== 'error');
+  const tail = items.findLast(
+    (item) => item.kind !== 'fork-point' && item.kind !== 'error' && item.kind !== 'turn-status',
+  );
   return tail?.kind === 'statistics' && tail.scope === 'turn' ? tail : undefined;
 }
 

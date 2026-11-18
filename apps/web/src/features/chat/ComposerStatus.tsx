@@ -12,9 +12,15 @@ type StatisticsItem = Extract<ChatItem, { kind: 'statistics' }>;
 export function latestComposerStatistics(items: ChatItem[], running: boolean): StatisticsItem | undefined {
   if (running) return;
   const start = items.findLastIndex((item) => item.kind === 'user');
-  const current = items.slice(start + 1).filter((item): item is StatisticsItem => item.kind === 'statistics');
-  const latest = current.findLast((item) => item.scope === 'turn') ?? current.at(-1);
-  const failed = current.some((item) => item.turnFailed || (item.scope === 'turn' && item.isError));
+  const current = items.slice(start + 1);
+  const statistics = current.filter((item): item is StatisticsItem => item.kind === 'statistics');
+  const failed = statistics.some((item) => item.turnFailed || (item.scope === 'turn' && item.isError));
+  const status = current.findLast((item) => item.kind === 'turn-status');
+  if (status?.kind === 'turn-status') {
+    if (failed || !status.completedReplyStepId) return;
+    return statistics.findLast((item) => item.scope === 'step' && item.nativeId === status.completedReplyStepId);
+  }
+  const latest = statistics.findLast((item) => item.scope === 'turn') ?? statistics.at(-1);
   return latest && failed ? { ...latest, isError: true } : latest;
 }
 
@@ -27,7 +33,19 @@ function statisticsHint(item: StatisticsItem | undefined, running: boolean): str
   return '缺少同一范围的有效输出 token 或耗时，无法计算速度';
 }
 
-function TurnStatistics({ item, running }: { item?: StatisticsItem; running: boolean }) {
+function rateLabel(rate: number | undefined, showStep: boolean): string {
+  return `${showStep ? '步骤平均 ' : ''}${rate === undefined ? '—' : rate.toFixed(1)} tok/s`;
+}
+
+function TurnStatistics({
+  item,
+  running,
+  unconfirmed,
+}: {
+  item?: StatisticsItem;
+  running: boolean;
+  unconfirmed: boolean;
+}) {
   const popover = usePopoverStore({ placement: 'top-end' });
   const rate = item && averageTokenRate(item);
   const duration = finiteCount(item?.durationMs) ? item.durationMs : undefined;
@@ -44,7 +62,7 @@ function TurnStatistics({ item, running }: { item?: StatisticsItem; running: boo
       >
         <span className="inline-flex items-center gap-1 tabular-nums">
           <Gauge aria-hidden className="size-3" />
-          {rate === undefined ? '—' : rate.toFixed(1)} tok/s
+          {rateLabel(rate, unconfirmed && item?.scope === 'step')}
         </span>
         {duration !== undefined && (
           <span className="inline-flex items-center gap-1 tabular-nums">
@@ -71,10 +89,23 @@ function TurnStatistics({ item, running }: { item?: StatisticsItem; running: boo
 export function ComposerStatus() {
   const items = useChat((state) => state.items);
   const running = useChat((state) => state.running || !!state.pendingClientTurnId);
+  const inspect = useChat((state) => state.inspectItem);
   const latest = latestComposerStatistics(items, running);
+  const start = items.findLastIndex((item) => item.kind === 'user');
+  const status = !running && items.slice(start + 1).findLast((item) => item.kind === 'turn-status');
   return (
     <div role="group" aria-label="会话统计" className="composer-status">
-      <TurnStatistics key={latest?.id ?? 'pending'} item={latest} running={running} />
+      <TurnStatistics key={latest?.id ?? 'pending'} item={latest} running={running} unconfirmed={!!status} />
+      {status && (
+        <button
+          type="button"
+          aria-label="查看本轮状态"
+          className="rounded-md px-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => inspect(status.id)}
+        >
+          结果待核实
+        </button>
+      )}
       <ContextStatus />
     </div>
   );

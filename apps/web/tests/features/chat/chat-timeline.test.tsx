@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { forwardRef, StrictMode, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ChatTimeline } from '../../../src/features/chat/ChatTimeline';
-import type { ChatItem } from '../../../src/features/chat/chat-reducer';
+import { historyItems, type ChatItem } from '../../../src/features/chat/chat-reducer';
 import { useChat } from '../../../src/features/chat/chat-store';
 
 const host: {
@@ -38,6 +38,25 @@ afterEach(() => {
   useChat.setState(useChat.getInitialState(), true);
   vi.clearAllMocks();
   vi.restoreAllMocks();
+});
+
+it('结果未确认只留在过程详情，两轮回复不插入红条且普通错误仍可见', () => {
+  const items = historyItems([
+    { type: 'user_message', text: '第一轮' },
+    { type: 'text', delta: '第一条回复' },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
+    { type: 'user_message', text: '第二轮' },
+    { type: 'text', delta: '第二条回复' },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
+    { type: 'error', message: '本轮明确错误' },
+  ]);
+  expect(items.filter((item) => item.kind === 'turn-status')).toHaveLength(2);
+  render(<ChatTimeline items={items} running={false} />);
+  expect(screen.getByText('第一条回复')).toBeTruthy();
+  expect(screen.getByText('第二条回复')).toBeTruthy();
+  expect(screen.queryByText(/原生结果包含无法确认归属的错误/)).toBeNull();
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(screen.getByText('本轮明确错误')).toBeTruthy();
 });
 
 it('只读错误关闭后虚拟列表重新挂载仍隐藏，且不影响主会话同编号错误', () => {

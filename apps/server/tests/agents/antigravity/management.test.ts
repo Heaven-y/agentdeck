@@ -79,6 +79,36 @@ it('历史读取在身份校验后补齐原生分页，空页不冒充完整历�
   await expect(f.service.readTrajectory!('source', dir)).rejects.toMatchObject({ code: 'session_history_incomplete' });
 });
 
+it('用于回合判定的读取拒绝未知总数及分页过程中有新步骤的轨迹', async () => {
+  const f = fixture();
+  await expect(f.service.readTurnTrajectory!('source', dir)).rejects.toMatchObject({
+    code: 'session_history_incomplete',
+  });
+  const step = { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE' };
+  const first = { ...detail(), numTotalSteps: 2 };
+  f.request
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ steps: [step] })
+    .mockResolvedValueOnce({ ...first, numTotalSteps: 3 });
+  await expect(f.service.readTurnTrajectory!('source', dir)).rejects.toMatchObject({
+    code: 'session_history_incomplete',
+  });
+  f.request
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ steps: [step] })
+    .mockResolvedValueOnce({ ...detail('source', { steps: [{ ...step, error: 'Error 524' }] }), numTotalSteps: 2 });
+  await expect(f.service.readTurnTrajectory!('source', dir)).rejects.toMatchObject({
+    code: 'session_history_incomplete',
+  });
+  f.request
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce({ steps: [step] })
+    .mockResolvedValueOnce(first);
+  await expect(f.service.readTurnTrajectory!('source', dir)).resolves.toMatchObject({
+    trajectory: { steps: [step, step] },
+  });
+});
+
 it.each([
   ['wrong id', detail('other'), 'session_missing'],
   [

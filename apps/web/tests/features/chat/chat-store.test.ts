@@ -392,6 +392,45 @@ it('跨项目从普通列表返回已完成的AGY会话直接恢复内存，显�
   expect(useChat.getState().lastSentAt).toBeUndefined();
 });
 
+it('后台未确认结果经过 transport 收尾后仍属于原会话，回复统计保持关联', () => {
+  useChat.getState().newSession('antigravity');
+  const turnId = startTurn('示例请求');
+  const first = useChat.getState().conversationId;
+  emit({
+    type: 'agent.event',
+    turnId,
+    event: { type: 'session', sessionId: 'agy-native', agent: 'antigravity', model: 'native', cwd: 'project' },
+  });
+  useChat.getState().newSession('codex');
+  const second = useChat.getState().conversationId;
+  emit({ type: 'agent.event', turnId, event: { type: 'text', delta: '示例回复' } });
+  emit({
+    type: 'agent.event',
+    turnId,
+    event: {
+      type: 'step_usage',
+      id: 'agy-step-reply',
+      durationMs: 2000,
+      usage: { source: 'antigravity', scope: 'step', outputTokens: 20 },
+    },
+  });
+  emit({
+    type: 'agent.event',
+    turnId,
+    event: { type: 'turn_end', isError: true, outcome: 'unconfirmed', completedReplyStepId: 'agy-step-reply' },
+  });
+  emit({ type: 'turn.finished', turnId, workspaceId: 'w1', agent: 'antigravity' });
+  expect(useChat.getState().conversationId).toBe(second);
+  expect(useChat.getState().items.some((item) => item.kind === 'turn-status')).toBe(false);
+  const background = useChat.getState().background[first];
+  expect(background?.running).toBe(false);
+  expect(background?.items.filter((item) => item.kind === 'turn-status')).toEqual([
+    expect.objectContaining({ completedReplyStepId: 'agy-step-reply' }),
+  ]);
+  useChat.getState().openConversation(first);
+  expect(useChat.getState().items.some((item) => item.kind === 'turn-status')).toBe(true);
+});
+
 it('空闲已读正文超过预算后按需重读，参数、草稿和不可回放内容保留', async () => {
   const read = vi.spyOn(sessionsApi, 'sessionEvents').mockImplementation(async (_workspace, sessionId, agent) => ({
     session: { agent, sessionId, summary: sessionId, lastModified: 1 },

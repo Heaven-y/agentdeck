@@ -60,6 +60,8 @@ const choices = (input: FollowupChoices) =>
   ]);
 
 /** 将会话队列与轮次、附件租约连接；原生受理未知时保留暂停记录，绝不换路径重投。 */
+type FollowupOutcome = { success: boolean; attempted: boolean; unconfirmed?: boolean };
+
 export class FollowupHost {
   private readonly groups = new Map<string, FollowupGroup>();
   private readonly queue: FollowupQueue;
@@ -309,7 +311,7 @@ export class FollowupHost {
     group.questions.observe(native.question, native.answered);
     return group;
   }
-  finished(turnId: string, outcome: { success: boolean; attempted: boolean }): void {
+  finished(turnId: string, outcome: FollowupOutcome): void {
     const group = this.forTurn(turnId);
     if (!group) return;
     this.finishInput(group, outcome);
@@ -317,11 +319,16 @@ export class FollowupHost {
     group.turnId = undefined;
     group.inputId = undefined;
     group.questions.endTurn();
-    if (!outcome.success) this.queue.pause(group.owner, group.context.queueId, '本轮失败或停止，待发列表已暂停。');
+    if (!outcome.success)
+      this.queue.pause(
+        group.owner,
+        group.context.queueId,
+        outcome.unconfirmed ? '本轮原生结果未确认，待发列表已暂停。' : '本轮失败或停止，待发列表已暂停。',
+      );
     this.publish(group.context.queueId);
     if (outcome.success) void this.pump(group);
   }
-  private finishInput(group: FollowupGroup, outcome: { success: boolean; attempted: boolean }): void {
+  private finishInput(group: FollowupGroup, outcome: FollowupOutcome): void {
     const id = group.inputId;
     if (id) {
       const item = this.queue
@@ -334,7 +341,12 @@ export class FollowupHost {
           id,
           outcome.success
             ? { status: 'accepted' }
-            : { status: outcome.attempted ? 'unknown' : 'failed', reason: '本轮未完成，请核对历史；待发列表已暂停。' },
+            : {
+                status: outcome.attempted ? 'unknown' : 'failed',
+                reason: outcome.unconfirmed
+                  ? '本轮原生结果未确认，请核对历史；待发列表已暂停。'
+                  : '本轮未完成，请核对历史；待发列表已暂停。',
+              },
         );
       group.leases.get(id)?.release();
       group.leases.delete(id);

@@ -68,6 +68,7 @@ type Turn = {
   hasAttachments?: boolean;
   failed?: boolean;
   nativeEnded?: boolean;
+  nativeUnconfirmed?: boolean;
   input?: AgentTurnInput;
   startedAt: number;
   queueId?: string;
@@ -397,7 +398,8 @@ export class TurnManager {
   private updateEventState(turn: Turn, event: AgentEvent): void {
     if (event.type === 'turn_end') {
       turn.nativeEnded = true;
-      if (event.isError) turn.failed = true;
+      if (event.isError && event.outcome === 'unconfirmed') turn.nativeUnconfirmed = true;
+      else if (event.isError) turn.failed = true;
     }
     if (event.type === 'permission_resolved') {
       const pending = this.pending.get(event.requestId);
@@ -703,10 +705,7 @@ export class TurnManager {
       workspaceId: turn.workspaceId,
       agent: turn.agent,
     });
-    this.followups.finished(turn.id, {
-      success: nativeSucceeded(turn),
-      attempted: !!turn.handle,
-    });
+    this.followups.finished(turn.id, nativeFollowupOutcome(turn));
   }
 }
 function contextualInteraction(spec: NativeInteractionRequest['spec'], turn: Turn): NativeInteractionRequest['spec'] {
@@ -725,8 +724,13 @@ function hasAttachments(message: Send): boolean {
 function nativeInputId(id: string): string {
   return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id) ? id : randomUUID();
 }
-function nativeSucceeded(turn: Turn): boolean {
-  return !!turn.nativeEnded && !turn.failed && !turn.controller.signal.aborted && !turn.sessionRejected;
+function nativeFollowupOutcome(turn: Turn) {
+  const eligible = !!turn.nativeEnded && !turn.failed && !turn.controller.signal.aborted && !turn.sessionRejected;
+  return {
+    success: eligible && !turn.nativeUnconfirmed,
+    unconfirmed: eligible && !!turn.nativeUnconfirmed,
+    attempted: !!turn.handle,
+  };
 }
 function isFollowupAction(message: ClientMessage): message is Parameters<FollowupHost['handle']>[1] {
   return new Set(['chat.followup', 'followup.edit', 'followup.cancel', 'followup.clear', 'followup.resume']).has(

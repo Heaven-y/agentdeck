@@ -60,6 +60,10 @@ export type AgentEvent =
   | {
       type: 'turn_end';
       isError: boolean;
+      /** 结束状态无法归属本轮；保留 isError=true，避免自动继续待发列表。 */
+      outcome?: 'unconfirmed';
+      /** 已确认的本轮最终回复步骤，仅用于展示该步骤的原生统计。 */
+      completedReplyStepId?: string;
       durationMs?: number;
       costUsd?: number;
       usage?: TokenUsage;

@@ -133,6 +133,61 @@ it('取消后的空回复不算恢复，既有错误也不被后续完整回复�
   }
 });
 
+it('结果待核实时只展示明确关联的回复步骤速度，并可查看本轮状态', () => {
+  const items = historyItems([
+    { type: 'user_message', text: '示例请求' },
+    { type: 'text', delta: '示例回复' },
+    {
+      type: 'step_usage',
+      id: 'agy-step-reply',
+      durationMs: 2000,
+      usage: { source: 'antigravity', scope: 'step', outputTokens: 20 },
+    },
+    {
+      type: 'step_usage',
+      id: 'agy-step-checkpoint',
+      durationMs: 1000,
+      usage: { source: 'antigravity', scope: 'step', outputTokens: 100 },
+    },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed', completedReplyStepId: 'agy-step-reply' },
+  ]);
+  useChat.setState({ items });
+  render(<ComposerStatus />);
+  const footer = screen.getByRole('button', { name: '本轮统计详情' });
+  expect(footer.textContent).toContain('10.0 tok/s');
+  expect(footer.textContent).toContain('步骤');
+  expect(footer.textContent).not.toContain('100.0 tok/s');
+  expect(footer.getAttribute('title')).toContain('步骤');
+  fireEvent.click(screen.getByRole('button', { name: '查看本轮状态' }));
+  const selected = useChat.getState().items.find((item) => item.id === useChat.getState().inspectedItemId);
+  expect(selected?.kind).toBe('turn-status');
+});
+
+it('待核实结果没有可信回复步骤时不借用压缩或上一轮统计', () => {
+  const items = historyItems([
+    { type: 'user_message', text: '上一轮' },
+    {
+      type: 'step_usage',
+      id: 'agy-step-reused',
+      durationMs: 2000,
+      usage: { source: 'antigravity', scope: 'step', outputTokens: 20 },
+    },
+    { type: 'turn_end', isError: false },
+    { type: 'user_message', text: '当前轮' },
+    {
+      type: 'step_usage',
+      id: 'agy-step-checkpoint',
+      durationMs: 1000,
+      usage: { source: 'antigravity', scope: 'step', outputTokens: 100 },
+    },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed', completedReplyStepId: 'agy-step-reused' },
+  ]);
+  useChat.setState({ items });
+  render(<ComposerStatus />);
+  expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('— tok/s');
+  expect(screen.getByRole('button', { name: '查看本轮状态' })).toBeTruthy();
+});
+
 it('底部摘要保留上下文与 tok/s，token 明细按需展开，运行中隐藏旧统计', async () => {
   useChat.setState({
     items: [statistics],

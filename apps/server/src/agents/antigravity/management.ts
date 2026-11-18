@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -57,6 +58,7 @@ async function assertDirectory(metadata: ManagementRecord, dir: string) {
 type RunOptions = {
   recoverDelete?: boolean;
   full?: boolean;
+  stable?: boolean;
   signal?: AbortSignal;
   readOnly?: boolean;
   child?: SubagentTrajectoryIdentity;
@@ -106,11 +108,7 @@ async function checkedReadOnly(backend: ManagementBackend, rootId: string, dir: 
   options.signal?.throwIfAborted();
   return { trajectory: await completeTrajectory(backend, response, options.signal), status: text(response.status) };
 }
-async function checked(backend: ManagementBackend, id: string, dir: string, options: RunOptions = {}) {
-  const result = await backend.request('GetCascadeTrajectory', {
-    cascadeId: id,
-    ...(options.full ? { trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' } : {}),
-  });
+async function idleTrajectory(result: ManagementRecord, id: string, dir: string): Promise<ManagementRecord> {
   const trajectory = object(result.trajectory);
   if (trajectory.cascadeId !== id) throw missing();
   const metadata = object(trajectory.metadata);
@@ -119,7 +117,42 @@ async function checked(backend: ManagementBackend, id: string, dir: string, opti
     throw new SessionError(400, 'unsupported_action', '不能单独管理 Antigravity 内部子代理会话。');
   if (result.status !== 'CASCADE_RUN_STATUS_IDLE')
     throw new SessionError(409, 'session_busy', 'Antigravity 会话尚未空闲，请结束后再管理。');
-  return options.full ? completeTrajectory(backend, result, options.signal) : trajectory;
+  return trajectory;
+}
+
+function unstableTurnTrajectory(): never {
+  throw new SessionError(503, 'session_history_incomplete', 'Antigravity 本轮轨迹未完整读取，请核对原生会话。');
+}
+
+async function recheckTurnPages(
+  backend: ManagementBackend,
+  scope: { id: string; dir: string },
+  snapshot: { steps: unknown; total: unknown },
+): Promise<void> {
+  // 分页不是原子读取；补页后复核身份、空闲状态、步骤总数和首包内容。
+  const latest = await backend.request('GetCascadeTrajectory', {
+    cascadeId: scope.id,
+    trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
+  });
+  const rechecked = await idleTrajectory(latest, scope.id, scope.dir);
+  if (latest.numTotalSteps !== snapshot.total || !isDeepStrictEqual(rechecked.steps, snapshot.steps))
+    unstableTurnTrajectory();
+}
+
+async function checked(backend: ManagementBackend, id: string, dir: string, options: RunOptions = {}) {
+  const result = await backend.request('GetCascadeTrajectory', {
+    cascadeId: id,
+    ...(options.full ? { trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' } : {}),
+  });
+  const trajectory = await idleTrajectory(result, id, dir);
+  if (!options.full) return trajectory;
+  const total = result.numTotalSteps;
+  if (options.stable && !Number.isSafeInteger(total)) unstableTurnTrajectory();
+  const complete = await completeTrajectory(backend, result, options.signal);
+  const firstPage = Array.isArray(trajectory.steps) ? trajectory.steps.length : 0;
+  if (options.stable && firstPage !== total)
+    await recheckTurnPages(backend, { id, dir }, { steps: trajectory.steps, total });
+  return complete;
 }
 
 /** 原生摘要异步落库：只检查指定 ID，失败不伪装成“尚未创建”。 */
@@ -250,6 +283,8 @@ export function createAntigravitySessionManagement(
       }),
     readTrajectory: (id, dir, signal) =>
       run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { full: true, signal }),
+    readTurnTrajectory: (id, dir, signal) =>
+      run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { full: true, stable: true, signal }),
     async dispose() {
       controller.abort();
       const close = Promise.allSettled([

@@ -66,7 +66,17 @@ function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant
   );
 }
 
-function MetadataMessage({ item }: { item: Extract<ChatItem, { kind: 'statistics' | 'fork-point' | 'compaction' }> }) {
+function MetadataMessage({
+  item,
+}: {
+  item: Extract<ChatItem, { kind: 'statistics' | 'fork-point' | 'compaction' | 'turn-status' }>;
+}) {
+  if (item.kind === 'turn-status')
+    return (
+      <p role="status" className="text-sm leading-6 text-muted-foreground">
+        原生结果包含无法确认归属的错误。请核对本轮答复与原生记录；如有待发消息，列表会暂停等待确认。
+      </p>
+    );
   if (item.kind === 'statistics') return <StatisticsLine statistics={item} />;
   if (item.kind === 'fork-point') return <SessionForkPoint pointId={item.pointId} />;
   return <CompactionStatus state={item.state} incomplete={item.incomplete} />;

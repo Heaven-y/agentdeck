@@ -205,7 +205,7 @@ export function createCliServices({
       create: (env) =>
         createAntigravityRunner({
           env,
-          readTrajectory: antigravityManagement.readTrajectory?.bind(antigravityManagement),
+          readTrajectory: antigravityManagement.readTurnTrajectory?.bind(antigravityManagement),
         }),
     }),
   };

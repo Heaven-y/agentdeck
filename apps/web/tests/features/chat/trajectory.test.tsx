@@ -2,12 +2,13 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { reduceChat, type ChatItem } from '../../../src/features/chat/chat-reducer';
+import { historyItems, reduceChat, type ChatItem } from '../../../src/features/chat/chat-reducer';
 import { useChat } from '../../../src/features/chat/chat-store';
 import { averageTokenRate } from '../../../src/features/chat/chat-metrics';
 import { filterTrajectory, projectTrajectory } from '../../../src/features/chat/trajectory-model';
 import { TrajectoryContent, TrajectoryView } from '../../../src/features/chat/TrajectoryView';
 import { StatisticsLine } from '../../../src/features/chat/StatisticsLine';
+import { ComposerStatus } from '../../../src/features/chat/ComposerStatus';
 import { ConversationSidebar } from '../../../src/app/ConversationSidebar';
 import { useConversationSidebar } from '../../../src/app/use-conversation-sidebar';
 import type { TrajectoryRow } from '../../../src/features/chat/trajectory-model';
@@ -75,6 +76,30 @@ it('独立子代理轨迹只选择自己的步骤，不读取父上下文或改�
   expect(useChat.getState().inspectedItemId).toBe('parent-step');
 });
 
+it('没有回复正文时，未确认的结果仍能从本轮轨迹打开详情', async () => {
+  const items = historyItems([
+    { type: 'user_message', text: '示例请求' },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
+  ]);
+  useChat.setState({ items });
+  render(<Fixture />);
+  fireEvent.click(screen.getByRole('button', { name: '查看步骤 1：状态 本轮结果待核实' }));
+  expect(await screen.findByRole('heading', { name: '步骤详情' })).toBeTruthy();
+  expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
+});
+
+it('没有回复正文时，页脚状态入口可直接打开本轮详情', async () => {
+  const items = historyItems([
+    { type: 'user_message', text: '示例请求' },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
+  ]);
+  useChat.setState({ items });
+  render(<FooterFixture />);
+  fireEvent.click(screen.getByRole('button', { name: '查看本轮状态' }));
+  expect(await screen.findByRole('heading', { name: '步骤详情' })).toBeTruthy();
+  expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
+});
+
 it('速度只配对同范围数据，未知耗时、失败、非有限 token 均隐藏', () => {
   const usage = { source: 'claude' as const, scope: 'turn' as const, outputTokens: 120 };
   const statistics = { scope: 'turn' as const, durationMs: 2000, usage };
@@ -133,6 +158,16 @@ function Fixture() {
   return (
     <>
       <TrajectoryView items={items} running />
+      {dock.open && <ConversationSidebar open close={dock.hide} settings={() => undefined} />}
+    </>
+  );
+}
+
+function FooterFixture() {
+  const dock = useConversationSidebar();
+  return (
+    <>
+      <ComposerStatus />
       {dock.open && <ConversationSidebar open close={dock.hide} settings={() => undefined} />}
     </>
   );
