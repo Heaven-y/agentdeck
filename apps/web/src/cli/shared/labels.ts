@@ -4,3 +4,5 @@ export const AGENT_LABELS: Record<AgentKind, string> = {
   codex: 'Codex',
   antigravity: 'Antigravity',
 };
+
+export const AGENT_FULL_NAMES: Record<AgentKind, string> = { ...AGENT_LABELS, claude: 'Claude Code' };

@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest';
-import { claudeQuestion, codexQuestion, nativeElicitation } from '../../src/agents/common/user-interactions';
+import {
+  claudeQuestion,
+  codexQuestion,
+  nativeElicitation,
+} from '../../src/agents/common/interaction/user-interactions';
 it('Claude多选与自由回答映射到原题，Codex按原生问题ID返回数组', () => {
   const claude = claudeQuestion({
     questions: [

@@ -6,6 +6,7 @@
 
 | 需要了解 | 文档 |
 |---|---|
+| 从需求找到源码、登记入口和对应测试 | [按功能找代码](guides/repository-map.md) |
 | 产品定位与启动 | [项目入口](../README.md) |
 | 已完成、待办与验收边界 | [路线图](roadmap.md) |
 | 功能范围和验收条件 | [产品需求](product/requirements.md) |

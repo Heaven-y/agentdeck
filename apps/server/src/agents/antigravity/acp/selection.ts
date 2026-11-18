@@ -1,6 +1,6 @@
 import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput } from '../../contracts';
-import type { AntigravityModelSettings } from '../model-catalog';
+import type { AntigravityModelSettings } from '../models/model-catalog';
 import { matchingAntigravityModels } from '../configuration/identity';
 import { AcpError, object, text, list, type AcpConnection, type AcpRecord } from './types';
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { SpotlightSurface } from '../../src/ui/SpotlightSurface';
+import { SpotlightSurface } from '../../src/ui/appearance/SpotlightSurface';
 import { createPortal } from 'react-dom';
 
 let frame: FrameRequestCallback | undefined;

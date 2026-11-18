@@ -1,7 +1,7 @@
 import { expectTypeOf, it } from 'vitest';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import type { ClaudeQuery } from '../../src/agents/claude/query';
-import type { ClaudeSessionsApi } from '../../src/agents/claude/sessions';
+import type { ClaudeQuery } from '../../src/agents/claude/run/query';
+import type { ClaudeSessionsApi } from '../../src/agents/claude/history/sessions';
 import type { SessionProvider } from '../../src/agents/contracts';
 import type { createSessionsService } from '../../src/sessions/service';
 import type { TurnManagerDeps } from '../../src/chat/turn-manager';

@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
-import { createAntigravitySessionManagement } from '../agents/antigravity/management';
-import { createAntigravitySessions } from '../agents/antigravity/sessions';
-import { createClaudeSessions } from '../agents/claude/sessions';
-import { assertCodexSession, readCodexSession } from '../agents/codex/sessions';
+import { createAntigravitySessionManagement } from '../agents/antigravity/management/management';
+import { createAntigravitySessions } from '../agents/antigravity/history/sessions';
+import { createClaudeSessions } from '../agents/claude/history/sessions';
+import { assertCodexSession, readCodexSession } from '../agents/codex/history/sessions';
 import { SessionError } from '../agents/errors';
 import { createSessionsService } from '../sessions/service';
 import { createLaunchEnvironment } from '../settings/launch-environment';

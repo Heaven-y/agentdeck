@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { FieldSelect, FieldSuggestions } from '../../src/ui/FieldSelect';
+import { FieldSelect, FieldSuggestions } from '../../src/ui/fields/FieldSelect';
 
 afterEach(cleanup);
 const options = [

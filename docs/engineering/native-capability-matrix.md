@@ -90,9 +90,9 @@
 
 | 证据主题 | 当前代码入口 |
 |---|---|
-| 原生响应与轨迹映射 | [Claude mapper](../../apps/server/src/agents/claude/mapper.ts)、[Codex mapper](../../apps/server/src/agents/codex/mapper.ts)、[Antigravity mapper](../../apps/server/src/agents/antigravity/mapper.ts)、[ACP runtime](../../apps/server/src/agents/antigravity/acp/runtime.ts) |
-| 子代理与后台任务 | [Claude tasks](../../apps/server/src/agents/claude/tasks.ts)、[Codex child tasks](../../apps/server/src/agents/codex/tasks.ts)、[AGY subagents](../../apps/server/src/agents/antigravity/subagents.ts)、[Codex background terminal helper](../../apps/server/src/agents/codex/background-terminals.ts) |
-| 专用命令、审查与回退 | [Claude native actions](../../apps/server/src/agents/claude/native-actions.ts)、[Codex native actions](../../apps/server/src/agents/codex/native-actions.ts)、[Codex history actions](../../apps/server/src/agents/codex/history-actions.ts)、[AGY ACP commands](../../apps/server/src/agents/antigravity/acp/commands.ts) |
+| 原生响应与轨迹映射 | [Claude mapper](../../apps/server/src/agents/claude/run/mapper.ts)、[Codex mapper](../../apps/server/src/agents/codex/run/mapper.ts)、[Antigravity mapper](../../apps/server/src/agents/antigravity/run/mapper.ts)、[ACP runtime](../../apps/server/src/agents/antigravity/acp/runtime.ts) |
+| 子代理与后台任务 | [Claude tasks](../../apps/server/src/agents/claude/run/tasks.ts)、[Codex child tasks](../../apps/server/src/agents/codex/tasks/tasks.ts)、[AGY subagents](../../apps/server/src/agents/antigravity/history/subagents.ts)、[Codex background terminal helper](../../apps/server/src/agents/codex/tasks/background-terminals.ts) |
+| 专用命令、审查与回退 | [Claude native actions](../../apps/server/src/agents/claude/history/native-actions.ts)、[Codex native actions](../../apps/server/src/agents/codex/history/native-actions.ts)、[Codex history actions](../../apps/server/src/agents/codex/history/history-actions.ts)、[AGY ACP commands](../../apps/server/src/agents/antigravity/acp/commands.ts) |
 | Skills、MCP、插件和规则 | [Native configuration](native-configuration.md)及其列出的三CLI配置适配器；状态/隔离验收见E06–E08 |
 | 本机协议类型 | Claude使用当前安装SDK的`node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`；Codex 0.166.0 schema由本机app-server `generate-json-schema --experimental`生成；AGY依据ACP initialize和本机CLI/管理协议。schema与SDK声明只说明字段/方法，不代替E索引中的真实隔离执行证据 |
 

@@ -1,6 +1,6 @@
 import { MenuSeparator, MenuGroup } from '@ariakit/react';
 import type { AgentModel } from '@agentdeck/shared/conversation';
-import { MenuChoice as Choice } from '../../ui/MenuChoice';
+import { MenuChoice as Choice } from '../../ui/fields/MenuChoice';
 import { claudeContextModels } from './context-models';
 export function ClaudeContextChoices({
   disabled,

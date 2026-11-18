@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { ProjectManageDialog } from '../../../src/features/projects/ProjectManageDialog';
 
-import { sessionActionKey, useChat } from '../../../src/features/chat/chat-store';
+import { sessionActionKey, useChat } from '../../../src/features/chat/state/chat-store';
 import { projectChatBusy, projectIsBusy } from '../../../src/features/projects/project-management';
 
 const project: Workspace = { id: 'demo', name: '原项目', dir: path.resolve('fixtures', 'demo') };

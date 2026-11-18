@@ -4,9 +4,9 @@ import {
   configuredAntigravityDefault,
   configuredAntigravityModels,
   readAntigravityModelSettings,
-} from './model-catalog';
-import { discoverAntigravityModels } from './model-discovery';
-import { discoverAntigravityCommands } from './commands';
+} from './models/model-catalog';
+import { discoverAntigravityModels } from './models/model-discovery';
+import { discoverAntigravityCommands } from './commands/commands';
 
 function mergeModels(discovered: AgentModel[], configured: AgentModel[]): AgentModel[] {
   const models = new Map<string, AgentModel>();

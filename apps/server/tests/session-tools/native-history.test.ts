@@ -2,7 +2,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createAntigravitySessions } from '../../src/agents/antigravity/sessions';
+import { createAntigravitySessions } from '../../src/agents/antigravity/history/sessions';
 import { sessionToolsConfigDir } from '../../src/session-tools/runtime';
 
 describe('MCP 原生读取选项', () => {

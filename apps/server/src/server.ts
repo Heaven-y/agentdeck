@@ -5,13 +5,14 @@ import { createCliServices } from './bootstrap/cli-services';
 import type { AgentProbe } from '@agentdeck/shared/conversation';
 import type { FastifyInstance } from 'fastify';
 import { mkdir, stat } from 'node:fs/promises';
+import { agentForExecutable } from './agents/common/executables';
 import { createAgentProbes, createLocalRunner } from './agents/common/probe';
 import type { ServerConfig } from './config';
 import { buildApp } from './http/app';
 import { registerProbeRoutes } from './http/probe.routes';
-import { registerProductSettingsRoutes } from './http/product-settings.routes';
+import { registerProductSettingsRoutes } from './http/settings/product-settings.routes';
 import { registerProjectRoutes } from './http/projects.routes';
-import { registerWsRoutes } from './http/ws.routes';
+import { registerWsRoutes } from './http/conversation/ws.routes';
 import type { ProcessRunner } from './platform/process/run';
 import type { CliInstallationBackend } from './cli-installation/types';
 import { createProductSettings } from './settings/product-settings';
@@ -73,11 +74,9 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
   const localRunner = options.probeRunner ?? createLocalRunner();
   const probes = createAgentProbes({
     run: (command, args, settings) => {
-      if (command === 'claude' || command === 'codex' || command === 'agy')
-        return cli.nativeActivity.run(command === 'agy' ? 'antigravity' : command, () =>
-          localRunner(command, args, settings),
-        );
-      return localRunner(command, args, settings);
+      const agent = agentForExecutable(command);
+      const run = () => localRunner(command, args, settings);
+      return agent ? cli.nativeActivity.run(agent, run) : run();
     },
   });
 

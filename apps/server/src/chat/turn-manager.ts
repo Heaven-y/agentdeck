@@ -21,10 +21,10 @@ import type {
   NativeInteractionRequest,
 } from '../agents/contracts';
 import { InteractionHub } from './interactions';
-import type { AttachmentStore, AttachmentLease } from './attachments';
+import type { AttachmentStore, AttachmentLease } from './attachments/attachments';
 import { SessionError } from '../agents/errors';
-import type { CapabilitiesService } from './capabilities';
-import { FollowupHost } from './followup-host';
+import type { CapabilitiesService } from './capabilities/capabilities';
+import { FollowupHost } from './followups/followup-host';
 import { RuntimeTasks } from './runtime-tasks';
 
 export type Socket = {

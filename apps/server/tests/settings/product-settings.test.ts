@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import { afterEach, expect, it } from 'vitest';
 import { ProductSettingsSchema, type ProductSettingsInput } from '@agentdeck/shared/settings';
 import { createProductSettings } from '../../src/settings/product-settings';
-import { registerProductSettingsRoutes } from '../../src/http/product-settings.routes';
+import { registerProductSettingsRoutes } from '../../src/http/settings/product-settings.routes';
 import { createAgentProbes } from '../../src/agents/common/probe';
 import { ProcessError } from '../../src/platform/process/run';
 

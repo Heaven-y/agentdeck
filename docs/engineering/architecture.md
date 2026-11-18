@@ -38,6 +38,8 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 
 ## 3. 仓库结构
 
+开发者可从[功能与源码索引](../guides/repository-map.md)进入对应模块和行为测试。
+
 | 路径 | 负责内容 |
 |---|---|
 | `apps/desktop/src` | 窗口、preload、单实例与退出编排 |
@@ -49,10 +51,12 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 | `apps/server/src/platform/{files,process,secrets}` | 安全文件读写、文件事务、TOML 修改、子进程和 Windows DPAPI |
 | `apps/server/src/plugins` | 通用插件注册状态、包校验、权限和存储，不导入 SSH 实现 |
 | `apps/server/src/builtin-plugins/ssh-console` | manifest、注册、SSH 基础、console（概览、进程、作业、文件、终端）与 HTTP |
-| `apps/server/src/http` | 本机访问控制、通用请求取消和应用路由 |
+| `apps/server/src/cli-installation` | 安装识别、原生与 npm 安装、替换事务 |
+| `apps/server/src/native-management` | 按 skills、mcp、plugins 分组的原生管理，写租约由 access 统一协调 |
+| `apps/server/src/http` | 访问控制与请求生命周期，对话和设置接口分别在 conversation 和 settings |
 | `apps/web/src/app` | DSH 外壳、导航、布局和跨功能组合 |
 | `apps/web/src/cli` | 通用模型身份与缓存，以及 Claude 上下文、Codex 参数、AGY 变体和设置策略 |
-| `apps/web/src/features` | 对话、会话、项目、设置、插件宿主；每个功能拥有自己的 API 与查询键 |
+| `apps/web/src/features` | chat 管实时会话，sessions 管列表与历史，conversation 提供共用时间线和轨迹。settings 按导航、模型、CLI 安装和原生资源等用途分组 |
 | `apps/web/src/builtin-plugins/ssh-console` | 内置页面注册、服务器档案界面与控制台 |
 | `apps/web/src/lib`、`ui` | HTTP、WebSocket、桌面桥、查询客户端与通用控件 |
 | `packages/shared/src/{conversation,projects,settings,plugins,ssh}` | 按领域导出的协议/schema；根入口保留兼容出口 |

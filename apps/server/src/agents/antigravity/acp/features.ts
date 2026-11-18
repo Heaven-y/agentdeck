@@ -1,6 +1,6 @@
 import { nativeFeaturesFor, type NativeInteractionFeatures } from '@agentdeck/shared/conversation';
 import type { AgentTurnInput } from '../../contracts';
-import { readAntigravityModelSettings } from '../model-catalog';
+import { readAntigravityModelSettings } from '../models/model-catalog';
 import { AntigravityAcpClient } from './client';
 import { needsHeadless, configureSession } from './selection';
 import { object, list } from './types';

@@ -6,14 +6,14 @@ import { registerHostTrustRoutes } from './http/ssh-host-trust.routes';
 import { registerSshTargetRoutes } from './http/ssh-targets.routes';
 import { registerSshRoutes } from './http/ssh.routes';
 import { createSshConsoleService } from './console/service';
-import { createHostTrust } from './ssh/host-trust';
-import { createPasswordStore } from './ssh/password-store';
-import { createSshPool } from './ssh/pool';
-import { createServerProfiles } from './ssh/profiles';
-import { serverHostConfig } from './ssh/targets';
+import { createHostTrust } from './ssh/profiles/host-trust';
+import { createPasswordStore } from './ssh/profiles/password-store';
+import { createSshPool } from './ssh/transport/pool';
+import { createServerProfiles } from './ssh/profiles/profiles';
+import { serverHostConfig } from './ssh/profiles/targets';
 
 import type { BuiltinPluginRegistration } from '../../plugins/contracts';
-import type { ServerTargets } from './ssh/targets';
+import type { ServerTargets } from './ssh/profiles/targets';
 
 export function createSshConsolePlugin({
   configDir,

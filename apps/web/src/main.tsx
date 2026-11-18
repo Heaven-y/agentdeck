@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { LocalSessionGate } from './app/LocalSessionGate';
-import { startChatConnection } from './features/chat/chat-store';
+import { startChatConnection } from './features/chat/state/chat-store';
 import { queryClient } from './lib/query-client';
 import './styles.css';
 import './ui/interactions.css';

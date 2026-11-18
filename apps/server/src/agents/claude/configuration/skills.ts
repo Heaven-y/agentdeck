@@ -2,28 +2,29 @@ import path from 'node:path';
 import { opendir } from 'node:fs/promises';
 import type { NativeSkillChangeInput, NativeSkillState } from '@agentdeck/shared/settings';
 import { NativeManagementError } from '../../../native-management/errors';
-import { readSkillConfig, writeSkillJson } from '../../../native-management/config';
-import type { NativeSkill, SkillConfigSource, SkillContext } from '../../../native-management/types';
+import { readNativeConfigSource, writeNativeConfigJson } from '../../../native-management/config';
+import type { NativeSkill, SkillContext } from '../../../native-management/skills/types';
+import type { NativeConfigSource } from '../../../native-management/config';
 import { resolveLocalCommand } from '../../../platform/process/executable';
 import { runProcess } from '../../../platform/process/run';
 import { inspectDirectory, readConfigFile } from '../../../platform/files/safe-file';
-import { claudePluginRecords } from '../../../native-management/plugin-utils';
+import { claudePluginRecords } from './plugin-records';
 
 export const claudeSkillStates: NativeSkillState[] = ['inherit', 'on', 'name-only', 'user-invocable-only', 'off'];
 export async function claudeSkillConfig(context: SkillContext) {
   const base = path.resolve(context.env.CLAUDE_CONFIG_DIR || path.join(context.homeDir, '.claude'));
-  const sources = [await readSkillConfig(path.join(base, 'settings.json'), 'user')];
+  const sources = [await readNativeConfigSource(path.join(base, 'settings.json'), 'user')];
   if (context.project) {
-    sources.push(await readSkillConfig(path.join(context.project.dir, '.claude/settings.json'), 'project'));
-    sources.push(await readSkillConfig(path.join(context.project.dir, '.claude/settings.local.json'), 'local'));
+    sources.push(await readNativeConfigSource(path.join(context.project.dir, '.claude/settings.json'), 'project'));
+    sources.push(await readNativeConfigSource(path.join(context.project.dir, '.claude/settings.local.json'), 'local'));
   }
   return sources;
 }
-function overrides(source: SkillConfigSource) {
+function overrides(source: NativeConfigSource) {
   const value = source.data.skillOverrides;
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
-export function claudeSkillState(name: string, sources: SkillConfigSource[]): NativeSkillState {
+export function claudeSkillState(name: string, sources: NativeConfigSource[]): NativeSkillState {
   let result: NativeSkillState = 'inherit';
   for (const source of sources) {
     const value = overrides(source)[name];
@@ -32,11 +33,11 @@ export function claudeSkillState(name: string, sources: SkillConfigSource[]): Na
   }
   return result;
 }
-export async function changeClaudeSkill(name: string, input: NativeSkillChangeInput, sources: SkillConfigSource[]) {
+export async function changeClaudeSkill(name: string, input: NativeSkillChangeInput, sources: NativeConfigSource[]) {
   const source = sources.find((item) => item.scope === input.scope);
   if (!source || !input.value || !claudeSkillStates.includes(input.value))
     throw new NativeManagementError('unsupported_action');
-  await writeSkillJson(source, (config) => {
+  await writeNativeConfigJson(source, (config) => {
     if (
       config.skillOverrides !== undefined &&
       (!config.skillOverrides || typeof config.skillOverrides !== 'object' || Array.isArray(config.skillOverrides))

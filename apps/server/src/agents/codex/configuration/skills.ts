@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { CodexClient } from '../client';
+import { CodexClient } from '../run/client';
 import { readNativeSkills } from '../capabilities';
-import type { CodexRuntimeOptions } from '../types';
-import { record, text } from '../types';
+import type { CodexRuntimeOptions } from '../run/types';
+import { record, text } from '../run/types';
 import { NativeManagementError } from '../../../native-management/errors';
-import type { NativeSkill } from '../../../native-management/types';
+import type { NativeSkill } from '../../../native-management/skills/types';
 
 export type SkillClient = Pick<CodexClient, 'request' | 'initialize' | 'close'>;
 export function createCodexSkills(

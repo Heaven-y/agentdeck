@@ -8,15 +8,17 @@ import {
   readAntigravityModelSettings,
   configuredAntigravityModels,
   antigravityModelSelector,
-} from '../../../src/agents/antigravity/model-catalog';
-import { antigravityLaunchSelection } from '../../../src/agents/antigravity/model-launch';
+} from '../../../src/agents/antigravity/models/model-catalog';
+import { antigravityLaunchSelection } from '../../../src/agents/antigravity/models/model-launch';
 import { runProcess } from '../../../src/platform/process/run';
-import { discoverAntigravityCommands } from '../../../src/agents/antigravity/commands';
+import { discoverAntigravityCommands } from '../../../src/agents/antigravity/commands/commands';
 vi.mock('../../../src/platform/process/executable', () => ({
   resolveLocalCommand: () => ({ command: 'agy', args: [] }),
 }));
 vi.mock('../../../src/platform/process/run', () => ({ runProcess: vi.fn() }));
-vi.mock('../../../src/agents/antigravity/commands', () => ({ discoverAntigravityCommands: vi.fn(async () => []) }));
+vi.mock('../../../src/agents/antigravity/commands/commands', () => ({
+  discoverAntigravityCommands: vi.fn(async () => []),
+}));
 
 const roots: string[] = [];
 afterEach(async () => {

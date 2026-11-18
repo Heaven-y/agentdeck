@@ -1,5 +1,9 @@
 import type { AgentKind } from '@agentdeck/shared/conversation';
-import type { NativeManagementAccess } from './types';
+export type NativeManagementProject = { id: string; dir: string };
+export type NativeManagementAccess = {
+  read<T>(agent: AgentKind, operation: () => Promise<T>): Promise<T>;
+  write<T>(agent: AgentKind, project: NativeManagementProject | undefined, operation: () => Promise<T>): Promise<T>;
+};
 
 type Deps = {
   withIdleAgent<T>(agent: AgentKind, operation: () => Promise<T>): Promise<T>;

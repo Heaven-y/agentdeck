@@ -1,0 +1,111 @@
+import type { AgentKind, AgentEvent, ContextUsage, CompactionState, SessionRef } from '@agentdeck/shared/conversation';
+import type { ChatState, ConversationView } from './chat-state';
+import type { ChatItem } from './chat-reducer';
+import { ApiError } from '../../../lib/http';
+import type { DraftAttachment } from '../composer/attachment-actions';
+export const sessionActionKey = (workspaceId: string, session: SessionRef): string =>
+  JSON.stringify([workspaceId, session.agent, session.sessionId]);
+export const DEFAULT_REASONING_EFFORTS: Record<AgentKind, string> = {
+  claude: '',
+  codex: '',
+  antigravity: '',
+};
+/** 未显式选择的模型和强度都由原生配置决定。 */
+export const EMPTY_MODEL_OVERRIDES: Record<AgentKind, string> = { claude: '', codex: '', antigravity: '' };
+export function historyFailure(agent: AgentKind, error: unknown): Pick<ChatState, 'historyError' | 'historyNotice'> {
+  const notReplayable = agent === 'antigravity' && error instanceof ApiError && error.code === 'session_not_replayable';
+  if (notReplayable)
+    return { historyNotice: 'Antigravity 的原生历史暂不能回放；可以继续此会话，本次收到的内容会显示在这里。' };
+  return { historyError: `加载会话失败：${error instanceof Error ? error.message : '请重试'}` };
+}
+
+export function historyViewVersion(
+  current: ChatState,
+  session: SessionRef,
+  generation: number,
+  options?: { preserveDraft?: boolean },
+) {
+  return options?.preserveDraft && current.agent === session.agent && current.sessionId === session.sessionId
+    ? current.conversationVersion
+    : generation;
+}
+
+export function historyParameters(current: ChatState, session: SessionRef) {
+  if (current.agent === session.agent && current.sessionId === session.sessionId)
+    return {
+      modelOverrides: current.modelOverrides,
+      reasoningEfforts: current.reasoningEfforts,
+      permission: current.permission,
+      collaborationMode: current.collaborationMode,
+    };
+  return {
+    modelOverrides: { ...EMPTY_MODEL_OVERRIDES },
+    reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
+    permission: undefined,
+    collaborationMode: undefined,
+  };
+}
+
+export function historyRetryItems(current: ChatState, session: SessionRef, options?: { preserveDraft?: boolean }) {
+  return options?.preserveDraft && current.agent === session.agent && current.sessionId === session.sessionId
+    ? current.items
+    : [];
+}
+
+export function sameSession(current: ConversationView, workspaceId: string, session: SessionRef): boolean {
+  return (
+    current.workspaceId === workspaceId && current.agent === session.agent && current.sessionId === session.sessionId
+  );
+}
+
+export function nativeStatus(event: AgentEvent): {
+  contextUsage?: ContextUsage | null;
+  compaction?: CompactionState;
+  contextWindow?: { model?: string; windowTokens?: number };
+} {
+  if (event.type === 'session' && event.contextWindow) return { contextWindow: event.contextWindow };
+  if (event.type === 'context') return { contextUsage: event.usage };
+  if (event.type === 'compaction') return { compaction: event.state };
+  return {};
+}
+
+export function reportedModel(model?: string): string | undefined {
+  return model?.trim() || undefined;
+}
+
+export const emptyConversation = {
+  collaborationMode: undefined,
+  queueId: undefined,
+  runningInput: undefined,
+  draftBackups: [],
+  receivedInputs: [],
+  title: undefined,
+  draft: '',
+  draftAttachments: [] as DraftAttachment[],
+  attachmentsBusy: false,
+  pendingAttachmentInput: undefined,
+  unread: false,
+  view: 'chat' as const,
+  sessionId: undefined,
+  actualModel: undefined,
+  selectedCapability: undefined,
+  contextUsage: undefined,
+  contextWindow: undefined,
+  compaction: undefined,
+  items: [] as ChatItem[],
+  inspectedItemId: undefined,
+  running: false,
+  lastSentAt: undefined,
+  turnId: undefined,
+  pendingClientTurnId: undefined,
+  interruptRequested: false,
+  loadingHistory: false,
+  historyReloadNeeded: false,
+  historyReplayable: false,
+  historyError: undefined,
+  historyNotice: undefined,
+  banner: undefined,
+  permissionLoading: false,
+  permissionSaving: false,
+  permissionError: undefined,
+};

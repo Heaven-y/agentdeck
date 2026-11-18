@@ -1,11 +1,11 @@
 // 网页独立认证接口：仅返回状态，密码不经过工作区存储或 Agent。
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { SshConnectionError } from '../ssh/connection';
+import { SshConnectionError } from '../ssh/transport/connection';
 import { CredentialStorageError } from '../../../platform/secrets/errors';
-import type { SshPool } from '../ssh/pool';
-import type { ServerProfiles } from '../ssh/profiles';
-import { ServerTargetsError } from '../ssh/targets';
+import type { SshPool } from '../ssh/transport/pool';
+import type { ServerProfiles } from '../ssh/profiles/profiles';
+import { ServerTargetsError } from '../ssh/profiles/targets';
 
 const HostBody = z.strictObject({ sshHost: z.string().min(1).max(200) });
 const ConnectBody = HostBody.extend({

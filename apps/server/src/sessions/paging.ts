@@ -11,7 +11,7 @@ import type {
 import type { Workspace } from '@agentdeck/shared/projects';
 import type { NativeSessionPage, NativeSessionRow, SessionProvider } from '../agents/contracts';
 import { SessionError } from '../agents/errors';
-import { nativeSessionDirectory, resolveProjectId } from '../agents/common/session-ownership';
+import { nativeSessionDirectory, resolveProjectId } from '../agents/common/history/session-ownership';
 import { createSessionPageCache } from './page-cache';
 
 export const SESSION_PAGE_SIZE = 50;

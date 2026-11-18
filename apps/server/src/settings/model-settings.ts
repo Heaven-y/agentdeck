@@ -11,12 +11,12 @@ import { NativeResourceError } from '../agents/common/configuration/errors';
 import { parseModelConfig } from '../agents/common/configuration/fields';
 import { ModelSettingsError } from '../agents/common/configuration/patch';
 import { cliConfigurations } from '../agents/registry';
-import { antigravityContextWindow } from '../agents/antigravity/context-window';
+import { antigravityContextWindow } from '../agents/antigravity/models/context-window';
 import {
   createNativeResourcesService,
   type NativeResourcesService,
   type NativeUserConfigWriter,
-} from './native-resources';
+} from './resources/native-resources';
 type Deps = {
   resources?: NativeResourcesService;
   environment?: ModelSettingsEnvironment;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ModelInfo, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { createClaudeCapabilityDiscovery } from '../../../src/agents/claude/capabilities';
-import { CLAUDE_CONTROL_TIMEOUT_MS, type QueryFn } from '../../../src/agents/claude/query';
+import { CLAUDE_CONTROL_TIMEOUT_MS, type QueryFn } from '../../../src/agents/claude/run/query';
 
 const directory = path.join(os.tmpdir(), 'agentdeck-fixture', 'capabilities');
 const fixture = { name: 'fixture', description: '项目技能', argumentHint: '<任务>' };

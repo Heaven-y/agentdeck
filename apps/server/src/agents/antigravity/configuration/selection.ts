@@ -1,7 +1,7 @@
 import type { AgentModel } from '@agentdeck/shared/conversation';
 import type { NativeModelSettingsInput } from '@agentdeck/shared/settings';
 import { object, string, type ConfigObject } from '../../common/configuration/fields';
-import { discoverAntigravityModels } from '../model-discovery';
+import { discoverAntigravityModels } from '../models/model-discovery';
 import { assertAntigravitySelection, selectedAntigravityModel } from './identity';
 
 type Changes = NativeModelSettingsInput['changes'];

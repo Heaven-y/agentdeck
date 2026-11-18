@@ -3,15 +3,16 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { AgentKind, AgentProbe } from '@agentdeck/shared/conversation';
+import { AGENT_KINDS, type AgentKind, type AgentProbe } from '@agentdeck/shared/conversation';
 import { ProcessError, runProcess, type ProcessRunner } from '../../platform/process/run';
 import { resolveLocalCommand } from '../../platform/process/executable';
+
+import { agentForExecutable, cliExecutables } from './executables';
 
 const PROBE_TIMEOUT_MS = 5_000;
 const VERSION_OUTPUT_CAP = 64 * 1024;
 const HELP_OUTPUT_CAP = 256 * 1024;
 const SCHEMA_OUTPUT_CAP = 1024 * 1024;
-const AGENT_ORDER: AgentKind[] = ['claude', 'codex', 'antigravity'];
 
 type AgentSpec = {
   agent: AgentKind;
@@ -23,23 +24,17 @@ type AgentSpec = {
   schema?: boolean;
 };
 
-const SPECS: Record<AgentKind, AgentSpec> = {
+const SPECS: Record<AgentKind, Omit<AgentSpec, 'agent' | 'executable'>> = {
   claude: {
-    agent: 'claude',
-    executable: 'claude',
     version: /^(\d+\.\d+\.\d+)\s+\(Claude Code\)/m,
     requiredHelp: ['--print', '--input-format', '--output-format', '--permission-prompts'],
   },
   codex: {
-    agent: 'codex',
-    executable: 'codex',
     version: /codex-cli (\d+\.\d+\.\d+)/,
     requiredHelp: ['app-server'],
     schema: true,
   },
   antigravity: {
-    agent: 'antigravity',
-    executable: 'agy',
     requiredHelp: ['--print', '--input-format', '--output-format', '--conversation'],
   },
 };
@@ -62,10 +57,8 @@ const MISSING_HINTS: Record<MissingReason, string> = {
 export function createLocalRunner(env: () => NodeJS.ProcessEnv = () => process.env): ProcessRunner {
   return async (command, args, options) => {
     const currentEnv = env();
-    const resolved =
-      command === 'claude' || command === 'codex' || command === 'agy'
-        ? resolveLocalCommand(command, currentEnv)
-        : { command, args: [] };
+    const agent = agentForExecutable(command);
+    const resolved = agent ? resolveLocalCommand(cliExecutables[agent], currentEnv) : { command, args: [] };
     return runProcess(resolved.command, [...resolved.args, ...args], { ...options, env: options.env ?? currentEnv });
   };
 }
@@ -212,7 +205,7 @@ export function createAgentProbes(deps: AgentProbeDeps): AgentProbes {
   const run = deps.run;
 
   async function probe(agent: AgentKind): Promise<AgentProbe> {
-    const spec = SPECS[agent];
+    const spec = { ...SPECS[agent], agent, executable: cliExecutables[agent] };
     const versionStep = await readVersion(spec, run);
     if (versionStep.kind === 'missing') return missingProbe(spec, versionStep.reason);
     if (versionStep.kind === 'changed') return changedProbe(spec, undefined, versionStep);
@@ -242,7 +235,7 @@ export function createAgentProbes(deps: AgentProbeDeps): AgentProbes {
 
   async function probeAll(): Promise<AgentProbe[]> {
     return Promise.all(
-      AGENT_ORDER.map(async (agent) => {
+      AGENT_KINDS.map(async (agent) => {
         try {
           return await probe(agent);
         } catch {
@@ -250,7 +243,7 @@ export function createAgentProbes(deps: AgentProbeDeps): AgentProbes {
           return {
             agent,
             status: 'missing' as const,
-            message: `可执行文件 ${SPECS[agent].executable} 探测失败；请检查本机安装。`,
+            message: `可执行文件 ${cliExecutables[agent]} 探测失败；请检查本机安装。`,
           };
         }
       }),

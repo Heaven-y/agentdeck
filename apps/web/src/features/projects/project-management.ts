@@ -3,9 +3,9 @@ import { useSyncExternalStore } from 'react';
 import { useQueryClient, type QueryClient, type InfiniteData } from '@tanstack/react-query';
 import type { SessionSummary, SessionPage } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
-import { useChat } from '../chat/chat-store';
-import { projectIsRunning } from '../chat/conversations';
-import { invalidateSessionPages } from '../sessions/session-queries';
+import { useChat } from '../chat/state/chat-store';
+import { projectIsRunning } from '../chat/state/conversations';
+import { invalidateSessionPages } from '../sessions/queries/session-queries';
 
 export type ProjectManageAction = 'rename' | 'directory' | 'remove';
 export type ProjectDraft = { dir?: string; name?: string };

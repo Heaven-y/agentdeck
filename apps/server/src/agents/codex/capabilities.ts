@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
-import { sameSessionDirectory } from '../common/session-scope';
-import { CodexClient } from './client';
-import { cancelled, CodexError, list, record, text, type CodexRuntimeOptions, type RecordValue } from './types';
+import { sameSessionDirectory } from '../common/history/session-scope';
+import { CodexClient } from './run/client';
+import { cancelled, CodexError, list, record, text, type CodexRuntimeOptions, type RecordValue } from './run/types';
 
 type Entry = NativeCapabilityCatalog['entries'][number];
 const MAX_CATALOG_ITEMS = 10_000;

@@ -1,7 +1,7 @@
 import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversation';
 import type { ModelInfo, SlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
-import { claudeControl, createClaudeStream, nativeClaudeQuery, type ClaudeQuery, type QueryFn } from './query';
+import { claudeControl, createClaudeStream, nativeClaudeQuery, type ClaudeQuery, type QueryFn } from './run/query';
 
 type Entry = NativeCapabilityCatalog['entries'][number];
 const safeName = (name: string) =>

@@ -9,9 +9,19 @@ import {
   writeConfigFile,
 } from '../platform/files/safe-file';
 import { nativeFileTransaction } from '../platform/files/transactions';
-import type { SkillConfigSource } from './types';
+import type { NativeResourceScope } from '@agentdeck/shared/settings';
+export type NativeConfigSource = {
+  file: string;
+  scope: NativeResourceScope;
+  content: string;
+  revision: string;
+  data: Record<string, unknown>;
+};
 
-export async function readSkillConfig(file: string, scope: SkillConfigSource['scope']): Promise<SkillConfigSource> {
+export async function readNativeConfigSource(
+  file: string,
+  scope: NativeConfigSource['scope'],
+): Promise<NativeConfigSource> {
   const parents = await inspectDirectory(path.dirname(file));
   const snapshot = parents ? await readConfigFile(file) : { content: '', revision: 'missing' };
   if (parents) await assertDirectoryUnchanged(parents);
@@ -25,7 +35,10 @@ export async function readSkillConfig(file: string, scope: SkillConfigSource['sc
   }
   return { file, scope, content: snapshot.content, revision: snapshot.revision, data: data as Record<string, unknown> };
 }
-export async function writeSkillJson(source: SkillConfigSource, mutate: (value: Record<string, unknown>) => void) {
+export async function writeNativeConfigJson(
+  source: NativeConfigSource,
+  mutate: (value: Record<string, unknown>) => void,
+) {
   return nativeFileTransaction(source.file, async () => {
     const parents = await inspectDirectory(path.dirname(source.file), true);
     const previous = await readConfigFile(source.file);

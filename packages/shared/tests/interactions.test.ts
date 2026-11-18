@@ -5,7 +5,7 @@ import {
   interactionAnswerErrors,
   type InteractionField,
   type InteractionSpec,
-} from '../src/conversation/interaction';
+} from '../src/conversation/messages/interaction';
 const check = (field: InteractionField, value: unknown) =>
   interactionAnswerErrors({ kind: 'form', title: '资料', blocking: true, fields: [field] }, {
     action: 'submit',

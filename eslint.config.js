@@ -70,7 +70,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              regex: '^\\..*/(chat|sessions|settings|plugins|builtin-plugins|http|bootstrap)/',
+              regex: '^(?:\\.\\./)+(chat|sessions|settings|plugins|builtin-plugins|http|bootstrap)/',
               message: 'CLI 适配器只依赖契约、公共适配工具和平台模块。',
             },
           ],

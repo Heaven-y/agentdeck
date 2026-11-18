@@ -35,7 +35,6 @@ export type BackendContext = {
   resolveCommand: typeof resolveLocalCommand;
 };
 
-export const EXECUTABLES = { claude: 'claude', codex: 'codex', antigravity: 'agy' } as const;
 export const PACKAGES = { claude: '@anthropic-ai/claude-code', codex: '@openai/codex' } as const;
 export const GUIDES = {
   claude: 'https://code.claude.com/docs/en/setup',

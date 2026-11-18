@@ -1,8 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HostTrustConfirmationSchema } from '@agentdeck/shared/ssh';
-import { HostTrustError, type HostTrust } from '../ssh/host-trust';
-import { SshConnectionError } from '../ssh/connection';
+import { HostTrustError, type HostTrust } from '../ssh/profiles/host-trust';
+import { SshConnectionError } from '../ssh/transport/connection';
 
 const AliasSchema = z.object({ sshHost: z.string().min(1).max(200) }).strict();
 async function respond(req: FastifyRequest, reply: FastifyReply, operation: (signal: AbortSignal) => Promise<unknown>) {

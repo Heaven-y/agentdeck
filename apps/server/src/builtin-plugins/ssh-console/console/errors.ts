@@ -1,4 +1,4 @@
-import { SshConnectionError } from '../ssh/connection';
+import { SshConnectionError } from '../ssh/transport/connection';
 
 const failures = {
   plugin_disabled: [403, 'SSH 控制台插件已停用'],

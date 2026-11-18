@@ -153,7 +153,7 @@ powershell -ExecutionPolicy Bypass -File scripts\dev\install-skills.ps1
 | 浏览器热更新 | `npm.cmd run dev` |
 | 本机静态托管 | `npm.cmd start` |
 | 指定关联测试 | `npm.cmd test -- apps/server/tests/chat/turn-manager.test.ts` |
-| 控制台受控夹具 | `node --import tsx scripts/dev/e2e-console.ts` |
+| 控制台受控夹具 | `node --import tsx scripts/dev/e2e/e2e-console.ts` |
 | Windows 本地包 | `npm.cmd run package:desktop` |
 | 解包目录与冒烟 | `npm.cmd run package:desktop:dir`，再按本地安装指南运行冒烟检查 |
 

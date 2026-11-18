@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
-import { attachmentFormat, attachmentExtension } from '../../src/chat/attachment-format';
-import { imageInfo } from '../../src/agents/common/media-format';
+import { attachmentFormat, attachmentExtension } from '../../src/chat/attachments/attachment-format';
+import { imageInfo } from '../../src/agents/common/media/media-format';
 
 const fixture = (name: string) => readFile(new URL(`../fixtures/media/${name}`, import.meta.url));
 it('识别真实JPEG、渐进JPEG、GIF与WebP静态和动画，不依赖扩展名', async () => {

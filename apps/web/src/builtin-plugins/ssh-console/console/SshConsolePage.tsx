@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { Plus, Server, Settings2 } from 'lucide-react';
 
 import { buttonClass } from '../../../ui/styles';
-import { ConsoleServerPicker } from './ConsoleServerPicker';
-import { ConsoleServerTabs } from './ConsoleTabs';
-import { ConsoleServerPanel } from './ConsoleServerPanel';
-import { consoleError, useConsoleVisible, type ConsoleServerTab } from './console-state';
+import { ConsoleServerPicker } from './navigation/ConsoleServerPicker';
+import { ConsoleServerTabs } from './navigation/ConsoleTabs';
+import { ConsoleServerPanel } from './navigation/ConsoleServerPanel';
+import { consoleError, useConsoleVisible, type ConsoleServerTab } from './navigation/console-state';
 
 export type SshConsolePageProps = {
   visible: boolean;

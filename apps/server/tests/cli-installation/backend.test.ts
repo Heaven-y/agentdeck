@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCliInstallationBackend, type BackendOptions } from '../../src/cli-installation';
-import { installationContext, checkedInstallation } from '../../src/cli-installation/installation-context';
+import { installationContext, checkedInstallation } from '../../src/cli-installation/discovery/installation-context';
 import { executeInstallation } from '../../src/cli-installation/installer';
 import type { CliInstallation } from '../../src/cli-installation/types';
 import type { ProcessRunner, ProcessOptions } from '../../src/platform/process/run';
