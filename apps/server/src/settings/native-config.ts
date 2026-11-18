@@ -1,4 +1,4 @@
-import { resourcePlan } from './resource-plan';
+import { resourcePlan } from './resources/resource-plan';
 import { cliConfigurations } from '../agents/registry';
 import type { NativeConfigAgent, NativeConfigDocument, NativeConfigInput } from '@agentdeck/shared/settings';
 import os from 'node:os';

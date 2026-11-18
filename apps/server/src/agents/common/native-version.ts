@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { resolveLocalCommand } from '../../platform/process/executable';
 import { runProcess } from '../../platform/process/run';
-import { resolveCodexCommand } from '../codex/launch';
+import { resolveCodexCommand } from '../codex/run/launch';
 export async function nativeVersion(
   agent: AgentKind,
   env: NodeJS.ProcessEnv,

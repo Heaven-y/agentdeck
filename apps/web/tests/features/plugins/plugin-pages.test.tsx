@@ -4,7 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { pluginApi } from '../../../src/features/plugins/plugin-api';
 import { usePluginPages } from '../../../src/features/plugins/use-plugin-pages';
-import { useChat } from '../../../src/features/chat/chat-store';
+import { useChat } from '../../../src/features/chat/state/chat-store';
 
 afterEach(() => {
   cleanup();

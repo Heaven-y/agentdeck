@@ -1,0 +1,216 @@
+import {
+  deleteSession,
+  forkSession,
+  getSessionInfo,
+  getSessionMessages,
+  listSessions,
+  renameSession,
+  type SDKSessionInfo,
+} from '@anthropic-ai/claude-agent-sdk';
+import { NativeSessionIdSchema, type SessionForkInput } from '@agentdeck/shared/conversation';
+import type { NativeSessionFork, NativeSessionPageInput } from '../../contracts';
+import { SessionError } from '../../errors';
+import { type SessionProvider } from '../../contracts';
+import { ClaudeEventMapper, claudeHistoryForkPoint } from '../run/mapper';
+import { sameSessionDirectory, sessionDirectoryWithin } from '../../common/history/session-scope';
+import { claudeSessionActivity } from './session-activity';
+import { createClaudeSubagents, createClaudeSubagentMedia, type ClaudeSubagentApi } from './subagents';
+import { claudeMediaBlock, imageSource } from '../../common/media/native-media';
+
+export type ClaudeSessionsApi = {
+  list(dir: string, page?: NativeSessionPageInput): Promise<SDKSessionInfo[]>;
+  listProject?(dir: string, page?: NativeSessionPageInput): Promise<SDKSessionInfo[]>;
+  info(id: string, dir?: string): Promise<SDKSessionInfo | undefined>;
+  messages(id: string, dir: string): Promise<unknown[]>;
+  rename(id: string, title: string, dir: string): Promise<void>;
+  delete(id: string, dir: string): Promise<void>;
+  fork(id: string, dir: string, input: SessionForkInput): Promise<{ sessionId: string }>;
+};
+
+const nativeApi: ClaudeSessionsApi = {
+  list: (_dir, page) =>
+    listSessions({ includeWorktrees: false, ...(page ? { limit: page.limit, offset: Number(page.cursor ?? 0) } : {}) }),
+  listProject: (dir, page) =>
+    listSessions({
+      dir,
+      includeWorktrees: false,
+      ...(page ? { limit: page.limit, offset: Number(page.cursor ?? 0) } : {}),
+    }),
+  info: (id, dir) => getSessionInfo(id, dir ? { dir } : undefined),
+  messages: (id, dir) => getSessionMessages(id, { dir, includeSystemMessages: true }),
+  rename: (id, title, dir) => renameSession(id, title, { dir }),
+  delete: (id, dir) => deleteSession(id, { dir }),
+  fork: (id, dir, input) => forkSession(id, { dir, ...(input.pointId ? { upToMessageId: input.pointId } : {}) }),
+};
+
+async function checkedInfo(record: SDKSessionInfo | undefined, id: string, dir: string): Promise<SDKSessionInfo> {
+  if (!record || record.sessionId !== id || (record.cwd && !(await sameSessionDirectory(record.cwd, dir))))
+    throw new SessionError(404, 'session_missing', 'Claude Code 在当前工作区中没有此会话');
+  return record;
+}
+
+function modelValue(message: object): string | undefined {
+  const model = 'model' in message && typeof message.model === 'string' ? message.model.trim() : '';
+  return model && model !== '<synthetic>' ? model : undefined;
+}
+function assistantModel(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || !('type' in value) || value.type !== 'assistant') return;
+  if ('parent_tool_use_id' in value && value.parent_tool_use_id) return;
+  if (!('message' in value) || !value.message || typeof value.message !== 'object') return;
+  return modelValue(value.message);
+}
+function lastModel(messages: unknown[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const model = assistantModel(messages[index]);
+    if (model) return model;
+  }
+  return undefined;
+}
+
+async function summary(record: SDKSessionInfo, signal?: AbortSignal) {
+  return {
+    sessionId: record.sessionId,
+    summary: record.summary,
+    lastModified: await claudeSessionActivity(record, { signal }),
+  };
+}
+
+async function summaries(records: SDKSessionInfo[], signal?: AbortSignal) {
+  const rows = [];
+  // 兼容全量入口也限制同时读取的尾块数量；日常分页仅处理 SDK 已返回的那一页。
+  for (let index = 0; index < records.length; index += 6) {
+    signal?.throwIfAborted();
+    rows.push(
+      ...(await Promise.all(
+        records.slice(index, index + 6).map(async (record) => ({
+          ...(await summary(record, signal)),
+          ...(record.cwd ? { cwd: record.cwd } : {}),
+        })),
+      )),
+    );
+  }
+  return rows;
+}
+
+export function createClaudeSessions(
+  api: ClaudeSessionsApi = nativeApi,
+  subagentApi?: ClaudeSubagentApi,
+  options: { preserveToolContent?: boolean } = {},
+): SessionProvider {
+  const readSubagents = createClaudeSubagents(subagentApi);
+  const readSubagentMedia = createClaudeSubagentMedia(subagentApi);
+  async function info(id: string, dir: string): Promise<SDKSessionInfo> {
+    // 老会话可能没有 cwd；SDK 带 dir 的读取仍限定原生项目存储位置。
+    return checkedInfo(await api.info(id, dir), id, dir);
+  }
+  async function readSource(id: string, dir: string) {
+    const scoped = await api.info(id, dir);
+    // 只读补救Windows短路径存储键；写入/分叉仍须SDK按目录找到原生记录。
+    const global = !scoped && api === nativeApi ? await getSessionInfo(id) : undefined;
+    const record = await checkedInfo(scoped ?? (global?.cwd ? global : undefined), id, dir);
+    return {
+      record,
+      messages: () => (global ? getSessionMessages(id, { includeSystemMessages: true }) : api.messages(id, dir)),
+    };
+  }
+  async function mutableInfo(id: string, dir: string): Promise<void> {
+    const record = await info(id, dir);
+    // 管理操作不采用老会话的目录缺失回退，避免 SDK 搜索关联工作树后修改错误的记录。
+    if (!record.cwd) throw new SessionError(404, 'session_missing', 'Claude Code 会话缺少工作区信息，无法修改');
+  }
+  async function forkedSession(sourceId: string, newId: string, dir: string): Promise<NativeSessionFork> {
+    if (!NativeSessionIdSchema.safeParse(newId).success || newId === sourceId)
+      throw new SessionError(503, 'session_runtime_failed', 'Claude Code 分叉返回了无效的新会话');
+    const record = await api.info(newId, dir);
+    if (!record || record.sessionId !== newId || !record.cwd || !(await sameSessionDirectory(record.cwd, dir)))
+      throw new SessionError(503, 'session_runtime_failed', 'Claude Code 分叉返回了无效的新会话');
+    return {
+      session: await summary(record),
+      cwd: record.cwd,
+    };
+  }
+  return {
+    async media(id, dir, locator, signal) {
+      signal?.throwIfAborted();
+      const source = await readSource(id, dir);
+      if (locator.subagentId) return readSubagentMedia(id, dir, locator, signal);
+      const messages = await source.messages();
+      signal?.throwIfAborted();
+      return imageSource(claudeMediaBlock(messages, locator));
+    },
+    async subagents(id, dir, query, signal) {
+      signal?.throwIfAborted();
+      await info(id, dir);
+      return readSubagents(id, dir, query, signal);
+    },
+    async page(dir, page, signal, archived = false) {
+      signal?.throwIfAborted();
+      if (archived) throw new SessionError(400, 'unsupported_action', 'Claude Code 不支持原生归档');
+      const records = await api.list(dir, page);
+      signal?.throwIfAborted();
+      return {
+        items: await summaries(records, signal),
+        nextCursor: records.length === page.limit ? String(Number(page.cursor ?? 0) + page.limit) : undefined,
+      };
+    },
+    async listProjects(dirs, signal) {
+      const distinct = new Map<string, Awaited<ReturnType<typeof summaries>>[number]>();
+      for (const dir of dirs) {
+        signal?.throwIfAborted();
+        const rows = await summaries(await (api.listProject ?? api.list)(dir), signal);
+        for (const row of rows) {
+          const previous = distinct.get(row.sessionId);
+          if (!previous || row.lastModified > previous.lastModified) distinct.set(row.sessionId, row);
+        }
+      }
+      return [...distinct.values()].toSorted((left, right) => right.lastModified - left.lastModified);
+    },
+    async list(dir, signal, archived = false) {
+      signal?.throwIfAborted();
+      if (archived) throw new SessionError(400, 'unsupported_action', 'Claude Code 不支持归档会话');
+      const records = await api.list(dir);
+      return summaries(records, signal);
+    },
+    async read(id, dir, signal) {
+      signal?.throwIfAborted();
+      const source = await readSource(id, dir);
+      const record = source.record;
+      const messages = await source.messages();
+      const mapper = new ClaudeEventMapper(id, options);
+      return {
+        session: await summary(record, signal),
+        cwd: record.cwd ?? dir,
+        actualModel: lastModel(messages),
+        events: mapper.mapHistoryBatch(messages),
+      };
+    },
+    async assertBelongs(id, dir) {
+      const record = await api.info(id);
+      if (record?.sessionId === id && record.cwd && sessionDirectoryWithin(record.cwd, dir)) return record.cwd;
+      // 缺少 cwd 的老记录只能经 SDK 的指定目录读取核对，不把全局命中当作目录证明。
+      if (record && !record.cwd) {
+        await info(id, dir);
+        return dir;
+      }
+      throw new SessionError(404, 'session_missing', 'Claude Code 在当前项目目录中没有此会话');
+    },
+    async fork(id, dir, input) {
+      await mutableInfo(id, dir);
+      if (input.pointId !== undefined) {
+        const messages = await api.messages(id, dir);
+        if (!messages.some((message) => claudeHistoryForkPoint(message, id) === input.pointId))
+          throw new SessionError(400, 'invalid_fork_point', '分叉点不属于当前会话或尚未结束，请刷新历史后重试');
+      }
+      // SDK 负责 inclusive 截断与 UUID 重映射；不手工复制历史，不恢复 file-history。
+      const result = await api.fork(id, dir, input);
+      return forkedSession(id, result.sessionId, dir);
+    },
+    async mutate(id, dir, input) {
+      if (input.action === 'archive' || input.action === 'unarchive')
+        throw new SessionError(400, 'unsupported_action', 'Claude Code 不支持归档会话');
+      await mutableInfo(id, dir);
+      if (input.action === 'rename') return api.rename(id, input.title, dir);
+      return api.delete(id, dir);
+    },
+  };
+}

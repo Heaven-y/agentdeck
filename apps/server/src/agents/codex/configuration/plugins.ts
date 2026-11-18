@@ -1,9 +1,9 @@
 import path from 'node:path';
-import { readSkillConfig } from '../../../native-management/config';
-import { directories, safeSelector, sourceLabel, pluginDigest } from '../../../native-management/plugin-utils';
+import { readNativeConfigSource } from '../../../native-management/config';
+import { directories, safeSelector, sourceLabel, pluginDigest } from '../../../native-management/plugins/plugin-utils';
 import { resourcePathKey } from '../../common/configuration/resources';
-import type { PluginPolicy } from '../../../native-management/plugin-policy';
-import type { SkillConfigSource } from '../../../native-management/types';
+import type { PluginPolicy } from '../../../native-management/plugins/plugin-policy';
+import type { NativeConfigSource } from '../../../native-management/config';
 import {
   object,
   string,
@@ -11,7 +11,7 @@ import {
   type PluginInventory,
   type PluginMarketplace,
   type PluginRecord,
-} from '../../../native-management/plugin-types';
+} from '../../../native-management/plugins/plugin-types';
 const managedKinds = [
   'mdm',
   'system',
@@ -31,15 +31,15 @@ async function readPolicy(c: PluginContext): Promise<PluginPolicy> {
   }
 }
 async function sources(c: PluginContext, base: string, policy: PluginPolicy) {
-  const configs = [await readSkillConfig(path.join(base, 'config.toml'), 'user')];
-  if (c.project) configs.push(await readSkillConfig(path.join(c.project.dir, '.codex/config.toml'), 'project'));
+  const configs = [await readNativeConfigSource(path.join(base, 'config.toml'), 'user')];
+  if (c.project) configs.push(await readNativeConfigSource(path.join(c.project.dir, '.codex/config.toml'), 'project'));
   for (const layer of policy.layers) {
     if (
       layer.file &&
       layer.kind === 'project' &&
       !configs.some((s) => resourcePathKey(s.file) === resourcePathKey(layer.file!))
     )
-      configs.push(await readSkillConfig(layer.file, 'project'));
+      configs.push(await readNativeConfigSource(layer.file, 'project'));
     if (managedKinds.includes(layer.kind) && !layer.disabled)
       configs.push({
         file: layer.file ?? `managed:${layer.kind}`,
@@ -51,7 +51,12 @@ async function sources(c: PluginContext, base: string, policy: PluginPolicy) {
   }
   return configs;
 }
-function marketplace(config: SkillConfigSource, policy: PluginPolicy, name: string, value: unknown): PluginMarketplace {
+function marketplace(
+  config: NativeConfigSource,
+  policy: PluginPolicy,
+  name: string,
+  value: unknown,
+): PluginMarketplace {
   const record = object(value);
   return {
     name,
@@ -69,10 +74,12 @@ async function installation(base: string, selector: string) {
   const [name, market] = selector.split('@');
   const roots = safeSelector(selector) ? await directories(path.join(base, 'plugins/cache', market!, name!)) : [];
   const root = roots.length === 1 ? path.join(base, 'plugins/cache', market!, name!, roots[0]!) : undefined;
-  const manifest = root ? await readSkillConfig(path.join(root, '.codex-plugin/plugin.json'), 'managed') : undefined;
+  const manifest = root
+    ? await readNativeConfigSource(path.join(root, '.codex-plugin/plugin.json'), 'managed')
+    : undefined;
   return { roots, root, manifest };
 }
-function writable(policy: PluginPolicy, config: SkillConfigSource, selector: string, root: string | undefined) {
+function writable(policy: PluginPolicy, config: NativeConfigSource, selector: string, root: string | undefined) {
   if (
     !safeSelector(selector) ||
     !root ||
@@ -89,7 +96,7 @@ function writable(policy: PluginPolicy, config: SkillConfigSource, selector: str
 async function plugin(
   base: string,
   policy: PluginPolicy,
-  config: SkillConfigSource,
+  config: NativeConfigSource,
   item: [string, unknown],
 ): Promise<PluginRecord> {
   const [selector, value] = item,

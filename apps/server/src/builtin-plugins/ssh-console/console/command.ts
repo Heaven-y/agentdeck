@@ -1,5 +1,5 @@
-import { runExec, type ExecResult } from '../ssh/exec';
-import type { SshPool } from '../ssh/pool';
+import { runExec, type ExecResult } from '../ssh/transport/exec';
+import type { SshPool } from '../ssh/transport/pool';
 import type { ConsoleLease } from './access';
 
 /**

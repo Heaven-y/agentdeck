@@ -1,0 +1,185 @@
+import { LoaderCircle, Plus, RefreshCw, Sparkles, X } from 'lucide-react';
+import { useId, useState } from 'react';
+import type { AgentCapability } from '@agentdeck/shared/conversation';
+import { DetailDialog } from '../../../ui/DetailDialog';
+import { buttonClass, inputClass } from '../../../ui/styles';
+import { useChat } from '../state/chat-store';
+import { capabilityRestriction, isInvocableCapability } from './capability-selection';
+import { useAgentCapabilities } from './use-agent-capabilities';
+import { matchesCapability } from '../composer/slash-completion';
+import { commandWarnings } from './capability-feedback';
+
+function CapabilityEntry({ entry, disabled, select }: { entry: AgentCapability; disabled: boolean; select(): void }) {
+  const sessionId = useChat((state) => state.sessionId);
+  const reason = capabilityRestriction(entry, sessionId);
+  return (
+    <li className="min-w-0 rounded-lg border border-border p-3">
+      <button
+        type="button"
+        disabled={disabled || !!reason}
+        onClick={select}
+        className="w-full rounded text-left disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span className="flex flex-wrap items-baseline gap-2">
+          <span className="break-all text-sm font-medium">{entry.name}</span>
+          <span className="text-xs text-muted-foreground">{entry.kind === 'skill' ? '技能' : '命令'}</span>
+        </span>
+        <span className="mt-1 block text-sm leading-6 break-words text-muted-foreground">{entry.description}</span>
+        {entry.source && (
+          <span className="mt-1 block break-all text-xs text-muted-foreground">来源：{entry.source}</span>
+        )}
+        {!!entry.aliases?.length && (
+          <span className="mt-1 block break-all text-xs text-muted-foreground">别名：{entry.aliases.join('、')}</span>
+        )}
+      </button>
+      {reason && <p className="mt-2 text-xs leading-5 text-warning">{reason}</p>}
+    </li>
+  );
+}
+
+function CapabilityEmpty({
+  query,
+  count,
+  phrase,
+  restrictedCount,
+}: {
+  query: ReturnType<typeof useAgentCapabilities>;
+  count: number;
+  phrase: string;
+  restrictedCount: number;
+}) {
+  if (!query.data || query.isError || query.isFetching || commandWarnings(query.data).length || count) return null;
+  return (
+    <p className="text-sm text-muted-foreground">
+      {phrase ? '没有匹配结果。' : restrictedCount ? '暂无可用技能或命令。' : '暂无技能或命令。'}
+    </p>
+  );
+}
+
+function CapabilityDialog({ disabled, onClose }: { disabled: boolean; onClose(): void }) {
+  const id = useId();
+  const [search, setSearch] = useState('');
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const query = useAgentCapabilities(true, true, true);
+  const select = useChat((state) => state.selectCapability);
+  const phrase = search.trim().toLocaleLowerCase();
+  const matches = (query.data?.entries ?? []).filter((entry) => matchesCapability(entry, phrase));
+  const restrictedCount = matches.filter((entry) => !isInvocableCapability(entry)).length;
+  const entries = matches.filter((entry) => showUnavailable || isInvocableCapability(entry));
+  return (
+    <DetailDialog title="技能与命令" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="flex items-end gap-2">
+          <label htmlFor={id} className="min-w-0 flex-1 text-sm">
+            搜索技能与命令
+            <input
+              id={id}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.preventDefault();
+              }}
+              className={`${inputClass} mt-2`}
+              placeholder="名称、说明或别名"
+            />
+          </label>
+          <button
+            type="button"
+            className={buttonClass('outline')}
+            disabled={query.isFetching}
+            onClick={query.refresh}
+            aria-label="刷新能力"
+            title="重新读取技能与命令"
+          >
+            <RefreshCw aria-hidden className="size-4" />
+          </button>
+        </div>
+        {query.isFetching && (
+          <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+            <LoaderCircle aria-hidden className="size-4 motion-safe:animate-spin" />
+            正在加载…
+          </p>
+        )}
+        {query.isError && (
+          <p role="alert" className="text-sm text-destructive-foreground">
+            加载失败，请刷新重试。
+          </p>
+        )}
+        {commandWarnings(query.data).map((warning, index) => (
+          <p key={index} className="text-xs leading-6 text-warning">
+            {warning}
+          </p>
+        ))}
+        {restrictedCount > 0 && (
+          <button
+            type="button"
+            className={buttonClass('ghost')}
+            aria-expanded={showUnavailable}
+            onClick={() => setShowUnavailable(!showUnavailable)}
+          >
+            {showUnavailable ? '收起不可用能力说明' : `查看不可用能力（${restrictedCount}）`}
+          </button>
+        )}
+        <ul aria-label="原生技能与命令" className="space-y-2">
+          {entries.map((entry) => (
+            <CapabilityEntry
+              key={entry.id}
+              entry={entry}
+              disabled={disabled}
+              select={() => {
+                select(entry);
+                onClose();
+              }}
+            />
+          ))}
+        </ul>
+        <CapabilityEmpty query={query} count={entries.length} phrase={phrase} restrictedCount={restrictedCount} />
+      </div>
+    </DetailDialog>
+  );
+}
+
+function ScopedPicker({ disabled }: { disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const selection = useChat((state) => state.selectedCapability);
+  const select = useChat((state) => state.selectCapability);
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <button
+        type="button"
+        aria-label="技能与命令"
+        title="技能与命令（也可输入 /）"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        <Plus aria-hidden className="size-[18px]" />
+      </button>
+      {selection && (
+        <span className="flex min-w-0 max-w-40 items-center gap-2 rounded-full bg-muted px-2 py-1 text-xs">
+          <Sparkles aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate" title={selection.name}>
+            {selection.name}
+          </span>
+          <button
+            type="button"
+            aria-label="移除所选能力"
+            disabled={disabled}
+            className="rounded p-1 hover:bg-card"
+            onClick={() => select()}
+          >
+            <X aria-hidden className="size-3.5" />
+          </button>
+        </span>
+      )}
+      {open && <CapabilityDialog disabled={disabled} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+export function CapabilityPicker({ disabled }: { disabled: boolean }) {
+  const scope = useChat((state) => state.conversationVersion);
+  return <ScopedPicker key={scope} disabled={disabled} />;
+}

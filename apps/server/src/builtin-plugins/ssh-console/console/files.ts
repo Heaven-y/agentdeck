@@ -2,8 +2,8 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { FileEntryWithStats, SFTPWrapper, Stats } from 'ssh2';
 import { SSH_CONSOLE_LIMITS, SshConsolePathSchema, type SshConsoleFileEntry } from '@agentdeck/shared/ssh';
-import type { SshPool } from '../ssh/pool';
-import { createSftpReader, type SftpReader } from '../ssh/sftp';
+import type { SshPool } from '../ssh/transport/pool';
+import { createSftpReader, type SftpReader } from '../ssh/transport/sftp';
 import type { ConsoleAccess, ConsoleLease } from './access';
 import { SshConsoleError } from './errors';
 

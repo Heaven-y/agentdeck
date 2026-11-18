@@ -17,7 +17,7 @@ Windows 本机桌面工作台，按项目集中使用 Claude Code、Codex 和 An
 | 插件 | 本地安装静态页面插件，按声明权限使用自己的设置、项目摘要和命令；支持启停和卸载外部安装副本 |
 | 本地分发 | Windows x64 0.1.1 未签名安装版/便携版；最新源码尚未打包 |
 
-详细进度和验收记录见[路线图](docs/roadmap.md)。
+初次开发可从[按功能找代码](docs/guides/repository-map.md)开始。交付进度和验收记录见[路线图](docs/roadmap.md)。
 
 ## 启动
 

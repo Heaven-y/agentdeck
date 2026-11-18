@@ -4,9 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';
 
 import { DetailDialog } from '../../ui/DetailDialog';
-import { DirectoryInput } from '../../ui/DirectoryInput';
+import { DirectoryInput } from '../../ui/fields/DirectoryInput';
 import { buttonClass, inputClass } from '../../ui/styles';
-import { useChat } from '../chat/chat-store';
+import { useChat } from '../chat/state/chat-store';
 import {
   projectChatBusy,
   projectFolderName,

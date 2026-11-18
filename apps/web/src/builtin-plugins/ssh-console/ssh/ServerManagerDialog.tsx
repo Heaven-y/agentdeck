@@ -6,10 +6,10 @@ import type { ManagedServer, ManualServerInput } from '@agentdeck/shared/ssh';
 import { DetailDialog } from '../../../ui/DetailDialog';
 import { buttonClass } from '../../../ui/styles';
 import { useCancelableRequest } from '../../../lib/use-cancelable-request';
-import { EMPTY_SERVER, ManualServerForm } from './ManualServerForm';
-import { ServerConnectionForm } from './ServerConnectionForm';
-import { SshImportOptions } from './SshImportOptions';
-import { ServerList } from './ServerList';
+import { EMPTY_SERVER, ManualServerForm } from './profiles/ManualServerForm';
+import { ServerConnectionForm } from './profiles/ServerConnectionForm';
+import { SshImportOptions } from './profiles/SshImportOptions';
+import { ServerList } from './profiles/ServerList';
 
 type Editor = { initial: ManualServerInput; expected?: ManagedServer };
 function DeleteServer({ server, done, cancel }: { server: ManagedServer; done(): void; cancel(): void }) {

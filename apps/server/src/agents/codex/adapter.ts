@@ -1,10 +1,10 @@
 // Codex 适配器：同一原生会话复用 app-server 进程，空闲超时后回收。
 import type { AgentTurnInput, TurnHandle, TurnRunner } from '../contracts';
-import { CodexRuntime, CodexTurn } from './runtime';
-import type { CodexRuntimeOptions } from './types';
+import { CodexRuntime, CodexTurn } from './run/runtime';
+import type { CodexRuntimeOptions } from './run/types';
 import { SessionError } from '../errors';
 
-export { CodexRuntime, CodexTurn } from './runtime';
+export { CodexRuntime, CodexTurn } from './run/runtime';
 
 /** 没有新轮次时保留 app-server 的时间；超过后关闭。 */
 export const CODEX_IDLE_TIMEOUT_MS = 5 * 60_000;

@@ -1,7 +1,7 @@
 import { builtinPlugins } from '../../builtin-plugins/registry';
 import { Blocks, Puzzle } from 'lucide-react';
 import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
-import { useUiPreferences } from '../../ui/ui-preferences';
+import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { sidebarItemClass } from '../../ui/sidebar-styles';
 
 export function PluginNavigation({

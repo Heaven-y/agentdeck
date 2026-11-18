@@ -1,0 +1,852 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { watch, type FSWatcher } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AgentEvent } from '@agentdeck/shared/conversation';
+import type { Workspace } from '@agentdeck/shared/projects';
+import type { PermissionAnswer, TurnHandle } from '../../../../src/agents/contracts';
+import {
+  runCodexTurn as nativeRunCodexTurn,
+  listCodexSessions,
+  pageCodexSessions,
+  readCodexSession,
+  assertCodexSession,
+} from '../../../../src/agents/codex';
+import { CodexClient } from '../../../../src/agents/codex/run/client';
+import { CodexEventMapper } from '../../../../src/agents/codex/run/mapper';
+import { createCodexRunner } from '../../../../src/agents/codex/adapter';
+
+const dirs: string[] = [];
+const watchers: FSWatcher[] = [];
+const turns: TurnHandle[] = [];
+function runCodexTurn(...args: Parameters<typeof nativeRunCodexTurn>) {
+  const handle = nativeRunCodexTurn(...args);
+  turns.push(handle);
+  return handle;
+}
+type LoggedMessage = {
+  id?: string | number;
+  method?: string;
+  params?: Record<string, unknown> & { config?: Record<string, unknown> };
+  result?: unknown;
+};
+const command = {
+  command: process.execPath,
+  args: ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('./fake-app-server.ts', import.meta.url))],
+};
+it('显式计划模式协商原生能力后传实际模型，审查走review/start而非普通prompt', async () => {
+  const f = await setup();
+  await runCodexTurn(
+    {
+      workspace: f.workspace,
+      text: 'plan fixture',
+      collaborationMode: 'plan',
+      emit: () => {},
+      requestPermission: async () => ({ allow: false }),
+    },
+    f.options,
+  ).done;
+  const calls = await f.messages();
+  expect(calls.find((message) => message.method === 'initialize')?.params?.capabilities).toMatchObject({
+    experimentalApi: true,
+  });
+  expect(calls.find((message) => message.method === 'collaborationMode/list')).toBeDefined();
+  expect(calls.find((message) => message.method === 'turn/start')?.params?.collaborationMode).toMatchObject({
+    mode: 'plan',
+    settings: { model: 'native-model' },
+  });
+  const review = await setup();
+  await runCodexTurn(
+    {
+      workspace: review.workspace,
+      text: '检查本轮修改',
+      invocation: { kind: 'command', name: 'review' },
+      emit: () => {},
+      requestPermission: async () => ({ allow: false }),
+    },
+    review.options,
+  ).done;
+  const reviewed = await review.messages();
+  expect(reviewed.find((message) => message.method === 'turn/start')).toBeUndefined();
+  expect(reviewed.find((message) => message.method === 'review/start')?.params).toMatchObject({
+    delivery: 'inline',
+    target: { type: 'custom', instructions: '检查本轮修改' },
+  });
+});
+
+it('父回合结束后Codex后台终端仍属于同一RuntimeControl，可停止且释放占用', async () => {
+  const f = await setup('background-terminal');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  const handle = runner({
+    workspace: f.workspace,
+    text: '启动一个临时后台任务',
+    emit: (event) => {
+      if (event.type === 'session') sessionId = event.sessionId;
+    },
+    requestPermission: async () => ({ allow: true }),
+  });
+  try {
+    await handle.done;
+    const control = runner.runtimeControl?.(sessionId);
+    expect(control?.tasks()).toMatchObject([
+      { id: 'codex-terminal:fixture-process', status: 'running', canStop: true },
+    ]);
+    expect(JSON.stringify(control?.tasks())).not.toContain('secret');
+    expect(control?.taskActivity).toBe(true);
+    await control!.stopTask('codex-terminal:fixture-process');
+    expect(control!.tasks()).toEqual([]);
+    expect(control!.taskActivity).toBe(false);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it('resume前识别活动goal，拒绝启动未接管的自动轮次且不发送显式用户prompt', async () => {
+  const f = await setup('active-goal');
+  const events: AgentEvent[] = [];
+  await runCodexTurn(
+    {
+      workspace: f.workspace,
+      sessionId: 'native-thread',
+      text: '不要并发启动',
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    },
+    f.options,
+  ).done;
+  const requests = await f.messages();
+  expect(requests.some((message) => message.method === 'thread/goal/get')).toBe(true);
+  expect(requests.some((message) => message.method === 'thread/resume' || message.method === 'turn/start')).toBe(false);
+  expect(events.find((event) => event.type === 'error')?.message).toContain('正在运行的自主目标');
+});
+
+it('支持后台终端的Codex runtime每次有界刷新，自然结束释放租约；客户端不支持时不暴露合成任务', async () => {
+  const f = await setup('background-terminal-natural-end');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  const first = runner({
+    workspace: f.workspace,
+    text: '开始任务',
+    emit: (event) => {
+      if (event.type === 'session') sessionId = event.sessionId;
+    },
+    requestPermission: async () => ({ allow: true }),
+  });
+  try {
+    await first.done;
+    expect(runner.runtimeControl?.(sessionId)?.taskActivity).toBe(true);
+    await vi.waitFor(() => expect(runner.runtimeControl?.(sessionId)?.taskActivity).toBe(false), {
+      timeout: 7_000,
+      interval: 20,
+    });
+    expect(runner.runtimeControl?.(sessionId)?.tasks()).toEqual([]);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it('不支持后台终端实验接口的Codex版本不生成假任务或活动租约', async () => {
+  const f = await setup('unsupported-background-terminals');
+  const runner = createCodexRunner({ ...f.options, idleMs: 60_000 });
+  let sessionId = '';
+  try {
+    const handle = runner({
+      workspace: f.workspace,
+      text: '普通回合',
+      emit: (event) => {
+        if (event.type === 'session') sessionId = event.sessionId;
+      },
+      requestPermission: async () => ({ allow: true }),
+    });
+    await handle.done;
+    const control = runner.runtimeControl?.(sessionId);
+    expect(control?.tasks()).toEqual([]);
+    expect(control?.taskActivity).toBe(false);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+it('原生列表分页一次只请求指定页，后续页由调用方触发', async () => {
+  const f = await setup();
+  const first = await pageCodexSessions(f.workspace.dir, { limit: 50 }, f.options);
+  expect(first.items.map((row) => row.sessionId)).toEqual(['native-thread', 'foreign']);
+  expect(first.nextCursor).toBe('page-2');
+  expect((await f.messages()).filter((message) => message.method === 'thread/list')).toHaveLength(1);
+  const second = await pageCodexSessions(f.workspace.dir, { limit: 50, cursor: first.nextCursor }, f.options);
+  expect(second.items[0]?.sessionId).toBe('second');
+  expect(second.nextCursor).toBeUndefined();
+});
+afterEach(async () => {
+  for (const watcher of watchers.splice(0)) watcher.close();
+  // 即使准备阶段的断言失败，也先停止本用例的进程，再清理其工作目录。
+  await Promise.allSettled(
+    turns.splice(0).map(async (handle) => {
+      try {
+        await handle.interrupt();
+      } finally {
+        await handle.done;
+      }
+    }),
+  );
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+async function setup(mode = 'normal') {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ssh-codex-test-'));
+  dirs.push(dir);
+  const workspace: Workspace = {
+    id: 'workspace',
+    name: '测试',
+    dir,
+  };
+  const log = path.join(dir, 'rpc.jsonl');
+  const options = { command, env: { CODEX_HOME: dir, CODEX_TEST_MODE: mode, CODEX_TEST_LOG: log } };
+  const messages = async (): Promise<LoggedMessage[]> => {
+    try {
+      return (await readFile(log, 'utf8'))
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as LoggedMessage);
+    } catch {
+      return [];
+    }
+  };
+  const waitForMethod = (method: string) =>
+    new Promise<void>((resolve, reject) => {
+      const inspect = async () => {
+        if (!(await messages()).some((value) => value.method === method)) return;
+        watcher.close();
+        resolve();
+      };
+      const watcher = watch(dir, () => {
+        void inspect().catch(reject);
+      });
+      watchers.push(watcher);
+      watcher.once('error', reject);
+      // 日志只在假进程真正收到 RPC 后写入；不把父进程函数入队当作请求已送达。
+      void inspect().catch(reject);
+    });
+  return { dir, workspace, options, messages, waitForMethod };
+}
+
+describe('Codex app-server 核心边界', () => {
+  it('原生引导绑定当前轮次和稳定消息ID，拒绝与未知传输结果分别保留', async () => {
+    for (const [mode, expected] of [
+      ['steer', 'accepted'],
+      ['steer-rejected', 'rejected'],
+      ['steer-unknown', 'unknown'],
+    ] as const) {
+      const f = await setup(mode);
+      let firstAccepted = 0,
+        guideAccepted = 0;
+      let confirmInitial!: () => void;
+      const accepted = new Promise<void>((resolve) => {
+        confirmInitial = resolve;
+      });
+      const handle = runCodexTurn(
+        {
+          workspace: f.workspace,
+          text: 'initial',
+          clientMessageId: '00000000-0000-4000-8000-000000000001',
+          onInputAccepted: () => {
+            firstAccepted++;
+            confirmInitial();
+          },
+          emit: () => {},
+          requestPermission: async () => ({ allow: false }),
+        },
+        f.options,
+      );
+      // 假进程收到首条输入并返回原生轮次后才允许引导。
+      await Promise.race([accepted, handle.done]);
+      expect(handle.canSteer?.()).toBe(true);
+      const clientMessageId = '00000000-0000-4000-8000-000000000002';
+      const result = await handle.steer!({
+        clientMessageId,
+        text: 'guide',
+        onAccepted: () => {
+          guideAccepted++;
+        },
+      });
+      expect(result.status).toBe(expected);
+      expect(firstAccepted).toBe(1);
+      expect(guideAccepted).toBe(expected === 'accepted' ? 1 : 0);
+      const sent = (await f.messages()).find((message) => message.method === 'turn/steer');
+      expect(sent?.params).toMatchObject({ expectedTurnId: 'native-turn', clientUserMessageId: clientMessageId });
+      if (mode === 'steer-rejected') await handle.interrupt();
+      await handle.done;
+      expect((await handle.steer!({ clientMessageId, text: 'late' })).status).toBe('rejected');
+    }
+  });
+  it('可能含媒体的历史请求仍按实际内容限制：纯文字超过8MiB拒绝，媒体历史有界接收', async () => {
+    for (const mode of ['large-text-history', 'large-image-history']) {
+      const { dir, options } = await setup(mode);
+      const client = await CodexClient.start({ ...options, cwd: dir });
+      try {
+        await client.initialize();
+        const request = client.request('thread/read', { threadId: 'native-thread', includeTurns: true });
+        if (mode === 'large-text-history') await expect(request).rejects.toThrow('8 MiB');
+        else expect(JSON.stringify(await request).length).toBeGreaterThan(8 * 1024 * 1024);
+      } finally {
+        await client.close();
+      }
+    }
+  });
+  it('图片输入允许有界大消息，工具图片通知可读取而同尺寸纯文字仍拒绝', async () => {
+    const { dir, options } = await setup();
+    const client = await CodexClient.start({ ...options, cwd: dir });
+    try {
+      await client.initialize();
+      const data = 'a'.repeat(9 * 1024 * 1024);
+      await client.request('turn/start', { input: [{ type: 'image', url: `data:image/png;base64,${data}` }] });
+      let imageSize = 0;
+      client.onNotification = (method, params) => {
+        if (method === 'item/completed') imageSize = Math.max(imageSize, JSON.stringify(params).length);
+      };
+      await client.request('fixture/media-notification', {});
+      expect(imageSize).toBeGreaterThan(8 * 1024 * 1024);
+      await expect(client.request('fixture/media-notification', { invalid: true })).rejects.toThrow('8 MiB');
+    } finally {
+      await client.close();
+    }
+  });
+  it('真实子进程处理 UTF-8 分片、超时和意外退出且不透出 stderr', async () => {
+    const { dir, options } = await setup();
+    // timeoutMs 既是「请求超时」这个产品行为的阈值，也是本次连接等子进程启动的预算。
+    // 500ms 在并行跑 100+ worker 时不够 tsx 启动，会把 startup 慢误报成超时；
+    // 3 秒仍能验证「挂起的请求一定会以超时失败」，又不会被调度噪声打成红灯。
+    const client = await CodexClient.start({ ...options, cwd: dir, timeoutMs: 3000 });
+    try {
+      await client.initialize();
+      expect(await client.request('echo', {})).toEqual({ value: '中文分片' });
+      await expect(client.request('hang', {})).rejects.toThrow('超时');
+      await expect(client.request('exit', {})).rejects.toThrow('意外退出');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('超过 8 MiB 的响应明确失败', async () => {
+    const { dir, options } = await setup();
+    const client = await CodexClient.start({ ...options, cwd: dir });
+    try {
+      await expect(client.request('oversize', {})).rejects.toThrow('8 MiB');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('限制待处理请求数量，并在关闭时拒绝所有等待者', async () => {
+    const { dir, options } = await setup();
+    const client = await CodexClient.start({ ...options, cwd: dir });
+    try {
+      await client.initialize();
+      const pending = Promise.allSettled(Array.from({ length: 128 }, () => client.request('hang', {})));
+      await expect(client.request('hang', {})).rejects.toThrow('请求过多');
+      await client.close();
+      expect((await pending).every((value) => value.status === 'rejected')).toBe(true);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('默认配置只保留原生指令，不追加应用约束或注入 MCP', async () => {
+    const { workspace, options, messages } = await setup();
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        text: '你好',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    ).done;
+    const records = await messages();
+    const start = records.find((value) => value.method === 'thread/start')?.params;
+    expect(start).toMatchObject({ cwd: workspace.dir });
+    expect(start).not.toHaveProperty('approvalsReviewer');
+    // 审批与沙箱策略沿用原生配置，网页不再用常量覆盖
+    expect(start).not.toHaveProperty('sandbox');
+    expect(start).not.toHaveProperty('approvalPolicy');
+    expect(start?.developerInstructions).toBe('原生约束');
+    expect(start?.config).toEqual({});
+    expect(JSON.stringify(records)).not.toContain('AGENTDECK');
+    expect(start).not.toHaveProperty('model');
+    expect(start).not.toHaveProperty('modelProvider');
+    expect(events.filter((event) => event.type === 'session')).toEqual([
+      { type: 'session', sessionId: 'native-thread', cwd: workspace.dir, model: 'native-model', agent: 'codex' },
+    ]);
+    expect(events.filter((event) => event.type === 'text')).toEqual([{ type: 'text', delta: '流式回复' }]);
+    expect(events.filter((event) => event.type === 'turn_end')).toEqual([
+      { type: 'turn_end', isError: false, durationMs: 30, timingSource: 'native', forkPoint: 'native-turn' },
+    ]);
+  });
+
+  it('准备阶段取消后不创建线程也不启动模型', async () => {
+    const { workspace, options, messages, waitForMethod } = await setup('wait-config');
+    const events: AgentEvent[] = [];
+    const handle = runCodexTurn(
+      {
+        workspace,
+        text: '你好',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    );
+    await waitForMethod('config/read');
+    await handle.interrupt();
+    await handle.done;
+    expect((await messages()).some((value) => value.method === 'thread/start' || value.method === 'turn/start')).toBe(
+      false,
+    );
+    expect(events).toEqual([{ type: 'turn_end', isError: true }]);
+  });
+
+  it('turn/start 响应之前停止，获得原生 turnId 后补发 interrupt', async () => {
+    const { workspace, options, messages, waitForMethod } = await setup('delayed-start');
+    const events: AgentEvent[] = [];
+    const handle = runCodexTurn(
+      {
+        workspace,
+        text: '你好',
+        model: 'selected-model',
+        reasoningEffort: 'custom-effort',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    );
+    await waitForMethod('turn/start');
+    await handle.interrupt();
+    await handle.done;
+    const records = await messages();
+    expect(records.find((value) => value.method === 'turn/start')?.params).toMatchObject({
+      model: 'selected-model',
+      effort: 'custom-effort',
+    });
+    expect(records.find((value) => value.method === 'turn/interrupt')?.params).toEqual({
+      threadId: 'native-thread',
+      turnId: 'native-turn',
+    });
+    expect(events.filter((event) => event.type === 'turn_end')).toEqual([
+      { type: 'turn_end', isError: true, durationMs: 30, timingSource: 'native', forkPoint: 'native-turn' },
+    ]);
+  });
+
+  it('原生进程不回应停止时，5 秒后强制结束', async () => {
+    const { workspace, options, waitForMethod } = await setup('ignore-interrupt');
+    const events: AgentEvent[] = [];
+    const handle = runCodexTurn(
+      {
+        workspace,
+        text: '你好',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    );
+    await waitForMethod('turn/start');
+    await handle.interrupt();
+    await handle.done;
+    expect(events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
+    // 断言的是「5 秒后一定会被强杀」，不是「总共不超过 10 秒」。全量并行（100+ worker）时
+    // 子进程调度会被拖慢，10 秒余量不够，故放宽外层超时；被测行为本身（5 秒强杀）不变。
+  }, 30_000);
+
+  it.each(['approval-command', 'approval-permissions'])('审批 %s 使用原始 RPC ID 与单次权限', async (mode) => {
+    const { workspace, options, messages } = await setup(mode);
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        text: '执行',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: true }),
+      },
+      options,
+    ).done;
+    const response = (await messages()).find((value) => value.id === 'native-approval-id');
+    expect(response?.result).toEqual(
+      mode === 'approval-command'
+        ? { decision: 'accept' }
+        : {
+            permissions: { network: { enabled: true }, fileSystem: { read: ['project'], write: null } },
+            scope: 'turn',
+          },
+    );
+    const requested = events.find((event) => event.type === 'permission_request');
+    expect(requested?.requestId).not.toBe('native-approval-id');
+    expect(events.find((event) => event.type === 'permission_resolved')).toMatchObject({
+      requestId: requested?.requestId,
+      decision: 'allowed',
+    });
+  });
+
+  it('停止清理待审批，迟到允许答复不能再次响应', async () => {
+    const { workspace, options, messages } = await setup('approval-command');
+    const events: AgentEvent[] = [];
+    let answer!: (value: PermissionAnswer) => void;
+    let requested!: () => void;
+    const awaitingAnswer = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    const handle = runCodexTurn(
+      {
+        workspace,
+        text: '执行',
+        emit: (event) => events.push(event),
+        requestPermission: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+            requested();
+          }),
+      },
+      options,
+    );
+    try {
+      await Promise.race([
+        awaitingAnswer,
+        handle.done.then(() => {
+          throw new Error('回合未请求审批就已结束');
+        }),
+      ]);
+      expect(events.some((event) => event.type === 'permission_request')).toBe(true);
+      await handle.interrupt();
+      await handle.done;
+      answer({ allow: true });
+      await Promise.resolve();
+      expect((await messages()).filter((value) => value.id === 'native-approval-id')).toEqual([
+        { id: 'native-approval-id', result: { decision: 'cancel' } },
+      ]);
+      expect(events.filter((event) => event.type === 'permission_resolved')).toMatchObject([{ decision: 'cancelled' }]);
+    } finally {
+      await handle.interrupt();
+      await handle.done;
+    }
+  });
+
+  it('未知服务器交互返回 JSON-RPC 不支持错误', async () => {
+    const { workspace, options, messages } = await setup('unknown-request');
+    await runCodexTurn(
+      {
+        workspace,
+        text: '执行',
+        emit: () => {},
+        requestPermission: async () => ({ allow: true }),
+      },
+      options,
+    ).done;
+    expect((await messages()).find((value) => value.id === 900)).toMatchObject({ error: { code: -32601 } });
+  });
+
+  it('待审批时异常退出，清理审批并仅结束一次', async () => {
+    const { workspace, options } = await setup('approval-exit');
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        text: '执行',
+        emit: (event) => events.push(event),
+        requestPermission: () => new Promise(() => {}),
+      },
+      options,
+    ).done;
+    expect(events.filter((event) => event.type === 'permission_resolved')).toMatchObject([{ decision: 'cancelled' }]);
+    expect(events.filter((event) => event.type === 'turn_end')).toEqual([{ type: 'turn_end', isError: true }]);
+  });
+
+  it.each(['rpc-error', 'turn-failed'])('原生 %s 映射为明确的错误轮次，不暴露诊断原文', async (mode) => {
+    const { workspace, options } = await setup(mode);
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        sessionId: 'native-thread',
+        text: '续接',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    ).done;
+    expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'turn_end')).toMatchObject([{ isError: true }]);
+    expect(JSON.stringify(events)).not.toContain('fixture-sensitive-diagnostic');
+  });
+});
+
+describe('原生会话读取', () => {
+  it('原生没有名字和预览时标题保持空串，占位文案交给界面', async () => {
+    const { dir, options } = await setup();
+    const named = (await listCodexSessions(dir, options)).find((value) => value.sessionId === 'native-thread');
+    expect(named?.summary).toBe('原生会话');
+    // fake-app-server 的 second 线程既没有 name 也没有 preview。
+    const untitled = (await listCodexSessions(dir, options)).find((value) => value.sessionId === 'second');
+    expect(untitled?.summary).toBe('');
+  });
+  it('遍历全部目录分页并排除内部子代理，由服务统一裁决归属', async () => {
+    const { dir, options, messages } = await setup();
+    expect((await listCodexSessions(dir, options)).map((value) => value.sessionId)).toEqual([
+      'native-thread',
+      'foreign',
+      'second',
+    ]);
+    const records = (await messages()).filter((value) => value.method === 'thread/list');
+    expect(records).toHaveLength(2);
+    expect(records.every((entry) => entry.params?.cwd === undefined)).toBe(true);
+    expect(records[0]?.params).toMatchObject({ modelProviders: [] });
+    expect(records[0]?.params).not.toHaveProperty('sourceKinds');
+  });
+  it('列表复用原生分页模型元数据，不为每条记录读取历史', async () => {
+    const { dir, options, messages } = await setup();
+    const sessions = await listCodexSessions(dir, options);
+    expect(sessions[0]).toMatchObject({ nativeModel: 'native-model' });
+    expect((await messages()).some((value) => value.method === 'thread/read')).toBe(false);
+  });
+  it('读取完整历史之前验证 cwd，禁止跨工作区读取与续接', async () => {
+    const { dir, workspace, options, messages } = await setup();
+    await expect(assertCodexSession('foreign', dir, options)).rejects.toThrow('不属于');
+    await expect(readCodexSession('foreign', dir, options)).rejects.toThrow('不属于');
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        sessionId: 'foreign',
+        text: '续接',
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    ).done;
+    expect(
+      (await messages()).some((value) => value.method === 'thread/resume' || value.params?.includeTurns === true),
+    ).toBe(false);
+    expect(events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  });
+  it('历史保留原生 thread.id、会话记录模型和毫秒时间，不把配置元数据当执行遥测', async () => {
+    const { dir, options } = await setup();
+    const history = await readCodexSession('native-thread', dir, options);
+    expect(history.session).toMatchObject({ sessionId: 'native-thread', lastModified: 10_000 });
+    expect(history.session).toMatchObject({ nativeModel: 'native-model' });
+    expect(history.actualModel).toBeUndefined();
+    expect(history.events).toEqual([
+      { type: 'user_message', text: '历史问题' },
+      { type: 'text', delta: '历史回复' },
+      { type: 'turn_end', isError: false, forkPoint: 'old-turn' },
+    ]);
+  });
+  it('重复 cursor 明确失败，避免把截断列表当作完整列表', async () => {
+    const { dir, options } = await setup('cursor-loop');
+    await expect(listCodexSessions(dir, options)).rejects.toThrow('分页异常');
+  });
+  it('原生只返回历史摘要时明确失败，不冒充完整记录', async () => {
+    const { dir, options } = await setup('partial-history');
+    await expect(readCodexSession('native-thread', dir, options)).rejects.toThrow('尚未完整加载');
+  });
+  it('读取准备阶段响应外部取消', async () => {
+    const { dir, options } = await setup();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(listCodexSessions(dir, { ...options, signal: controller.signal })).rejects.toThrow('取消');
+  });
+});
+
+it('映射工具调用与结果只输出一次，并限制工具输出长度', () => {
+  const mapper = new CodexEventMapper();
+  const item = {
+    id: 'command',
+    type: 'commandExecution',
+    command: 'echo test',
+    status: 'completed',
+    aggregatedOutput: 'x'.repeat(25_000),
+    exitCode: 1,
+  };
+  expect(mapper.map('item/started', { item })).toMatchObject([{ type: 'tool_call', id: 'command' }]);
+  const completed = mapper.map('item/completed', { item });
+  expect(completed).toMatchObject([{ type: 'tool_result', id: 'command', isError: true }]);
+  expect(JSON.stringify(completed).length).toBeLessThan(21_000);
+  expect(mapper.finishItems({ items: [item] })).toEqual([]);
+});
+
+it('实时分叉点核验完成快照自身的轮次身份，不采纳外来 turn.id', async () => {
+  const { workspace, options } = await setup('foreign-turn-completion');
+  const events: AgentEvent[] = [];
+  await runCodexTurn(
+    {
+      workspace,
+      text: '核验分叉点',
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    },
+    options,
+  ).done;
+  expect(events.filter((event) => event.type === 'turn_end')).toEqual([
+    { type: 'turn_end', isError: false, durationMs: 30, timingSource: 'native', forkPoint: 'native-turn' },
+  ]);
+  expect(events).not.toContainEqual({ type: 'text', delta: '不属于本轮' });
+});
+
+it.each([false, true])('原生累计统计跨轮取差，恢复标记 %s 首轮不假定零基线', async (resume) => {
+  const { workspace, options } = await setup('usage');
+  const runner = createCodexRunner(options);
+  const execute = async (sessionId?: string) => {
+    const events: AgentEvent[] = [];
+    await runner({
+      workspace,
+      sessionId,
+      text: '合成统计验证',
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    }).done;
+    return events;
+  };
+  try {
+    const first = await execute(resume ? 'native-thread' : undefined);
+    const firstEnd = first.findLast((event) => event.type === 'turn_end');
+    if (resume) expect(firstEnd).not.toHaveProperty('usage');
+    else
+      expect(firstEnd).toMatchObject({
+        usage: { source: 'codex', scope: 'turn', inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      });
+    const second = await execute('native-thread');
+    expect(second.findLast((event) => event.type === 'turn_end')).toMatchObject({
+      usage: { source: 'codex', scope: 'turn', inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+    });
+    expect(second.filter((event) => event.type === 'context')).toEqual([
+      { type: 'context', usage: { usedTokens: 15, windowTokens: 1000, model: 'native-model', source: 'codex_native' } },
+    ]);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it.each(['usage-late', 'usage-missing'])('%s 不把上一轮未确认的用量算入新轮次', async (mode) => {
+  const { workspace, options } = await setup(mode);
+  const runner = createCodexRunner(options);
+  const execute = async (sessionId?: string) => {
+    const events: AgentEvent[] = [];
+    await runner({
+      workspace,
+      sessionId,
+      text: '合成统计验证',
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    }).done;
+    return events.findLast((event) => event.type === 'turn_end');
+  };
+  try {
+    expect(await execute()).toHaveProperty('usage');
+    expect(await execute('native-thread')).not.toHaveProperty('usage');
+    const third = await execute('native-thread');
+    if (mode === 'usage-missing') expect(third).not.toHaveProperty('usage');
+    else expect(third).toMatchObject({ usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 } });
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
+it.each([
+  ['ask', 'workspace-write', 'on-request', 'user'],
+  ['auto-review', 'workspace-write', 'on-request', 'auto_review'],
+  ['full-access', 'danger-full-access', 'never', 'user'],
+] as const)('Codex %s 使用原生审批与沙箱参数', async (mode, sandbox, approvalPolicy, approvalsReviewer) => {
+  const { workspace, options, messages } = await setup();
+  const handle = runCodexTurn(
+    {
+      workspace,
+      text: '合成任务',
+      permission: { agent: 'codex', mode },
+      emit: () => undefined,
+      requestPermission: async () => ({ allow: false }),
+    },
+    options,
+  );
+  await handle.done;
+  const start = (await messages()).find((message) => message.method === 'thread/start')?.params;
+  expect(start).toMatchObject({ sandbox, approvalPolicy, approvalsReviewer });
+});
+
+it('原生拒绝权限模式时显示权限原因，停止本轮且不自动改策略重发', async () => {
+  const { workspace, options, messages } = await setup('permission-denied');
+  const events: AgentEvent[] = [];
+  await runCodexTurn(
+    {
+      workspace,
+      text: '合成任务',
+      permission: { agent: 'codex', mode: 'auto-review' },
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    },
+    options,
+  ).done;
+  expect(events).toContainEqual({ type: 'error', message: 'Codex 未接受所选权限模式，请检查当前版本和原生权限策略。' });
+  const records = await messages();
+  expect(records.filter((message) => message.method === 'thread/start')).toHaveLength(1);
+  expect(records.some((message) => message.method === 'turn/start')).toBe(false);
+});
+
+it.each(['native-defaults', 'native-profile'])(
+  'Codex 显式恢复配置时覆盖历史权限，使用 %s 的有效默认且不发探测对话',
+  async (mode) => {
+    const { workspace, options, messages } = await setup(mode);
+    const events: AgentEvent[] = [];
+    await runCodexTurn(
+      {
+        workspace,
+        sessionId: 'native-thread',
+        text: '合成任务',
+        permission: { agent: 'codex', mode: 'native' },
+        emit: (event) => events.push(event),
+        requestPermission: async () => ({ allow: false }),
+      },
+      options,
+    ).done;
+    const records = await messages();
+    const baseline = records.find((message) => message.method === 'thread/start');
+    expect(baseline?.params).toMatchObject({ ephemeral: true, cwd: workspace.dir });
+    expect(baseline?.params).not.toHaveProperty('approvalPolicy');
+    const resumed = records.find((message) => message.method === 'thread/resume')?.params;
+    expect(resumed).toMatchObject({
+      threadId: 'native-thread',
+      approvalPolicy: 'on-request',
+      approvalsReviewer: 'auto_review',
+    });
+    if (mode === 'native-profile') {
+      expect(resumed).toHaveProperty('permissions', 'project-custom');
+      expect(resumed).not.toHaveProperty('sandbox');
+    } else expect(resumed).toHaveProperty('sandbox', 'read-only');
+    const turns = records.filter((message) => message.method === 'turn/start');
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.params?.threadId).toBe('native-thread');
+    expect(records.find((message) => message.method === 'thread/unsubscribe')?.params).toEqual({
+      threadId: 'permission-baseline',
+    });
+  },
+);
+
+it('恢复原生权限缺少必要字段时停止，不退回历史完全访问', async () => {
+  const { workspace, options, messages } = await setup('native-incomplete');
+  const events: AgentEvent[] = [];
+  await runCodexTurn(
+    {
+      workspace,
+      sessionId: 'native-thread',
+      text: '合成任务',
+      permission: { agent: 'codex', mode: 'native' },
+      emit: (event) => events.push(event),
+      requestPermission: async () => ({ allow: false }),
+    },
+    options,
+  ).done;
+  expect(events).toContainEqual({ type: 'error', message: 'Codex 未返回完整权限配置，未继续本轮。' });
+  const records = await messages();
+  expect(records.some((message) => ['thread/resume', 'turn/start'].includes(message.method ?? ''))).toBe(false);
+  expect(records.find((message) => message.method === 'thread/unsubscribe')?.params?.threadId).toBe(
+    'permission-baseline',
+  );
+});

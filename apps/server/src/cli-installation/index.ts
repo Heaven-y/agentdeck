@@ -1,13 +1,13 @@
 import type { CliInstallationBackend } from './types';
-import { protectedMutation } from './protection';
-import { transactNpm } from './npm-transaction';
-import { nativeProtectionPaths, cleanupNativeHistory } from './native-installation';
-import { assertInstallationIdle } from './occupancy';
+import { protectedMutation } from './transaction/protection';
+import { transactNpm } from './npm/npm-transaction';
+import { nativeProtectionPaths, cleanupNativeHistory } from './native/native-installation';
+import { assertInstallationIdle } from './transaction/occupancy';
 import type { BackendOptions } from './backend-support';
-import { inspectInstallation } from './discovery';
-import { latestRelease } from './catalog';
+import { inspectInstallation } from './discovery/discovery';
+import { latestRelease } from './discovery/catalog';
 import { executeInstallation } from './installer';
-import { checkedInstallation, installationContext } from './installation-context';
+import { checkedInstallation, installationContext } from './discovery/installation-context';
 
 export { BackendError } from './backend-support';
 export type { BackendOptions } from './backend-support';

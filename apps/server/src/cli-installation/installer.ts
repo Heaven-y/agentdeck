@@ -12,9 +12,9 @@ import {
   VERSION,
   type BackendContext,
 } from './backend-support';
-import { updateNativeBinary } from './native-binary';
-import { nativeProtectionPaths } from './native-installation';
-import { INSTALLERS, officialText } from './catalog';
+import { updateNativeBinary } from './native/native-binary';
+import { nativeProtectionPaths } from './native/native-installation';
+import { INSTALLERS, officialText } from './discovery/catalog';
 
 async function executeCommand(
   context: BackendContext,

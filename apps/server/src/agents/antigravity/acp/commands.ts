@@ -1,5 +1,5 @@
 import { capabilityId, type NativeCapabilityCatalog } from '../../capability-types';
-import type { DiscoveryProfile } from '../discovery-profile';
+import type { DiscoveryProfile } from '../models/discovery-profile';
 import { AntigravityAcpClient } from './client';
 import { AcpError, list, object, text, type AcpConnection, type AcpRecord } from './types';
 

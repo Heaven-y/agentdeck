@@ -3,7 +3,7 @@ import {
   formatSessionReference,
   parseSessionReference,
   sessionReferenceHash,
-} from '../src/conversation/session-reference';
+} from '../src/conversation/sessions/session-reference';
 
 describe('稳定会话引用', () => {
   it.each(['claude', 'codex', 'antigravity'] as const)('保留 %s 的原生身份并兼容旧网页链接', (agent) => {

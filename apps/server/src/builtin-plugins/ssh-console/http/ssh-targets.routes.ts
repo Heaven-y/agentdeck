@@ -1,10 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { ManagedServerSchema, ManualServerInputSchema } from '@agentdeck/shared/ssh';
-import { ServerTargetsError } from '../ssh/targets';
-import type { ServerProfiles } from '../ssh/profiles';
+import { ServerTargetsError } from '../ssh/profiles/targets';
+import type { ServerProfiles } from '../ssh/profiles/profiles';
 import { CredentialStorageError } from '../../../platform/secrets/errors';
-import { SshConnectionError } from '../ssh/connection';
+import { SshConnectionError } from '../ssh/transport/connection';
 
 const Update = z.strictObject({ input: ManualServerInputSchema, expected: ManagedServerSchema });
 const Remove = z.strictObject({ expected: ManagedServerSchema, confirmed: z.literal(true) });

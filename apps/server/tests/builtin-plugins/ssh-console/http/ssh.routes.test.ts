@@ -1,8 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SshConnectionError } from '../../../../src/builtin-plugins/ssh-console/ssh/connection';
+import { SshConnectionError } from '../../../../src/builtin-plugins/ssh-console/ssh/transport/connection';
 import { CredentialStorageError } from '../../../../src/platform/secrets/errors';
-import type { SshPool } from '../../../../src/builtin-plugins/ssh-console/ssh/pool';
+import type { SshPool } from '../../../../src/builtin-plugins/ssh-console/ssh/transport/pool';
 import { registerSshRoutes } from '../../../../src/builtin-plugins/ssh-console/http/ssh.routes';
 
 const apps: FastifyInstance[] = [];

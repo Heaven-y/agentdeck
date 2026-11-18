@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createSshConsolePlugin } from '../builtin-plugins/ssh-console/registration';
 import { sshConsoleDefinition } from '../builtin-plugins/ssh-console/manifest';
-import { createServerTargets } from '../builtin-plugins/ssh-console/ssh/targets';
+import { createServerTargets } from '../builtin-plugins/ssh-console/ssh/profiles/targets';
 import { registerPluginRoutes } from '../http/plugins.routes';
 import type { BuiltinPluginRegistration } from '../plugins/contracts';
 import { createWorkbenchPlugins } from '../plugins/service';

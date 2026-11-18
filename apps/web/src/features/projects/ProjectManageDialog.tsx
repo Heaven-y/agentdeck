@@ -3,9 +3,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Workspace } from '@agentdeck/shared/projects';
 
-import { useChat } from '../chat/chat-store';
+import { useChat } from '../chat/state/chat-store';
 import { DetailDialog } from '../../ui/DetailDialog';
-import { DirectoryInput } from '../../ui/DirectoryInput';
+import { DirectoryInput } from '../../ui/fields/DirectoryInput';
 import { buttonClass, inputClass } from '../../ui/styles';
 import {
   clearProjectQueries,

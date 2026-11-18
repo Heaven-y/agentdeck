@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { loadConfig } from '../../server/src/config';
 import { startServer, type StartedServer } from '../../server/src/server';
 import { acquireSingleInstance, createShutdown, resolveWindowUrl } from './lifecycle';
-import { desktopPaths, externalWebLink, navigationAllowed, rendererAddress } from './paths';
+import { desktopPaths, externalWebLink, navigationAllowed, rendererAddress } from './system/paths';
 import {
   APP_MENU_CHANNEL,
   INITIAL_SESSION_LINK_CHANNEL,
@@ -14,11 +14,11 @@ import {
   SELECT_DIRECTORY_CHANNEL,
   TITLE_BAR_THEME_CHANNEL,
 } from './bridge';
-import { createDirectoryPicker } from './directory-picker';
-import { createPathOpener } from './path-opener';
-import { applicationMenuTemplate, createWindowChrome, desktopChromeOptions } from './window-chrome';
-import { createDesktopLogger } from './logging';
-import { createDesktopSessionLinks } from './session-links';
+import { createDirectoryPicker } from './window/directory-picker';
+import { createPathOpener } from './window/path-opener';
+import { applicationMenuTemplate, createWindowChrome, desktopChromeOptions } from './window/window-chrome';
+import { createDesktopLogger } from './system/logging';
+import { createDesktopSessionLinks } from './system/session-links';
 
 /** 安装版页面跟随 resources 分发，开发版沿用工作区构建目录。 */
 const paths = desktopPaths({

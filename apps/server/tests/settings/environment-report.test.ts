@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { expect, it, vi } from 'vitest';
 import type { AgentKind, AgentProbe } from '@agentdeck/shared/conversation';
 import { createProductSettings } from '../../src/settings/product-settings';
-import { registerProductSettingsRoutes } from '../../src/http/product-settings.routes';
+import { registerProductSettingsRoutes } from '../../src/http/settings/product-settings.routes';
 
 function probesStub(results: AgentProbe[]) {
   return {

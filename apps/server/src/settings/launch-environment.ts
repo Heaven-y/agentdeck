@@ -5,7 +5,7 @@ import {
   type LaunchEnvironmentDocument,
   type LaunchEnvironmentInput,
 } from '@agentdeck/shared/settings';
-import { type AgentKind } from '@agentdeck/shared/conversation';
+import { AGENT_KINDS, type AgentKind } from '@agentdeck/shared/conversation';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
@@ -34,7 +34,7 @@ const entropy = (agent: AgentKind, name: string) =>
 
 function validateStored(value: unknown): StoredEnvironment {
   const stored = Stored.parse(value);
-  for (const agent of ['claude', 'codex', 'antigravity'] as const) {
+  for (const agent of AGENT_KINDS) {
     const allowed = new Set(cliConfigurations[agent].launchVariables.map((item) => item.name));
     for (const [name, entry] of Object.entries(stored[agent])) {
       if (!allowed.has(name) || (entry.mode === 'set' && !entry.protected))

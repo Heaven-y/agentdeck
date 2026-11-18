@@ -1,0 +1,260 @@
+import { NativeSessionIdSchema, type SessionActionInput, type SessionForkInput } from '@agentdeck/shared/conversation';
+import { sameSessionDirectory, sessionDirectoryWithin } from '../../common/history/session-scope';
+import type {
+  NativeSessionFork,
+  NativeSessionRead,
+  NativeSessionRow,
+  NativeSessionSummary,
+  NativeSessionPageInput,
+  NativeSessionPage,
+} from '../../contracts';
+import { SessionError } from '../../errors';
+import { imageSource, mediaMissing } from '../../common/media/native-media';
+import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
+import { codexToolImage } from '../media/media';
+import { readCodexSubagentMedia } from './subagents';
+import { CodexClient } from '../run/client';
+import { CodexEventMapper, codexForkPoint } from '../run/mapper';
+import { markAnsweredQuestions } from '../interaction/async-questions';
+import { cancelled, CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from '../run/types';
+
+const MAX_SESSIONS = 100_000;
+function completeTurns(thread: RecordValue): RecordValue[] {
+  if (!Array.isArray(thread.turns)) throw new CodexError('Codex 未返回完整的会话历史。');
+  return thread.turns.map((value) => {
+    const turn = record(value);
+    if (!Array.isArray(turn.items) || (turn.itemsView !== undefined && turn.itemsView !== 'full')) {
+      throw new CodexError('Codex 返回的历史尚未完整加载，无法展示完整会话。');
+    }
+    return turn;
+  });
+}
+function summary(thread: RecordValue): NativeSessionSummary {
+  return {
+    sessionId: text(thread.id),
+    // 原生没有可用名字时保持为空：占位文案由界面决定，服务端不编造内容。
+    summary: text(thread.name) || text(thread.preview),
+    lastModified: typeof thread.updatedAt === 'number' ? thread.updatedAt * 1_000 : 0,
+    ...(text(thread.model).trim() ? { nativeModel: text(thread.model).trim() } : {}),
+  };
+}
+
+/**
+ * 列表行：多带一个会话自己的 cwd，供上层按它裁决归属。
+ * 不能并进 `summary()`——read 对外返回的 session 也用那份，形状不能变。
+ */
+function row(thread: RecordValue): NativeSessionRow {
+  const cwd = text(thread.cwd).trim();
+  return { ...summary(thread), ...(cwd ? { cwd } : {}) };
+}
+
+export async function checkedThread(
+  client: CodexClient,
+  id: string,
+  dir: string,
+  includeTurns = false,
+): Promise<RecordValue> {
+  const response = await client.request('thread/read', { threadId: id, includeTurns });
+  const thread = record(response.thread);
+  if (thread.id !== id || !(await sameSessionDirectory(text(thread.cwd), dir))) {
+    throw new CodexError('Codex 会话不属于当前工作区，无法读取或续接。');
+  }
+  return thread;
+}
+
+async function withClient<T>(
+  dir: string,
+  options: CodexRuntimeOptions,
+  action: (client: CodexClient) => Promise<T>,
+): Promise<T> {
+  const client = await CodexClient.start({ ...options, cwd: dir });
+  try {
+    await client.initialize();
+    return await action(client);
+  } finally {
+    await client.close();
+  }
+}
+
+export async function assertCodexSession(id: string, dir: string, options: CodexRuntimeOptions = {}): Promise<string> {
+  return withClient(dir, options, async (client) => {
+    const thread = record((await client.request('thread/read', { threadId: id, includeTurns: false })).thread);
+    const cwd = text(thread.cwd);
+    if (thread.id !== id || !sessionDirectoryWithin(cwd, dir))
+      throw new SessionError(404, 'session_missing', 'Codex 会话不属于当前项目目录，无法读取或续接');
+    return cwd;
+  });
+}
+
+export async function readCodexSession(
+  id: string,
+  dir: string,
+  options: CodexRuntimeOptions & { preserveToolContent?: boolean } = {},
+): Promise<NativeSessionRead> {
+  return withClient(dir, options, async (client) => {
+    await checkedThread(client, id, dir);
+    const thread = await checkedThread(client, id, dir, true);
+    const mapper = new CodexEventMapper({ preserveToolContent: options.preserveToolContent, sessionId: id });
+    return {
+      session: summary(thread),
+      cwd: text(thread.cwd),
+      events: markAnsweredQuestions(completeTurns(thread).flatMap((turn) => mapper.history(turn))),
+    };
+  });
+}
+export async function readCodexMedia(
+  id: string,
+  dir: string,
+  locator: NativeMediaLocator,
+  options: CodexRuntimeOptions = {},
+) {
+  if (locator.subagentId) return readCodexSubagentMedia(id, dir, locator, options);
+  return withClient(dir, options, async (client) => {
+    const thread = await checkedThread(client, id, dir, true);
+    const item = completeTurns(thread)
+      .flatMap((turn) => (Array.isArray(turn.items) ? turn.items.map(record) : []))
+      .find((item) => item.id === locator.messageId);
+    if (!item) throw mediaMissing();
+    if (locator.kind === 'user' && item.type === 'userMessage')
+      return imageSource(Array.isArray(item.content) ? item.content[locator.index] : undefined);
+    if (locator.kind === 'tool') return codexToolImage(item, locator.index);
+    throw mediaMissing();
+  });
+}
+
+function matchingSummaries(data: unknown[]): NativeSessionRow[] {
+  const result: NativeSessionRow[] = [];
+  for (const value of data) {
+    const thread = record(value);
+    if (thread.parentThreadId || typeof thread.source === 'object') continue;
+    if (text(thread.id)) result.push(row(thread));
+  }
+  return result;
+}
+
+export async function listCodexSessions(
+  dir: string,
+  options: CodexRuntimeOptions & { archived?: boolean } = {},
+): Promise<NativeSessionRow[]> {
+  const archived = options.archived ?? false;
+  return withClient(dir, options, async (client) => {
+    const sessions = new Map<string, NativeSessionRow>();
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    let count = 0;
+    do {
+      const response = await client.request('thread/list', {
+        limit: 100,
+        sortKey: 'updated_at',
+        modelProviders: [],
+        archived,
+        cursor,
+      });
+      if (!Array.isArray(response.data)) throw new CodexError('Codex 未返回有效的会话列表。');
+      const data = response.data;
+      count += data.length;
+      if (count > MAX_SESSIONS || cursors.size >= 1_000)
+        throw new CodexError('Codex 会话数量超过读取上限，无法返回完整列表。');
+      for (const session of matchingSummaries(data)) sessions.set(session.sessionId, session);
+      cursor = text(response.nextCursor) || undefined;
+      if (cursor && cursors.has(cursor)) throw new CodexError('Codex 会话分页异常，无法返回完整列表。');
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return [...sessions.values()].sort((left, right) => right.lastModified - left.lastModified);
+  });
+}
+
+export async function pageCodexSessions(
+  dir: string,
+  page: NativeSessionPageInput,
+  options: CodexRuntimeOptions & { archived?: boolean } = {},
+): Promise<NativeSessionPage> {
+  return withClient(dir, options, async (client) => {
+    const response = await client.request('thread/list', {
+      limit: page.limit,
+      cursor: page.cursor,
+      sortKey: 'updated_at',
+      modelProviders: [],
+      archived: options.archived ?? false,
+    });
+    if (!Array.isArray(response.data)) throw new CodexError('Codex 未返回有效的会话列表。');
+    const nextCursor = text(response.nextCursor) || undefined;
+    if (nextCursor && nextCursor === page.cursor) throw new CodexError('Codex 会话分页游标重复。');
+    return { items: matchingSummaries(response.data), nextCursor };
+  });
+}
+
+function internalSubagent(thread: RecordValue): boolean {
+  return !!(thread.parentThreadId || record(thread.source).subAgent || text(thread.source).startsWith('subAgent'));
+}
+
+async function mutableThread(client: CodexClient, id: string, dir: string, includeTurns = false): Promise<RecordValue> {
+  const thread = record((await client.request('thread/read', { threadId: id, includeTurns })).thread);
+  if (thread.id !== id || !(await sameSessionDirectory(text(thread.cwd), dir)))
+    throw new SessionError(404, 'session_missing', 'Codex 在当前工作区中没有此会话');
+  if (record(thread.status).type === 'active')
+    throw new SessionError(409, 'session_busy', 'Codex 会话正在运行，请结束后再管理');
+  if (internalSubagent(thread)) throw new SessionError(400, 'unsupported_action', '不能单独管理 Codex 内部子代理会话');
+  return thread;
+}
+
+/** 原生请求发送后继续等结果；停止等待并不代表撤销重命名、归档或删除。 */
+export async function mutateCodexSession(
+  id: string,
+  dir: string,
+  input: SessionActionInput,
+  options: CodexRuntimeOptions = {},
+): Promise<void> {
+  if (options.signal?.aborted) throw cancelled();
+  await withClient(dir, { ...options, signal: undefined }, async (client) => {
+    await mutableThread(client, id, dir);
+    if (options.signal?.aborted) throw cancelled();
+    const methods = {
+      rename: 'thread/name/set',
+      delete: 'thread/delete',
+      archive: 'thread/archive',
+      unarchive: 'thread/unarchive',
+    };
+    await client.request(methods[input.action], {
+      threadId: id,
+      ...(input.action === 'rename' ? { name: input.title } : {}),
+    });
+  });
+}
+
+async function forkedThread(thread: RecordValue, sourceId: string, dir: string): Promise<NativeSessionFork> {
+  const id = NativeSessionIdSchema.safeParse(thread.id);
+  if (!id.success || id.data === sourceId || internalSubagent(thread))
+    throw new SessionError(503, 'session_runtime_failed', 'Codex 分叉返回了无效的新会话');
+  if (
+    !(await sameSessionDirectory(text(thread.cwd), dir)) ||
+    (thread.forkedFromId != null && thread.forkedFromId !== sourceId)
+  )
+    throw new SessionError(503, 'session_runtime_failed', 'Codex 分叉返回了无效的新会话');
+  return { session: summary(thread), cwd: text(thread.cwd) };
+}
+
+/** 原生 inclusive 分叉不改源会话；请求发出后不因 HTTP/调用方断开而提前释放。 */
+export async function forkCodexSession(
+  id: string,
+  dir: string,
+  input: SessionForkInput,
+  options: CodexRuntimeOptions = {},
+): Promise<NativeSessionFork> {
+  if (options.signal?.aborted) throw cancelled();
+  return withClient(dir, { ...options, signal: undefined }, async (client) => {
+    // 先核验元数据，避免读取跨目录或内部子代理的完整历史。
+    await mutableThread(client, id, dir);
+    const turns = completeTurns(await mutableThread(client, id, dir, true));
+    if (turns.some((turn) => turn.status === 'inProgress'))
+      throw new SessionError(409, 'session_busy', 'Codex 会话尚有未结束的轮次，请结束后再分叉');
+    if (input.pointId !== undefined && !turns.some((turn) => codexForkPoint(turn) === input.pointId))
+      throw new SessionError(400, 'invalid_fork_point', '分叉点不属于当前会话或尚未结束，请刷新历史后重试');
+    if (options.signal?.aborted) throw cancelled();
+    const response = await client.request('thread/fork', {
+      threadId: id,
+      ...(input.pointId ? { lastTurnId: input.pointId } : {}),
+    });
+    return forkedThread(record(response.thread), id, dir);
+  });
+}

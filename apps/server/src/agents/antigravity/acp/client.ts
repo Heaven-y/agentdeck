@@ -1,9 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { resolveLocalCommand, type ResolvedCommand } from '../../../platform/process/executable';
-import { AntigravityLines } from '../lines';
-import { antigravityBackgroundEnvironment } from '../process-environment';
-import { antigravityDiagnostic, serviceFailure } from '../diagnostics';
+import { AntigravityLines } from '../run/lines';
+import { antigravityBackgroundEnvironment } from '../run/process-environment';
+import { antigravityDiagnostic, serviceFailure } from '../run/diagnostics';
 import {
   AcpError,
   cancelled,

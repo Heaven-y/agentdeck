@@ -9,7 +9,7 @@ import type {
   SshConsoleTerminalRead,
   TerminalSize,
 } from '@agentdeck/shared/ssh';
-import type { SshPool } from '../ssh/pool';
+import type { SshPool } from '../ssh/transport/pool';
 
 export type SshConsoleDeps = { pool: SshPool; isEnabled(): boolean };
 export type SshConsoleService = {

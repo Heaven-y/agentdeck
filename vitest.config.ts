@@ -18,10 +18,10 @@ export default defineConfig({
         // 桌面壳的进程入口与 preload：需要真实窗口才能执行，按手工验收覆盖
         'apps/desktop/src/main.ts',
         'apps/desktop/src/preload.ts',
-        // 需要真实 SSH 连接，由 scripts/dev/ssh-smoke.ts 与 e2e 验收覆盖
-        'apps/server/src/builtin-plugins/ssh-console/ssh/pool.ts',
+        // 需要真实 SSH 连接，由 scripts/dev/e2e/ssh-smoke.ts 与 e2e 验收覆盖
+        'apps/server/src/builtin-plugins/ssh-console/ssh/transport/pool.ts',
         // 只有类型或样式常量
-        'packages/shared/src/conversation/events.ts',
+        'packages/shared/src/conversation/messages/events.ts',
         'apps/web/src/ui/styles.ts',
         // 界面组件：通过行为组件测试与实际浏览器验收验证，沿用既有覆盖率边界
         'apps/web/src/**/*.tsx',

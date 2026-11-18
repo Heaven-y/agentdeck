@@ -3,14 +3,14 @@ import type { CSSProperties } from 'react';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { conversationWidth } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../ui/styles';
-import { useProductSettings } from '../settings/use-product-settings';
-import { useChat } from './chat-store';
-import { Composer } from './Composer';
-import { ChatTimeline } from './ChatTimeline';
-import { TrajectoryView } from './TrajectoryView';
-import { RunStatus } from './RunStatus';
-import { FollowupQueue } from './FollowupQueue';
-import { RuntimeTasksPanel } from './RuntimeTasksPanel';
+import { useProductSettings } from '../settings/general/use-product-settings';
+import { useChat } from './state/chat-store';
+import { Composer } from './composer/Composer';
+import { ChatTimeline } from './timeline/ChatTimeline';
+import { TrajectoryView } from '../conversation/trajectory/TrajectoryView';
+import { RunStatus } from './runtime/RunStatus';
+import { FollowupQueue } from './followups/FollowupQueue';
+import { RuntimeTasksPanel } from './runtime/RuntimeTasksPanel';
 
 function Banner() {
   const banner = useChat((s) => s.banner);

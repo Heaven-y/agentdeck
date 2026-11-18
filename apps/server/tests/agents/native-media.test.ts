@@ -1,14 +1,14 @@
 import { expect, it, vi } from 'vitest';
-import { claudeInput, codexAttachments, acpInput, markEmbedded } from '../../src/agents/common/attachment-input';
-import { imageSource, claudeMediaBlock } from '../../src/agents/common/native-media';
-import { ClaudeEventMapper } from '../../src/agents/claude/mapper';
-import { CodexEventMapper } from '../../src/agents/codex/mapper';
-import { antigravityHistory } from '../../src/agents/antigravity/history';
+import { claudeInput, codexAttachments, acpInput, markEmbedded } from '../../src/agents/common/media/attachment-input';
+import { imageSource, claudeMediaBlock } from '../../src/agents/common/media/native-media';
+import { ClaudeEventMapper } from '../../src/agents/claude/run/mapper';
+import { CodexEventMapper } from '../../src/agents/codex/run/mapper';
+import { antigravityHistory } from '../../src/agents/antigravity/history/history';
 import type { NativeAttachment } from '../../src/agents/contracts';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { codexToolImage, codexToolMedia, mcpResultText } from '../../src/agents/codex/media';
-import { createClaudeSubagentMedia, createClaudeSubagents } from '../../src/agents/claude/subagents';
+import { codexToolImage, codexToolMedia, mcpResultText } from '../../src/agents/codex/media/media';
+import { createClaudeSubagentMedia, createClaudeSubagents } from '../../src/agents/claude/history/subagents';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 const png = Buffer.from(

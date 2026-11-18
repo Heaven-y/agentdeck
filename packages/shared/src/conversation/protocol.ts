@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import { AgentKindSchema, NativeSessionIdSchema, type AgentKind } from './agents';
-import { CapabilitySelectionSchema } from './capabilities';
-import type { AgentEvent } from './events';
-import { PermissionSelectionSchema } from './permissions';
-import { InteractionAnswerSchema, type InteractionEvent } from './interaction';
-import { AttachmentRefSchema, type ChatAttachment } from './attachments';
-import { FollowupContentSchema, type FollowupSnapshot } from './followups';
-import type { RuntimeTasksState } from './runtime-tasks';
+import { CapabilitySelectionSchema } from './capabilities/capabilities';
+import type { AgentEvent } from './messages/events';
+import { PermissionSelectionSchema } from './messages/permissions';
+import { InteractionAnswerSchema, type InteractionEvent } from './messages/interaction';
+import { AttachmentRefSchema, type ChatAttachment } from './messages/attachments';
+import { FollowupContentSchema, type FollowupSnapshot } from './messages/followups';
+import type { RuntimeTasksState } from './messages/runtime-tasks';
 
 const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 

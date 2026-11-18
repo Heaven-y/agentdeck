@@ -3,7 +3,7 @@ import path from 'node:path';
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { DirectoryInput } from '../../src/ui/DirectoryInput';
+import { DirectoryInput } from '../../src/ui/fields/DirectoryInput';
 
 const initial = path.resolve('fixtures', 'initial');
 const chosen = path.resolve('fixtures', 'chosen');

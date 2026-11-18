@@ -11,7 +11,7 @@ import type {
   NativeActionResult,
 } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
-import type { NativeActionBackend, NativeActionInspection } from '../agents/common/native-actions';
+import type { NativeActionBackend, NativeActionInspection } from '../agents/common/interaction/native-actions';
 import { SessionError } from '../agents/errors';
 import { readBoundedFile } from '../platform/files/bounded-file';
 import { inspectDirectory, assertDirectoryUnchanged } from '../platform/files/safe-file';

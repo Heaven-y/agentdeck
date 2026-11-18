@@ -1,5 +1,5 @@
 import type { AgentTurnInput, NativeSteerInput, NativeInputResult } from '../../contracts';
-import { acpInput } from '../../common/attachment-input';
+import { acpInput } from '../../common/media/attachment-input';
 import { AcpError, object, text, type AcpConnection, type AcpRecord } from './types';
 
 type Receipt = {

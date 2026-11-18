@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentTurnInput } from '../../contracts';
-import { nativeElicitation } from '../../common/user-interactions';
+import { nativeElicitation } from '../../common/interaction/user-interactions';
 import { type AcpConnection, type AcpRequest, type AcpId, type AcpRecord } from './types';
 export class AcpInteractions {
   readonly runtimeId = randomUUID();

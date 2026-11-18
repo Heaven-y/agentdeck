@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { claudeSkillConfig } from './skills';
-import { readSkillConfig } from '../../../native-management/config';
-import { claudePluginRecords, jsonResult, safeSelector, sourceLabel } from '../../../native-management/plugin-utils';
+import { readNativeConfigSource } from '../../../native-management/config';
+import { claudePluginRecords } from './plugin-records';
+import { jsonResult, safeSelector, sourceLabel } from '../../../native-management/plugins/plugin-utils';
 import {
   object,
   string,
@@ -9,14 +10,14 @@ import {
   type PluginInventory,
   type PluginMarketplace,
   type PluginRecord,
-} from '../../../native-management/plugin-types';
+} from '../../../native-management/plugins/plugin-types';
 import { NativeManagementError } from '../../../native-management/errors';
 export async function claudePlugins(c: PluginContext): Promise<PluginInventory> {
   const result = await c.run(['plugin', 'list', '--json']);
   if (result.exitCode !== 0) throw new NativeManagementError('native_unavailable');
   const configs = await claudeSkillConfig(c);
   const base = path.resolve(c.env.CLAUDE_CONFIG_DIR || path.join(c.homeDir, '.claude'));
-  const known = await readSkillConfig(path.join(base, 'plugins/known_marketplaces.json'), 'user');
+  const known = await readNativeConfigSource(path.join(base, 'plugins/known_marketplaces.json'), 'user');
   const marketplaces: PluginMarketplace[] = [];
   for (const config of configs)
     for (const [name, value] of Object.entries(object(config.data.extraKnownMarketplaces))) {

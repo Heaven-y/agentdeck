@@ -35,7 +35,11 @@ async function setup(mode = 'normal') {
   const options = {
     command: {
       command: process.execPath,
-      args: ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('./fake-app-server.ts', import.meta.url))],
+      args: [
+        '--import',
+        import.meta.resolve('tsx'),
+        fileURLToPath(new URL('./run/fake-app-server.ts', import.meta.url)),
+      ],
     },
     env: { CODEX_HOME: dir, CODEX_TEST_MODE: mode, CODEX_TEST_LOG: log, CODEX_TEST_GATE: gate },
   };

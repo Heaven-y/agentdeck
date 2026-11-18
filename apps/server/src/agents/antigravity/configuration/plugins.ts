@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { arrayResult, jsonResult, safeName } from '../../../native-management/plugin-utils';
+import { arrayResult, jsonResult, safeName } from '../../../native-management/plugins/plugin-utils';
 import {
   string,
   type PluginContext,
   type PluginInventory,
   type PluginRecord,
-} from '../../../native-management/plugin-types';
+} from '../../../native-management/plugins/plugin-types';
 import { NativeManagementError } from '../../../native-management/errors';
 import { resourcePathKey } from '../../common/configuration/resources';
 export async function antigravityPlugins(c: PluginContext): Promise<PluginInventory> {

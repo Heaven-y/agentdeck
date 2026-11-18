@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
 import { PluginNavigation } from '../../../src/features/plugins/PluginNavigation';
-import { useUiPreferences } from '../../../src/ui/ui-preferences';
+import { useUiPreferences } from '../../../src/ui/appearance/ui-preferences';
 
 const plugin = (id: string, name: string, enabled = true): WorkbenchPlugin => ({
   manifest: { id, name, version: '1.0.0', apiVersion: 1, entry: 'index.html', permissions: [], commands: [] },

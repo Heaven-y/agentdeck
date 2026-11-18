@@ -1,6 +1,6 @@
 import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
-import { useSessionPages } from '../sessions/use-session-pages';
+import { useSessionPages } from '../sessions/queries/use-session-pages';
 export type SessionListFailure = { agent: AgentKind; message: string };
 
 export function useProjectSessions(projects: Workspace[] | undefined, search = '') {

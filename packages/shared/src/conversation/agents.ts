@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-export const AgentKindSchema = z.enum(['claude', 'codex', 'antigravity']);
+/** 产品支持的 CLI 及默认展示顺序，由协议与各入口共同使用。 */
+export const AGENT_KINDS = ['claude', 'codex', 'antigravity'] as const;
+export const AgentKindSchema = z.enum(AGENT_KINDS);
+export const isAgentKind = (value: unknown): value is AgentKind => AgentKindSchema.safeParse(value).success;
 export const NativeSessionIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,100}$/);
 /** 只接收原生轮次/消息 ID，不接收文件路径或其他原生参数覆盖。 */
 export const SessionForkSchema = z.object({ pointId: NativeSessionIdSchema.optional() }).strict();

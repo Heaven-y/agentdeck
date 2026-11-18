@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { ClientChannel, SFTPWrapper, Stats } from 'ssh2';
 import { vi } from 'vitest';
-import type { SshPool } from '../../../../src/builtin-plugins/ssh-console/ssh/pool';
+import type { SshPool } from '../../../../src/builtin-plugins/ssh-console/ssh/transport/pool';
 
 export function consoleFixture() {
   let enabled = true;

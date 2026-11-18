@@ -1,12 +1,12 @@
 // Claude 适配器：同一会话复用长驻运行时，空闲超时后回收。
 import type { TurnHandle, TurnRunner } from '../contracts';
-import { ClaudeRuntime, PERMISSION_TIMEOUT_MS, type ClaudeTurnInput } from './runtime';
-import type { McpRuntimeRegistry } from '../../native-management/mcp-runtime';
+import { ClaudeRuntime, PERMISSION_TIMEOUT_MS, type ClaudeTurnInput } from './run/runtime';
+import type { McpRuntimeRegistry } from '../../native-management/mcp/mcp-runtime';
 import { SessionError } from '../errors';
 
 export type { PermissionAnswer, TurnHandle } from '../contracts';
-export type { QueryFn } from './query';
-export type { ClaudeTurnInput } from './runtime';
+export type { QueryFn } from './run/query';
+export type { ClaudeTurnInput } from './run/runtime';
 export { PERMISSION_TIMEOUT_MS };
 
 /** 没有新轮次时保留原生进程的时间；超过后关闭。 */

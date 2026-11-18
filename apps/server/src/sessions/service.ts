@@ -16,12 +16,12 @@ import {
 } from '@agentdeck/shared/conversation';
 import { type Workspace } from '@agentdeck/shared/projects';
 import { homedir } from 'node:os';
-import { sameSessionDirectory, sessionDirectoryWithin } from '../agents/common/session-scope';
+import { sameSessionDirectory, sessionDirectoryWithin } from '../agents/common/history/session-scope';
 import type { SessionProvider } from '../agents/contracts';
 import { SessionError } from '../agents/errors';
 import { createSessionCatalog } from './catalog';
 import { createSessionPaging, projectSummary } from './paging';
-import { resolveProjectId } from '../agents/common/session-ownership';
+import { resolveProjectId } from '../agents/common/history/session-ownership';
 import { SessionPreferencesError, type SessionPreferences } from './preferences';
 
 const AGENT_LABELS: Record<AgentKind, string> = {

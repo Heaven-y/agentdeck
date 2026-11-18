@@ -3,38 +3,38 @@ import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState, type MutableRefObject } from 'react';
 import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
-import { useChat } from '../features/chat/chat-store';
+import { useChat } from '../features/chat/state/chat-store';
 
-import { TopBar } from './TopBar';
-import { useProductSettings } from '../features/settings/use-product-settings';
-import { useUiPreferences } from '../ui/ui-preferences';
-import { useCommandPalette } from './use-command-palette';
-import type { PaletteActions } from './CommandPalette';
-import { EnvironmentSummary } from '../features/settings/EnvironmentReport';
-import { Sidebar } from './Sidebar';
-import { SessionPane } from './SessionPane';
-import { ConversationSidebar } from './ConversationSidebar';
-import { WorkspaceLayout } from './WorkspaceLayout';
-import { SettingsWorkspace, useSettingsWorkspace } from './SettingsWorkspace';
-import type { SettingsLeave } from '../features/settings/use-model-settings';
-import { useProjectNavigation } from './use-project-navigation';
+import { TopBar } from './layout/TopBar';
+import { useProductSettings } from '../features/settings/general/use-product-settings';
+import { useUiPreferences } from '../ui/appearance/ui-preferences';
+import { useCommandPalette } from './navigation/use-command-palette';
+import type { PaletteActions } from './navigation/CommandPalette';
+import { EnvironmentSummary } from '../features/settings/environment/EnvironmentReport';
+import { Sidebar } from './sidebar/Sidebar';
+import { SessionPane } from './layout/SessionPane';
+import { ConversationSidebar } from './sidebar/ConversationSidebar';
+import { WorkspaceLayout } from './layout/WorkspaceLayout';
+import { SettingsWorkspace, useSettingsWorkspace } from './layout/SettingsWorkspace';
+import type { SettingsLeave } from '../features/settings/navigation/settings-navigation';
+import { useProjectNavigation } from './navigation/use-project-navigation';
 import { desktopPathOpener, revealLabel } from '../lib/desktop-bridge';
 import { useOtherSessions, useProjectSessions } from '../features/projects/use-project-sessions';
-import { useConversationSidebar } from './use-conversation-sidebar';
-import { ConversationTabs } from '../features/chat/ConversationTabs';
+import { useConversationSidebar } from './sidebar/use-conversation-sidebar';
+import { ConversationTabs } from '../features/chat/tabs/ConversationTabs';
 import { AddProjectDialog } from '../features/projects/AddProjectDialog';
 import { ProjectManageDialog } from '../features/projects/ProjectManageDialog';
 import type { ProjectDraft, ProjectManageAction } from '../features/projects/project-management';
 import { PluginNavigation } from '../features/plugins/PluginNavigation';
 import { PluginWorkspace } from '../features/plugins/PluginWorkspace';
 import { usePluginPages } from '../features/plugins/use-plugin-pages';
-import { DesktopTitleBar } from './DesktopTitleBar';
-import { NativeInteractionInbox } from '../features/chat/InteractionCard';
+import { DesktopTitleBar } from './layout/DesktopTitleBar';
+import { NativeInteractionInbox } from '../features/chat/interactions/InteractionCard';
 
 const SettingsDialog = lazy(() => import('../features/settings/SettingsDialog'));
-const CommandPalette = lazy(() => import('./CommandPalette'));
+const CommandPalette = lazy(() => import('./navigation/CommandPalette'));
 const PluginManager = lazy(() => import('../features/plugins/PluginManager'));
-const ArchivedSessionsPage = lazy(() => import('../features/sessions/ArchivedSessionsPage'));
+const ArchivedSessionsPage = lazy(() => import('../features/sessions/list/ArchivedSessionsPage'));
 
 function OpenPluginManager({ opened, close }: { opened: boolean; close(): void }) {
   return (

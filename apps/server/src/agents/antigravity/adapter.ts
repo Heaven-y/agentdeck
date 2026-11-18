@@ -1,27 +1,27 @@
-import { antigravityPermissionArgs } from './permissions';
+import { antigravityPermissionArgs } from './run/permissions';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { stripVTControlCharacters } from 'node:util';
 import type { AgentTurnInput, TurnHandle, TurnRunner } from '../contracts';
 import { resolveLocalCommand } from '../../platform/process/executable';
-import { AntigravityMapper } from './mapper';
-import { AntigravityLines } from './lines';
+import { AntigravityMapper } from './run/mapper';
+import { AntigravityLines } from './run/lines';
 import {
   antigravityLaunchSelection,
   AntigravityModelSelectionError,
   type AntigravityLaunchSelection,
-} from './model-launch';
-import { AntigravityInvocationError, antigravityInvocationText } from './commands';
+} from './models/model-launch';
+import { AntigravityInvocationError, antigravityInvocationText } from './commands/commands';
 import {
   additionalServiceDiagnostic,
   antigravityDiagnostic,
   rateLimitOnlyFailure,
   serviceFailure,
-} from './diagnostics';
-import { antigravityBackgroundEnvironment } from './process-environment';
-import { reviewAntigravityCurrentTurn, type CurrentTurnReview, type TrajectoryReader } from './completion';
+} from './run/diagnostics';
+import { antigravityBackgroundEnvironment } from './run/process-environment';
+import { reviewAntigravityCurrentTurn, type CurrentTurnReview, type TrajectoryReader } from './commands/completion';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { createAntigravityAcpRunner } from './acp/runtime';
-import { prepareNativeSettings } from './native-settings-override';
+import { prepareNativeSettings } from './models/native-settings-override';
 
 export type AntigravityProcess = Pick<
   ChildProcessWithoutNullStreams,

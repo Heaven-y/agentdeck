@@ -1,14 +1,14 @@
 import type { AgentTurnInput, TurnHandle, TurnRunner, NativeSteerInput, NativeInputResult } from '../../contracts';
-import { readAntigravityModelConfig, type AntigravityModelSettings } from '../model-catalog';
-import { antigravityContextWindowSnapshot } from '../context-window';
+import { readAntigravityModelConfig, type AntigravityModelSettings } from '../models/model-catalog';
+import { antigravityContextWindowSnapshot } from '../models/context-window';
 import type { NativeContextWindow } from '@agentdeck/shared/settings';
 import { assertAntigravitySelection } from '../configuration/identity';
 import { ModelSettingsError } from '../../common/configuration/patch';
-import { antigravityInvocationText } from '../commands';
+import { antigravityInvocationText } from '../commands/commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
 import { AcpInteractions } from './interactions';
-import { fileReference } from '../../common/attachment-input';
+import { fileReference } from '../../common/media/attachment-input';
 import { AcpPrompts, firstAcpInput } from './prompts';
 import { AcpCommands } from './commands';
 import { AntigravityAcpMapper, acpTurnUsage } from './mapper';

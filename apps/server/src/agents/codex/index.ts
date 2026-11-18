@@ -8,6 +8,6 @@ export {
   mutateCodexSession,
   readCodexSession,
   readCodexMedia,
-} from './sessions';
-export type { CodexRuntimeOptions } from './types';
-export { readCodexSubagents } from './subagents';
+} from './history/sessions';
+export type { CodexRuntimeOptions } from './run/types';
+export { readCodexSubagents } from './history/subagents';

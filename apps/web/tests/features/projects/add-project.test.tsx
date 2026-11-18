@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AddProjectDialog } from '../../../src/features/projects/AddProjectDialog';
 
-import { useChat } from '../../../src/features/chat/chat-store';
+import { useChat } from '../../../src/features/chat/state/chat-store';
 import { useOtherSessions } from '../../../src/features/projects/use-project-sessions';
 
 let client: QueryClient;

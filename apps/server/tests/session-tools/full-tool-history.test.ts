@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { formatSessionReference, type AgentEvent, type AgentKind } from '@agentdeck/shared/conversation';
-import { createClaudeSessions, type ClaudeSessionsApi } from '../../src/agents/claude/sessions';
-import { readCodexSession } from '../../src/agents/codex/sessions';
+import { createClaudeSessions, type ClaudeSessionsApi } from '../../src/agents/claude/history/sessions';
+import { readCodexSession } from '../../src/agents/codex/history/sessions';
 import { createSessionPagination, readableHistory, type SessionReadItem } from '../../src/session-tools/pagination';
 
 const dirs: string[] = [];
@@ -85,7 +85,7 @@ describe('MCP 从原生映射到分页保留完整工具结果', () => {
         args: [
           '--import',
           import.meta.resolve('tsx'),
-          fileURLToPath(new URL('../agents/codex/fake-app-server.ts', import.meta.url)),
+          fileURLToPath(new URL('../agents/codex/run/fake-app-server.ts', import.meta.url)),
         ],
       },
       env: { CODEX_HOME: dir, CODEX_TEST_MODE: 'long-tool-history' },
