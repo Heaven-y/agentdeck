@@ -111,6 +111,15 @@ export default tseslint.config(
     },
   },
   {
+    files: ['apps/web/src/features/conversation/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ regex: '(^|/)chat(/|$)', message: '共享对话展示由宿主注入操作，不得依赖实时聊天。' }] },
+      ],
+    },
+  },
+  {
     files: ['packages/shared/src/**/*.ts'],
     rules: {
       'no-restricted-imports': [

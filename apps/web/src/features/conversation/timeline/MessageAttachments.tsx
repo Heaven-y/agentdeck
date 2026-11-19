@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { FileText } from 'lucide-react';
 import type { MessageAttachment } from '@agentdeck/shared/conversation';
 import { DetailDialog } from '../../../ui/DetailDialog';
-import { useChat } from '../../chat/state/chat-store';
-import { attachmentApi } from '../../chat/composer/attachment-api';
+import { useConversationSurface, type ImageReader } from '../ConversationSurface';
+import { unavailableImage } from '../media/native-media';
+
 export function AttachmentImage({ src, name, onError }: { src: string; name: string; onError?(): void }) {
   const [open, setOpen] = useState(false);
   return (
@@ -24,55 +25,42 @@ export function AttachmentImage({ src, name, onError }: { src: string; name: str
     </>
   );
 }
+type Result = { attachment: MessageAttachment; reader: ImageReader; url?: string; error?: string };
+
 function MediaPreview({ attachment }: { attachment: MessageAttachment }) {
-  const workspaceId = useChat((s) => s.workspaceId),
-    agent = useChat((s) => s.agent),
-    conversationId = useChat((s) => s.conversationId),
-    sessionId = useChat((s) => s.sessionId);
-  const connection = useChat((s) => s.connection);
-  const identity = useChat((s) => s.attachmentIdentity)();
-  const token = identity?.token,
-    instanceId = identity?.instanceId;
-  const key = JSON.stringify([workspaceId, agent, conversationId, sessionId, connection, identity?.token, attachment]);
-  const [result, setResult] = useState<{ key: string; url?: string; error?: string }>({ key: '' });
+  const { readImage } = useConversationSurface();
+  const [result, setResult] = useState<Result>();
   useEffect(() => {
+    if (!readImage) return;
     const abort = new AbortController();
     let created: string | undefined;
-    const view = {
-      workspaceId,
-      agent,
-      conversationId,
-      sessionId,
-      modelOverrides: { claude: '', codex: '', antigravity: '' },
-    };
-    const read =
-      attachment.kind === 'native-image'
-        ? attachmentApi.nativeMedia(view, attachment.locator, abort.signal)
-        : token && instanceId
-          ? attachmentApi.preview(view, { token, instanceId }, attachment, abort.signal)
-          : Promise.reject(new Error('请等待连接恢复后查看图片。'));
-    void read.then(
+    void readImage(attachment, abort.signal).then(
       (blob) => {
         if (abort.signal.aborted) return;
         created = URL.createObjectURL(blob);
-        setResult({ key, url: created });
+        setResult({ attachment, reader: readImage, url: created });
       },
       (error) => {
-        if (!abort.signal.aborted) setResult({ key, error: error instanceof Error ? error.message : '图片不可读取' });
+        if (!abort.signal.aborted)
+          setResult({ attachment, reader: readImage, error: error instanceof Error ? error.message : '图片不可读取' });
       },
     );
     return () => {
       abort.abort();
       if (created) URL.revokeObjectURL(created);
     };
-  }, [key, workspaceId, agent, conversationId, sessionId, attachment, token, instanceId]);
-  if (result.key !== key) return <p className="text-xs text-muted-foreground">正在读取图片…</p>;
+  }, [attachment, readImage]);
+  if (!readImage) return <p className="text-xs text-warning">{unavailableImage}</p>;
+  if (result?.attachment !== attachment || result.reader !== readImage)
+    return <p className="text-xs text-muted-foreground">正在读取图片…</p>;
   if (!result.url) return <p className="text-xs text-warning">{result.error}</p>;
   return (
     <AttachmentImage
       src={result.url}
       name={attachment.name}
-      onError={() => setResult({ key, error: '图片无法解码，原生记录可能损坏或格式不受支持。' })}
+      onError={() =>
+        setResult({ attachment, reader: readImage, error: '图片无法解码，原生记录可能损坏或格式不受支持。' })
+      }
     />
   );
 }

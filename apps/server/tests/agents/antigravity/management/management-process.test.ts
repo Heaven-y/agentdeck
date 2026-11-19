@@ -121,3 +121,41 @@ it.each(['rpc-missing', 'rpc-unknown'])('只有原生轨迹不存在才允许删
     await backend.close();
   }
 });
+
+it('长历史只读允许超过常规 RPC 预算；超过历史上限按历史失败报告', async () => {
+  const large = await options('rpc-large-history');
+  const service = createAntigravitySessionManagement({
+    backend: (_dir, signal) => startManagementBackend({ ...large.settings, signal }),
+  });
+  try {
+    await expect(service.readTrajectory!('fixture', large.settings.cwd)).resolves.toMatchObject({
+      trajectory: { cascadeId: 'fixture' },
+    });
+  } finally {
+    await service.dispose();
+  }
+
+  const smallBudget = await startManagementBackend(large.settings);
+  try {
+    await expect(smallBudget.request('GetCascadeTrajectory', { cascadeId: 'fixture' })).rejects.toMatchObject({
+      code: 'session_runtime_failed',
+    });
+  } finally {
+    await smallBudget.close();
+  }
+
+  const over = await options('rpc-over-history-budget');
+  const guarded = createAntigravitySessionManagement({
+    backend: (_dir, signal) => startManagementBackend({ ...over.settings, signal }),
+  });
+  try {
+    await expect(
+      guarded.readTrajectory!('fixture', over.settings.cwd, AbortSignal.timeout(4000)),
+    ).rejects.toMatchObject({
+      code: 'session_history_incomplete',
+      message: expect.stringContaining('64 MiB'),
+    });
+  } finally {
+    await guarded.dispose();
+  }
+});

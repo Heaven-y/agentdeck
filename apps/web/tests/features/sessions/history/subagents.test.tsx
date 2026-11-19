@@ -1,13 +1,21 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
 import { SubagentHistoryButton } from '../../../../src/features/sessions/history/SubagentHistoryDialog';
 import { sessionsApi } from '../../../../src/features/sessions/api';
 
-vi.mock('../../../../src/features/chat/timeline/ChatTimeline', () => ({
-  ChatTimeline: ({ items }: { items: unknown[] }) => <div>{JSON.stringify(items)}</div>,
+// 只替换需要布局测量的虚拟滚动，保留子代理对话、轨迹和步骤详情的真实渲染。
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({ data, itemContent }: { data: { id: string }[]; itemContent(i: number, item: unknown): ReactNode }) => (
+    <div>
+      {data.map((item, index) => (
+        <div key={item.id ?? index}>{itemContent(index, item)}</div>
+      ))}
+    </div>
+  ),
 }));
 let client: QueryClient;
 beforeEach(() => {
@@ -116,4 +124,39 @@ it('历史API按选定CLI构造请求，嵌套导航保持根会话URL', async (
   expect(fetch.mock.calls[0]?.[0]).toBe(
     '/api/projects/project/sessions/antigravity/root/subagents?parentAgentId=child',
   );
+});
+
+it('父会话在线时，子代理对话、轨迹和步骤详情都只展示原生问题', async () => {
+  useChat.setState({ connection: 'open', running: true, turnId: 'parent-turn' });
+  vi.spyOn(sessionsApi, 'subagents').mockImplementation(async (_project, _session, query) =>
+    query.agentId
+      ? {
+          agentId: 'child',
+          events: [
+            {
+              type: 'async_question',
+              question: {
+                sessionId: 'child',
+                messageId: 'q',
+                spec: {
+                  kind: 'questions',
+                  blocking: false,
+                  title: '子代理提问',
+                  fields: [{ id: 'q', type: 'text', label: '检查哪个目录？', required: true }],
+                },
+              },
+            },
+          ],
+        }
+      : { agentIds: ['child'] },
+  );
+  mount();
+  fireEvent.click(screen.getByRole('button', { name: '子代理' }));
+  await screen.findByText('子代理提问');
+  expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '轨迹' }));
+  fireEvent.click(screen.getByRole('button', { name: /查看步骤.*子代理提问/ }));
+  expect(within(screen.getByRole('dialog', { name: '子代理步骤' })).getByText('检查哪个目录？')).toBeTruthy();
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull();
 });

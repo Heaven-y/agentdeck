@@ -1,7 +1,7 @@
 import type { AgentEvent, ServerMessage } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from './chat-state';
 import type { ChatSocket, ConnectionStatus } from '../../../lib/ws';
-import { reduceChat } from './chat-reducer';
+import { reduceChat } from '../../conversation/model/conversation-events';
 import { nativeStatus, sameSession, sessionActionKey } from './chat-state-helpers';
 import { conversationById, conversationViews, updateConversation } from './conversations';
 import { refreshSessionLists } from '../../sessions/queries/session-queries';

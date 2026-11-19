@@ -32,14 +32,23 @@ type Preview = {
 };
 const failure = (message: string) => new SessionError(409, 'native_action_conflict', message);
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const actionFor = (agent: AgentKind): NativeAction => (agent === 'claude' ? 'rewind-files' : 'revert-history');
+const rewindActions: Record<AgentKind, NativeAction | null> = {
+  claude: 'rewind-files',
+  codex: 'revert-history',
+  antigravity: null,
+};
+function actionFor(agent: AgentKind): NativeAction {
+  const action = Object.hasOwn(rewindActions, agent) && rewindActions[agent];
+  if (!action) throw failure('当前原生接口没有已核实的回退操作。');
+  return action;
+}
 export function createNativeActionsService(deps: Deps) {
   const previews = new Map<string, Preview>();
   async function withBackend<T>(
     scope: NativeActionScope,
     operation: (backend: NativeActionBackend, ws: Workspace) => Promise<T>,
   ): Promise<T> {
-    if (scope.agent === 'antigravity') throw failure('当前原生接口没有已核实的回退操作。');
+    actionFor(scope.agent);
     return deps.withSession(scope, async (ws) => {
       const backend = await deps.open(scope, ws);
       try {

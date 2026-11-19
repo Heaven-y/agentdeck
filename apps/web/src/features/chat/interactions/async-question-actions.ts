@@ -9,8 +9,8 @@ import {
 } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from '../state/chat-state';
 import type { ChatSocket } from '../../../lib/ws';
-import type { ChatItem } from '../state/chat-reducer';
-import { reduceChat } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
+import { reduceChat } from '../../conversation/model/conversation-events';
 import { conversationViews, updateConversation } from '../state/conversations';
 import { sessionsApi } from '../../sessions/api';
 type Get = () => ChatState;

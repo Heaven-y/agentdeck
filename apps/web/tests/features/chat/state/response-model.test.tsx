@@ -2,7 +2,11 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
-import { historyItems, reduceChat, type ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import {
+  historyItems,
+  reduceChat,
+  type ChatItem,
+} from '../../../../src/features/conversation/model/conversation-events';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
 afterEach(cleanup);
 it('响应模型随每条消息合并，型号变化单列，未知消息不补猜模型', () => {

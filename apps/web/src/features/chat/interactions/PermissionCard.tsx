@@ -1,6 +1,6 @@
 import { ShieldAlert } from 'lucide-react';
 import { buttonClass } from '../../../ui/styles';
-import type { ChatItem } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import { useChat } from '../state/chat-store';
 import { shortToolName } from '../../conversation/timeline/ToolCard';
 

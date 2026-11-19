@@ -6,11 +6,12 @@ import { DetailDialog } from '../../../ui/DetailDialog';
 import { SegmentedControl } from '../../../ui/fields/SegmentedControl';
 import { buttonClass, inputClass } from '../../../ui/styles';
 import { useChat } from '../../chat/state/chat-store';
-import { historyItems, type ChatItem } from '../../chat/state/chat-reducer';
-import { ChatTimeline } from '../../chat/timeline/ChatTimeline';
-import { TrajectoryContent } from '../../conversation/trajectory/TrajectoryView';
+import { historyItems, type ChatItem } from '../../conversation/model/conversation-events';
+import { ConversationTimeline } from '../../conversation/timeline/ConversationTimeline';
+import { TrajectoryView } from '../../conversation/trajectory/TrajectoryView';
 import { TrajectoryDetails } from '../../conversation/trajectory/TrajectoryDetails';
 import { sessionsApi } from '../api';
+import { RecordedConversationSurface } from './RecordedConversationSurface';
 
 type Identity = { workspaceId: string; sessionId: string; agent: AgentKind };
 const statuses: Record<SubagentSummary['status'], string> = {
@@ -26,7 +27,7 @@ function SubagentTrajectory({ items }: { items: ChatItem[] }) {
   const item = items.find((entry) => entry.id === selected);
   return (
     <>
-      <TrajectoryContent items={items} running={false} selectedItemId={selected} inspect={setSelected} />
+      <TrajectoryView items={items} running={false} selectedItemId={selected} inspect={setSelected} />
       {item && (
         <DetailDialog title="子代理步骤" onClose={() => setSelected(undefined)}>
           <TrajectoryDetails item={item} />
@@ -113,8 +114,14 @@ function ChildHistory({
         empty={items.length === 0}
         retry={() => void history.refetch()}
       />
-      {items.length > 0 &&
-        (view === 'chat' ? <ChatTimeline items={items} running={false} /> : <SubagentTrajectory items={items} />)}
+      <RecordedConversationSurface source={{ workspaceId, agent, sessionId, subagentId: agentId }}>
+        {items.length > 0 &&
+          (view === 'chat' ? (
+            <ConversationTimeline items={items} running={false} />
+          ) : (
+            <SubagentTrajectory items={items} />
+          ))}
+      </RecordedConversationSurface>
       {history.hasNextPage && (
         <button
           type="button"

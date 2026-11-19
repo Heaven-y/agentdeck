@@ -2,7 +2,7 @@ import { AgentKindSchema } from '@agentdeck/shared/conversation';
 import type { FastifyInstance, FastifyReply, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
 import { NativeMcpSaveSchema, NativeMcpOperateSchema } from '@agentdeck/shared/settings';
-import type { NativeMcpService } from '../../native-management/mcp/mcp-service';
+import type { McpWriteProject, NativeMcpService } from '../../native-management/mcp/mcp-service';
 import type { McpControlService } from '../../native-management/mcp/mcp-control-service';
 import { NativeResourceError } from '../../agents/common/configuration/errors';
 import { SessionError } from '../../agents/errors';
@@ -63,6 +63,11 @@ export function registerNativeMcpRoutes(
     const instanceId = 'instanceId' in q.data && typeof q.data.instanceId === 'string' ? q.data.instanceId : undefined;
     return { agent: a.data.agent, project, instanceId };
   }
+  function writeProject(project?: { id: string; dir: string }): McpWriteProject | undefined {
+    if (!project) return undefined;
+    const { id, dir } = project;
+    return { id, dir, reload: () => deps.store.get(id) };
+  }
   const base = '/api/native-management/:agent/mcp';
   app.get(base, options, (req, reply) =>
     respond(reply, async () => {
@@ -80,7 +85,7 @@ export function registerNativeMcpRoutes(
       const { agent, project } = await context(req.params, req.query);
       const input = NativeMcpSaveSchema.safeParse(req.body);
       if (!input.success) throw new NativeResourceError('invalid_request');
-      return deps.service.saveMcp(agent, input.data, project);
+      return deps.service.saveMcp(agent, input.data, writeProject(project));
     }),
   );
   app.post(base + '/change', options, (req, reply) =>
@@ -88,7 +93,7 @@ export function registerNativeMcpRoutes(
       const { agent, project } = await context(req.params, req.query);
       const input = NativeMcpOperateSchema.safeParse(req.body);
       if (!input.success) throw new NativeResourceError('invalid_request');
-      return deps.service.operateMcp(agent, input.data, project);
+      return deps.service.operateMcp(agent, input.data, writeProject(project));
     }),
   );
   app.post(base + '/control', options, (req, reply) =>

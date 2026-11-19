@@ -41,7 +41,7 @@ export function createMcpControlService(deps: {
     scope: { project?: NativeManagementProject; runtimeProject?: NativeManagementProject; lifetime?: AbortSignal },
   ) {
     const { project, runtimeProject = project, lifetime } = scope;
-    if (agent !== 'codex' || target.entry.transport === 'stdio' || target.ambiguous)
+    if (agent !== 'codex' || target.entry.transport !== 'http' || target.ambiguous)
       throw new NativeManagementError('unsupported_action');
     return oauth.start(
       {
@@ -110,11 +110,15 @@ export function createMcpControlService(deps: {
         }
         return control.status(name, input.cursor);
       });
-    const target = await deps.service.resolveMcp(agent, input.id, input.revision, project);
-    if (input.action === 'login') return login(agent, input, target, { project });
-    if (input.action !== 'check' || target.ambiguous) throw new NativeManagementError('unsupported_action');
+    if (input.action === 'login') {
+      const target = await deps.service.resolveMcp(agent, input.id, input.revision, project);
+      return login(agent, input, target, { project });
+    }
+    if (input.action !== 'check') throw new NativeManagementError('unsupported_action');
     return deps.access.read(agent, async () => {
       const current = await deps.service.resolveMcp(agent, input.id, input.revision, project);
+      if (current.ambiguous || current.entry.transport === 'unknown')
+        throw new NativeManagementError('unsupported_action');
       return checkMcpConnection(current.context, current.entry.name, current.config);
     });
   }

@@ -1,5 +1,5 @@
 import { useChat } from '../state/chat-store';
-import type { ChatItem } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import { InteractionCard } from './InteractionCard';
 import { followupStatusLabels } from '../followups/FollowupQueue';
 import { buttonClass } from '../../../ui/styles';

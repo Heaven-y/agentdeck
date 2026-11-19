@@ -3,7 +3,7 @@ import type { NativeCapabilityCatalog } from '../capability-types';
 import {
   configuredAntigravityDefault,
   configuredAntigravityModels,
-  readAntigravityModelSettings,
+  readAntigravityModelCatalogSettings,
 } from './models/model-catalog';
 import { discoverAntigravityModels } from './models/model-discovery';
 import { discoverAntigravityCommands } from './commands/commands';
@@ -53,12 +53,13 @@ async function discoverModels(options: {
   homeDir?: string;
 }): Promise<NativeCapabilityCatalog> {
   options.signal?.throwIfAborted();
-  const settings = await readAntigravityModelSettings(options);
+  const { settings, connection } = await readAntigravityModelCatalogSettings(options);
   const env = options.env ?? process.env;
   const configured = configuredAntigravityModels(settings);
   const catalog: NativeCapabilityCatalog = {
     entries: [],
     models: configured,
+    antigravityConnection: connection,
     defaultModel: configuredAntigravityDefault(settings),
     warnings: [],
     modelWarning: '',

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentKindSchema } from '../conversation/agents';
+import { AGENT_KINDS, AgentKindSchema } from '../conversation/agents';
 
 export const SpotlightSettingsSchema = z.strictObject({
   enabled: z.boolean(),
@@ -27,6 +27,10 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = { sessionLimit: 5, width: 
 export const conversationWidth = (width: AppearanceSettings['width']): number =>
   width.preset === 'custom' ? width.custom : CONVERSATION_WIDTHS[width.preset];
 
+// 旧的 antigravity 键仍能读回，但不能推断属于哪一种连接。
+const ModelVisibilityKeySchema = z.enum([...AGENT_KINDS, 'antigravity-account', 'antigravity-gemini']);
+export type ModelVisibilityKey = z.infer<typeof ModelVisibilityKeySchema>;
+
 export const ProductSettingsSchema = z.strictObject({
   defaultAgent: AgentKindSchema.default('claude'),
   spotlight: SpotlightSettingsSchema.default(DEFAULT_SPOTLIGHT),
@@ -34,7 +38,7 @@ export const ProductSettingsSchema = z.strictObject({
   /** 未配置时展示目录，显式空数组只保留当前会话的型号。 */
   modelVisibility: z
     .partialRecord(
-      AgentKindSchema,
+      ModelVisibilityKeySchema,
       z
         .array(
           z

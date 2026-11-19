@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { nativeFeaturesFor } from '@agentdeck/shared/conversation';
+import { readNativeImage } from '../../../../src/features/conversation/media/native-media';
 import { attachmentApi } from '../../../../src/features/chat/composer/attachment-api';
 const emptyConversationView = () => ({
   agent: 'claude' as const,
@@ -65,8 +66,8 @@ it('二进制上传与预览使用身份header和取消signal，URL只保留会�
   expect(await attachmentApi.upload(view, identity, file, signal)).toEqual(asset);
   await attachmentApi.preview(view, identity, asset, signal);
   await attachmentApi.remove(view, identity, asset);
-  await attachmentApi.nativeMedia(
-    view,
+  await readNativeImage(
+    { ...view, subagentId: 'child' },
     { sessionId: 'native', subagentId: 'child', messageId: 'm', index: 0, kind: 'tool' },
     signal,
   );
@@ -94,6 +95,10 @@ it('服务端错误保留可行动原因，原生媒体失败不会下载替代�
   await expect(attachmentApi.upload(view, identity, new File(['x'], 'x'))).rejects.toThrow('附件过大');
   await expect(attachmentApi.features(view, identity)).rejects.toThrow('附件操作失败');
   await expect(
-    attachmentApi.nativeMedia(view, { sessionId: 'native', messageId: 'm', index: 0, kind: 'user' }),
+    readNativeImage(
+      { ...view, workspaceId: 'project', sessionId: 'native' },
+      { sessionId: 'native', messageId: 'm', index: 0, kind: 'user' },
+      new AbortController().signal,
+    ),
   ).rejects.toThrow('不可读取');
 });

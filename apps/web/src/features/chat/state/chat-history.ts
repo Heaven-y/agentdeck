@@ -1,7 +1,7 @@
 import type { SessionRef } from '@agentdeck/shared/conversation';
 import type { ChatState } from './chat-state';
 import { sessionsApi } from '../../sessions/api';
-import { reduceChat } from './chat-reducer';
+import { reduceChat } from '../../conversation/model/conversation-events';
 import { retainConversation } from './conversations';
 import { openedTab } from '../tabs/conversation-tabs';
 import { permissionReadState } from './chat-permission';

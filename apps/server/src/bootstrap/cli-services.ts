@@ -18,6 +18,8 @@ import { runProcess, type ProcessRunner } from '../platform/process/run';
 import { createAntigravityRunner } from '../agents/antigravity/adapter';
 import { invalidateAntigravityModelCatalog } from '../agents/antigravity/models/context-window';
 import { discoverAntigravityCapabilities } from '../agents/antigravity/capabilities';
+import { readAntigravityConnection } from '../agents/antigravity/models/model-catalog';
+import { readAntigravityOfficialUsage } from '../agents/antigravity/usage/official-usage';
 import { createAntigravitySessionManagement } from '../agents/antigravity/management/management';
 import { createAntigravitySessions } from '../agents/antigravity/history/sessions';
 import { createClaudeRunner } from '../agents/claude/adapter';
@@ -43,6 +45,7 @@ import { registerAgentConfigRoutes } from '../http/settings/agent-config.routes'
 import { registerCapabilityRoutes } from '../http/conversation/capabilities.routes';
 import { registerLaunchEnvironmentRoutes } from '../http/settings/launch-environment.routes';
 import { registerModelCatalogRoutes } from '../http/settings/model-catalog.routes';
+import { registerAntigravityUsageRoute } from '../http/settings/antigravity-usage.routes';
 import { registerModelSettingsRoutes } from '../http/settings/model-settings.routes';
 import { registerNativeResourceRoutes } from '../http/settings/native-resources.routes';
 import { registerSessionRoutes } from '../http/conversation/sessions.routes';
@@ -116,7 +119,8 @@ export function createCliServices({
         ),
       ),
     },
-    { configDir: configDir },
+    // AGY 的启动变量不覆盖 home；只读身份不需要解密环境或等待环境保存队列。
+    { configDir, antigravityConnection: readAntigravityConnection },
   );
   const managementAccess = createNativeManagementAccess({
     withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
@@ -259,9 +263,9 @@ export function createCliServices({
       }),
     open: async (scope, workspace) => {
       const env = await launchEnvironment.resolve(scope.agent);
-      return scope.agent === 'claude'
-        ? createClaudeRewindBackend(scope.sessionId, workspace.dir, env)
-        : createCodexHistoryBackend(scope.sessionId, workspace.dir, { env });
+      if (scope.agent === 'claude') return createClaudeRewindBackend(scope.sessionId, workspace.dir, env);
+      if (scope.agent === 'codex') return createCodexHistoryBackend(scope.sessionId, workspace.dir, { env });
+      throw new SessionError(409, 'native_action_conflict', '当前原生接口没有已核实的回退操作。');
     },
     changed: async (agent) => {
       sessions.invalidate(agent);
@@ -294,6 +298,9 @@ export function createCliServices({
       registerSessionRoutes(a, { store, sessions, activity });
       registerCapabilityRoutes(a, { store, capabilities, sessions });
       registerModelCatalogRoutes(a, { store, capabilities });
+      registerAntigravityUsageRoute(a, (signal) =>
+        nativeActivity.run('antigravity', () => readAntigravityOfficialUsage({ signal })),
+      );
       const legacyConfig = createNativeConfigService({ onSaved: nativeChanged });
       registerAgentConfigRoutes(a, {
         service: {

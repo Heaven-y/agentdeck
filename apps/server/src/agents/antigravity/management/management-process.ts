@@ -227,8 +227,10 @@ export async function startManagementBackend(options: ManagementProcessOptions):
     await process.request('session/list', { cwd: options.cwd });
     const port = await ownPort(log, process);
     return {
-      request: (method, params) =>
-        process?.alive ? managementRequest(port, method, params, requests.signal) : Promise.reject(managementFailure()),
+      request: (method, params, budget) =>
+        process?.alive
+          ? managementRequest(port, method, params, { signal: requests.signal, budget })
+          : Promise.reject(managementFailure()),
       close,
     };
   } catch {

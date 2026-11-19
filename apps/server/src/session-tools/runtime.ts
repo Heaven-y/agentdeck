@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 import { createAntigravitySessionManagement } from '../agents/antigravity/management/management';
 import { createAntigravitySessions } from '../agents/antigravity/history/sessions';
 import { createClaudeSessions } from '../agents/claude/history/sessions';
 import { assertCodexSession, readCodexSession } from '../agents/codex/history/sessions';
+import type { SessionProvider } from '../agents/contracts';
 import { SessionError } from '../agents/errors';
 import { createSessionsService } from '../sessions/service';
 import { createLaunchEnvironment } from '../settings/launch-environment';
@@ -49,7 +51,7 @@ export function createSessionToolsRuntime(configDir: string) {
           readCodexSession(id, dir, { signal, env: await environment.resolve('codex'), preserveToolContent: true }),
       },
       antigravity: createAntigravitySessions({ management, preserveToolContent: true }),
-    },
+    } satisfies Record<AgentKind, SessionProvider | undefined>,
     { projects: () => store.list(), withIdleSession: unsupported },
   );
   return { reader: createSessionReader({ store, sessions }), dispose: () => management.dispose() };

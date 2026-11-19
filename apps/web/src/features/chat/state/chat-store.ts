@@ -14,7 +14,7 @@ import { create } from 'zustand';
 
 import { refreshSessionLists } from '../../sessions/queries/session-queries';
 import { connectChat, type ChatSocket } from '../../../lib/ws';
-import { markPermissionPending, reduceChat } from './chat-reducer';
+import { markPermissionPending, reduceChat } from '../../conversation/model/conversation-events';
 import { capabilityRestriction, selectionRestriction } from '../controls/capability-selection';
 import { createChatEvents } from './chat-events';
 import { createChatHistory } from './chat-history';

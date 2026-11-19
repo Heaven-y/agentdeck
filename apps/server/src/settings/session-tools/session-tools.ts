@@ -55,18 +55,18 @@ type Deps = {
   onSaved?(agent: AgentKind): void | Promise<void>;
 };
 type Snapshot = Awaited<ReturnType<typeof readConfigFile>>;
-type Context = { agent: AgentKind; env: NodeJS.ProcessEnv; file: string; command: SessionToolsEntry };
+type Context = { agent: AgentKind; env: NodeJS.ProcessEnv; cwd: string; file: string; command: SessionToolsEntry };
 type State = { snapshot: Snapshot; status: SessionToolsStatus; conflict: boolean; invalid: boolean };
 
 function nativeHome(env: NodeJS.ProcessEnv): string {
   return (process.platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
 }
-function configFile(agent: AgentKind, homeDir: string, env: NodeJS.ProcessEnv): string {
-  if (agent === 'codex') return path.resolve(env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml');
-  if (agent === 'claude') return path.resolve(env.CLAUDE_CONFIG_DIR || homeDir, '.claude.json');
+const configFiles: Record<AgentKind, (homeDir: string, env: NodeJS.ProcessEnv) => string> = {
+  claude: (homeDir, env) => path.resolve(homeDir, env.CLAUDE_CONFIG_DIR || '.', '.claude.json'),
+  codex: (homeDir, env) => path.resolve(env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml'),
   // agy 使用系统用户目录；当前原生版本没有 GEMINI_CLI_HOME/AGY_HOME 覆盖项。
-  return path.resolve(homeDir, '.gemini', 'config', 'mcp_config.json');
-}
+  antigravity: (homeDir) => path.join(homeDir, '.gemini', 'config', 'mcp_config.json'),
+};
 function revisionOf(context: Context, snapshot: Snapshot): string {
   // 把目标路径与服务命令纳入 CAS，避免环境切换后两个 missing 文件共享版本。
   return createHash('sha256')
@@ -114,9 +114,10 @@ export function createSessionToolsService(deps: Deps) {
   async function contextFor(agent: AgentKind): Promise<Context> {
     const resolved = await deps.environment(agent);
     const env = deps.homeDir ? { ...resolved, HOME: deps.homeDir, USERPROFILE: deps.homeDir } : resolved;
-    const homeDir = deps.homeDir ?? nativeHome(env);
+    // Claude 的相对覆盖值按 CLI cwd 解析，状态读取和原生命令都以用户目录为基准。
+    const cwd = path.resolve(deps.homeDir ?? nativeHome(env));
     const entry = sessionToolsEntryForAgent(agent, command);
-    return { agent, env, file: configFile(agent, homeDir, env), command: entry };
+    return { agent, env, cwd, file: configFiles[agent](cwd, env), command: entry };
   }
   async function load(context: Context): Promise<State> {
     const snapshot = await readSnapshot(context.file);
@@ -166,7 +167,7 @@ export function createSessionToolsService(deps: Deps) {
       : ['mcp', 'remove', '--scope', 'user', SESSION_TOOLS_NAME];
     const result = await run(cli.command, [...cli.args, ...args], {
       env: context.env,
-      cwd: path.dirname(context.file),
+      cwd: context.cwd,
       timeoutMs: 15_000,
       outputCap: 64 * 1024,
     });

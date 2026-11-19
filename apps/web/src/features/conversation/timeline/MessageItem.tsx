@@ -1,52 +1,40 @@
 import { CircleAlert, X } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { Streamdown } from 'streamdown';
-import type { ChatItem } from '../../chat/state/chat-reducer';
-import { useChat } from '../../chat/state/chat-store';
-import { PermissionCard } from '../../chat/interactions/PermissionCard';
-import { InteractionCard } from '../../chat/interactions/InteractionCard';
+import type { ChatItem } from '../model/conversation-events';
 import { MessageAttachments } from './MessageAttachments';
 import { ToolCard } from './ToolCard';
-import { CompactionStatus } from '../../chat/models/ContextStatus';
+import { CompactionStatus } from '../context/ContextPresentation';
 import type { ExpandedProps } from './timeline-model';
-import { SessionForkPoint } from '../../chat/references/SessionForkPoint';
 import { StatisticsLine } from './StatisticsLine';
 import { ActivityCard } from './ActivityCard';
 import {
   SessionReferenceText,
   sessionMarkdownComponents,
   sessionMarkdownUrl,
-} from '../../chat/references/SessionReferenceText';
-import { sessionRemarkPlugins } from '../../chat/references/session-reference-markdown';
-import { AsyncQuestionCard } from '../../chat/interactions/AsyncQuestionCard';
+} from '../references/SessionReferenceText';
+import { sessionRemarkPlugins } from '../references/session-reference-markdown';
+import { isConversationControl, useConversationSurface, type ConversationError } from '../ConversationSurface';
+import { ConversationControlView } from './ConversationControlView';
 
-type ErrorItem = Extract<ChatItem, { kind: 'error' }>;
-// 独立只读历史不属于 chat store；弱引用使关闭状态随条目回收，并跨虚拟列表重挂载保留。
-const dismissedReadOnlyErrors = new WeakSet<ErrorItem>();
-
-function ErrorMessage({ item }: { item: ErrorItem }) {
-  const owner = useChat((state) => (state.items.includes(item) ? state.conversationId : undefined));
-  const [, setDismissed] = useState<ErrorItem>();
-  if (owner === undefined && dismissedReadOnlyErrors.has(item)) return null;
+function ErrorMessage({ item }: { item: ConversationError }) {
+  const { dismissError, isErrorDismissed } = useConversationSurface();
+  if (isErrorDismissed?.(item)) return null;
   return (
     <div role="alert" className="flex items-start gap-2 rounded-xl bg-destructive/8 px-3 py-2 text-[13px] leading-6">
       <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
       <span className="min-w-0 flex-1 break-words text-destructive-foreground">{item.message}</span>
-      <button
-        type="button"
-        aria-label="关闭这条错误"
-        title="关闭"
-        className="-m-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={() => {
-          if (owner !== undefined) useChat.getState().dismissNotice(item.id, owner);
-          else {
-            dismissedReadOnlyErrors.add(item);
-            setDismissed(item);
-          }
-        }}
-      >
-        <X aria-hidden className="size-3.5" />
-      </button>
+      {dismissError && (
+        <button
+          type="button"
+          aria-label="关闭这条错误"
+          title="关闭"
+          className="-m-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => dismissError(item)}
+        >
+          <X aria-hidden className="size-3.5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -70,11 +58,7 @@ function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant
   );
 }
 
-function MetadataMessage({
-  item,
-}: {
-  item: Extract<ChatItem, { kind: 'statistics' | 'fork-point' | 'compaction' | 'turn-status' }>;
-}) {
+function MetadataMessage({ item }: { item: Extract<ChatItem, { kind: 'statistics' | 'compaction' | 'turn-status' }> }) {
   if (item.kind === 'turn-status')
     return (
       <p role="status" className="text-sm leading-6 text-muted-foreground">
@@ -82,7 +66,6 @@ function MetadataMessage({
       </p>
     );
   if (item.kind === 'statistics') return <StatisticsLine statistics={item} />;
-  if (item.kind === 'fork-point') return <SessionForkPoint pointId={item.pointId} />;
   return <CompactionStatus state={item.state} incomplete={item.incomplete} />;
 }
 
@@ -92,9 +75,8 @@ export const MessageItem = memo(function MessageItem({
   expanded,
   onExpandedChange,
 }: { item: ChatItem } & ExpandedProps) {
+  if (isConversationControl(item)) return <ConversationControlView item={item} />;
   switch (item.kind) {
-    case 'async-question':
-      return <AsyncQuestionCard item={item} />;
     case 'user':
       return (
         <div className="conversation-user">
@@ -123,10 +105,6 @@ export const MessageItem = memo(function MessageItem({
       return <ToolCard item={item} expanded={expanded} onExpandedChange={onExpandedChange} />;
     case 'activity':
       return <ActivityCard item={item} expanded={expanded} onExpandedChange={onExpandedChange} />;
-    case 'permission':
-      return <PermissionCard item={item} />;
-    case 'interaction':
-      return <InteractionCard item={item} />;
     case 'error':
       return <ErrorMessage item={item} />;
     default:

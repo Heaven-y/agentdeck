@@ -1,16 +1,18 @@
 import path from 'node:path';
 import { opendir } from 'node:fs/promises';
-import type { NativeSkillChangeInput, NativeSkillState } from '@agentdeck/shared/settings';
+import type { NativeSkillState } from '@agentdeck/shared/settings';
+import { verifiedSkillVersion } from '../../../native-management/version';
 import { NativeManagementError } from '../../../native-management/errors';
 import { readNativeConfigSource, writeNativeConfigJson } from '../../../native-management/config';
-import type { NativeSkill, SkillContext } from '../../../native-management/skills/types';
+import type { NativeSkill, SkillAdapter, SkillContext } from '../../../native-management/skills/types';
 import type { NativeConfigSource } from '../../../native-management/config';
 import { resolveLocalCommand } from '../../../platform/process/executable';
 import { runProcess } from '../../../platform/process/run';
 import { inspectDirectory, readConfigFile } from '../../../platform/files/safe-file';
 import { claudePluginRecords } from './plugin-records';
 
-export const claudeSkillStates: NativeSkillState[] = ['inherit', 'on', 'name-only', 'user-invocable-only', 'off'];
+const claudeOverrides: NativeSkillState[] = ['on', 'name-only', 'user-invocable-only', 'off'];
+const claudeSkillStates: NativeSkillState[] = ['inherit', ...claudeOverrides];
 export async function claudeSkillConfig(context: SkillContext) {
   const base = path.resolve(context.env.CLAUDE_CONFIG_DIR || path.join(context.homeDir, '.claude'));
   const sources = [await readNativeConfigSource(path.join(base, 'settings.json'), 'user')];
@@ -20,34 +22,21 @@ export async function claudeSkillConfig(context: SkillContext) {
   }
   return sources;
 }
-function overrides(source: NativeConfigSource) {
-  const value = source.data.skillOverrides;
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+function overrides(config: NativeConfigSource['data']): Record<string, unknown> | undefined {
+  const value = config.skillOverrides;
+  if (value === undefined) return {};
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
-export function claudeSkillState(name: string, sources: NativeConfigSource[]): NativeSkillState {
+function scopedState(name: string, values: ReturnType<typeof overrides>): NativeSkillState {
+  if (!values) return 'unknown';
+  if (!Object.hasOwn(values, name)) return 'inherit';
+  return claudeOverrides.find((state) => state === values[name]) ?? 'unknown';
+}
+function claudeSkillState(states: NativeSkillState[]): NativeSkillState {
+  if (!states.length || states.includes('unknown')) return 'unknown';
   let result: NativeSkillState = 'inherit';
-  for (const source of sources) {
-    const value = overrides(source)[name];
-    if (typeof value === 'string' && claudeSkillStates.includes(value as NativeSkillState))
-      result = value as NativeSkillState;
-  }
+  for (const value of states) if (value !== 'inherit') result = value;
   return result;
-}
-export async function changeClaudeSkill(name: string, input: NativeSkillChangeInput, sources: NativeConfigSource[]) {
-  const source = sources.find((item) => item.scope === input.scope);
-  if (!source || !input.value || !claudeSkillStates.includes(input.value))
-    throw new NativeManagementError('unsupported_action');
-  await writeNativeConfigJson(source, (config) => {
-    if (
-      config.skillOverrides !== undefined &&
-      (!config.skillOverrides || typeof config.skillOverrides !== 'object' || Array.isArray(config.skillOverrides))
-    )
-      throw new NativeManagementError('unsupported_action');
-    const values = Object.assign(Object.create(null) as Record<string, unknown>, overrides(source));
-    if (input.value === 'inherit') delete values[name];
-    else values[name] = input.value;
-    config.skillOverrides = values;
-  });
 }
 
 type InstalledPlugin = { id: string; installPath: string; scope: string; enabled: boolean };
@@ -91,7 +80,8 @@ function pluginSkill(plugin: InstalledPlugin, file: string, name: string): Nativ
   return {
     name,
     path: file,
-    scope: plugin.scope,
+    nativeScope: plugin.scope,
+    scope: plugin.scope === 'user' || plugin.scope === 'project' || plugin.scope === 'local' ? plugin.scope : 'unknown',
     enabled: plugin.enabled,
     origin: 'plugin',
     source: plugin.id,
@@ -107,7 +97,7 @@ export async function claudeSkillsFromPlugins(value: unknown): Promise<NativeSki
   return skills;
 }
 /** 原生命令只列已安装插件，不查询市场、不加载插件，也不启动模型会话。 */
-export async function readClaudeInstalledSkills(context: SkillContext): Promise<NativeSkill[]> {
+async function readClaudeInstalledSkills(context: SkillContext): Promise<NativeSkill[]> {
   const command = resolveLocalCommand('claude', context.env);
   const result = await runProcess(command.command, [...command.args, 'plugin', 'list', '--json'], {
     cwd: context.project?.dir ?? context.homeDir,
@@ -118,3 +108,40 @@ export async function readClaudeInstalledSkills(context: SkillContext): Promise<
   if (result.exitCode !== 0) throw new NativeManagementError('native_unavailable');
   return claudeSkillsFromPlugins(await claudePluginRecords(context, JSON.parse(result.stdout.toString('utf8'))));
 }
+
+export const claudeSkills: SkillAdapter = {
+  description: '可见性按原生技能名应用，同名用户与项目技能共享该设置；默认继承保留原生配置。',
+  readNative: readClaudeInstalledSkills,
+  readConfig: claudeSkillConfig,
+  verifyVersion: (context) => verifiedSkillVersion(context, '2.1.317', (env) => resolveLocalCommand('claude', env)),
+  localOrigin: (resource) => (resource.displayPath.includes('/synced/') ? 'synced' : undefined),
+  visibility({ name, sources }) {
+    const stateByScope = Object.fromEntries(
+      sources.map((source) => [source.scope, scopedState(name, overrides(source.data))]),
+    );
+    const canWrite = sources.length > 0 && sources.every((source) => overrides(source.data) !== undefined);
+    return {
+      state: claudeSkillState(Object.values(stateByScope)),
+      stateByScope,
+      states: canWrite ? claudeSkillStates : [],
+      scopes: canWrite ? sources.map((source) => source.scope) : [],
+      ...(sources.length > 0 && !canWrite && { unavailableReason: '技能可见性配置格式不受支持，请从原文入口修复。' }),
+    };
+  },
+  async changeState(_context, { name, scope, value }, sources) {
+    const source = sources.find((item) => item.scope === scope);
+    if (!source || !claudeSkillStates.includes(value)) throw new NativeManagementError('unsupported_action');
+    await writeNativeConfigJson(source, (config) => {
+      const previous = overrides(config);
+      if (!previous) throw new NativeManagementError('unsupported_action');
+      const values = Object.assign(Object.create(null) as Record<string, unknown>, previous);
+      if (value === 'inherit') delete values[name];
+      else values[name] = value;
+      config.skillOverrides = values;
+    });
+    // 只确认所选层的磁盘配置，不把它解释为覆盖托管策略后的会话生效值。
+    const written = await readNativeConfigSource(source.file, scope).catch(() => undefined);
+    if (!written || written.revision === 'missing' || scopedState(name, overrides(written.data)) !== value)
+      throw new NativeManagementError('result_unconfirmed');
+  },
+};

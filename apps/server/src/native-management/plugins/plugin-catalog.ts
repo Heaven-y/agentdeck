@@ -1,13 +1,10 @@
 import type { NativePluginCatalog, NativePluginOperation } from '@agentdeck/shared/settings';
 import { resourcePathKey } from '../../agents/common/configuration/resources';
-import { claudePlugins } from '../../agents/claude/configuration/plugins';
-import { codexPlugins } from '../../agents/codex/configuration/plugins';
-import { antigravityPlugins } from '../../agents/antigravity/configuration/plugins';
+import { pluginAdapter } from './plugin-adapters';
 import { enrichPlugin } from './plugin-native';
 import { pluginDigest } from './plugin-utils';
 import type { PluginContext, PluginRecord, PluginMarketplace } from './plugin-types';
-const versions = { claude: '2.1.317', codex: '0.166.0', antigravity: '1.5.3' };
-const adapters = { claude: claudePlugins, codex: codexPlugins, antigravity: antigravityPlugins };
+
 function publicPlugin(c: PluginContext, p: PluginRecord, revisions: unknown[], supported: boolean) {
   if (!supported) p.actions = [];
   const id = pluginDigest([c.agent, p.selector, p.scope, p.root ? resourcePathKey(p.root) : '', p.config?.file]);
@@ -40,12 +37,13 @@ function publicMarket(c: PluginContext, m: PluginMarketplace, supported: boolean
   };
 }
 export async function readPluginInventory(c: PluginContext, operations: NativePluginOperation[] = []) {
-  const native = await adapters[c.agent](c),
-    result = await c.run(['--version']);
-  const supported =
-    result.exitCode === 0 && result.stdout.toString().match(/\b\d+\.\d+\.\d+\b/)?.[0] === versions[c.agent];
+  const adapter = pluginAdapter(c.agent);
+  const native = await adapter.read(c);
+  const result = await c.run(['--version']);
+  const version = result.stdout.toString().match(/\b\d+\.\d+\.\d+[\w.+-]*/)?.[0];
+  const supported = result.exitCode === 0 && version === adapter.version;
   for (const p of native.plugins) {
-    await enrichPlugin(p, c.agent);
+    await enrichPlugin(p, adapter.manifestFiles);
     publicPlugin(c, p, native.revisions, supported);
   }
   for (const m of native.marketplaces) publicMarket(c, m, supported);
@@ -60,16 +58,10 @@ export async function readPluginInventory(c: PluginContext, operations: NativePl
     entries: native.plugins.map((p) => p.entry!),
     marketplaces: native.marketplaces.map((m) => m.entry!),
     operations,
-    installScopes: [],
-    canAddMarketplace: supported,
+    installScopes:
+      supported && adapter.verbs.install ? adapter.installScopes.filter((scope) => c.project || scope === 'user') : [],
+    canAddMarketplace: supported && !!adapter.verbs['marketplace-add'],
     warnings: [...native.warnings, ...(!supported ? ['当前 CLI 版本未核实，操作已停用。'] : [])],
   };
-  if (c.agent === 'antigravity') catalog.canAddMarketplace = false;
-  catalog.installScopes = installScopes(c, supported);
   return { native, catalog };
-}
-
-function installScopes(c: PluginContext, supported: boolean): NativePluginCatalog['installScopes'] {
-  if (!supported) return [];
-  return c.agent === 'claude' && c.project ? ['user', 'project', 'local'] : ['user'];
 }

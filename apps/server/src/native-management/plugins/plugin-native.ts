@@ -9,15 +9,10 @@ import { NativeManagementError } from '../errors';
 import { editMcpToml } from '../mcp/mcp-toml';
 import { object, string, type PluginContext, type PluginRecord, type PluginMarketplace } from './plugin-types';
 import { jsonResult, safeName, validatePluginSource } from './plugin-utils';
+import { pluginAdapter } from './plugin-adapters';
 
-export async function enrichPlugin(plugin: PluginRecord, agent: PluginContext['agent']) {
+export async function enrichPlugin(plugin: PluginRecord, files: readonly string[]) {
   if (!plugin.root || !path.isAbsolute(plugin.root)) return;
-  const files =
-    agent === 'claude'
-      ? ['.claude-plugin/plugin.json']
-      : agent === 'codex'
-        ? ['.codex-plugin/plugin.json']
-        : ['plugin.json', '.antigravity-plugin/plugin.json'];
   for (const file of files) {
     const manifest = await readNativeConfigSource(path.join(plugin.root, file), 'managed');
     if (manifest.revision === 'missing') continue;
@@ -65,15 +60,12 @@ export async function pluginOptions(c: PluginContext, plugin: PluginRecord) {
 }
 async function validateNewSource(c: PluginContext, input: NativePluginPrepareInput) {
   if (!input.source || input.id) throw new NativeResourceError('invalid_request');
-  await validatePluginSource(input.source, input.action === 'install' && c.agent !== 'antigravity');
-  validateInstallScope(c, input);
-}
-function validateInstallScope(c: PluginContext, input: NativePluginPrepareInput) {
+  const adapter = pluginAdapter(c.agent);
   const scope = input.scope ?? 'user';
-  if (c.agent !== 'claude' && scope !== 'user') throw new NativeManagementError('unsupported_action');
-  if (scope !== 'user' && !c.project) throw new NativeResourceError('project_missing');
-  if (input.action === 'marketplace-add' && c.agent === 'antigravity')
+  if (!adapter.verbs[input.action] || !adapter.installScopes.includes(scope))
     throw new NativeManagementError('unsupported_action');
+  if (scope !== 'user' && !c.project) throw new NativeResourceError('project_missing');
+  await validatePluginSource(input.source, input.action === 'install' && adapter.installSelector);
 }
 function validateSelected(input: NativePluginPrepareInput, plugin?: PluginRecord, market?: PluginMarketplace) {
   if (input.source !== undefined || input.scope !== undefined) throw new NativeResourceError('invalid_request');
@@ -119,38 +111,37 @@ export async function writeCodexEnabled(plugin: PluginRecord, enabled: boolean) 
   });
 }
 type CommandTarget = { plugin?: PluginRecord; market?: PluginMarketplace; confirmation?: string };
-function marketplaceArguments(agent: PluginContext['agent'], input: NativePluginPrepareInput, target: CommandTarget) {
-  const action = input.action;
-  const verbs = {
-    'marketplace-add': 'add',
-    'marketplace-remove': 'remove',
-    'marketplace-refresh': agent === 'claude' ? 'update' : 'upgrade',
-  };
+function marketplaceArguments(
+  agent: PluginContext['agent'],
+  input: NativePluginPrepareInput,
+  target: CommandTarget,
+  verb: string,
+) {
   const scope = target.market?.scope ?? input.scope ?? 'user';
   return [
     'plugin',
     'marketplace',
-    verbs[action as keyof typeof verbs],
+    verb,
     target.market?.name ?? input.source!,
-    ...(agent === 'claude' && action !== 'marketplace-refresh' ? ['--scope', scope] : []),
+    ...(agent === 'claude' && input.action !== 'marketplace-refresh' ? ['--scope', scope] : []),
     '--json',
   ];
 }
 export function pluginArguments(c: PluginContext, input: NativePluginPrepareInput, options: CommandTarget = {}) {
-  const action = input.action,
-    target = options.plugin?.selector ?? input.source!;
-  if (action.startsWith('marketplace-')) return marketplaceArguments(c.agent, input, options);
-  if (action === 'validate') return ['plugin', 'validate', options.plugin!.root!, '--json'];
-  if (action === 'configure') return ['plugin', 'configure', target, '--json', '--values-stdin'];
-  if (c.agent === 'antigravity') return ['plugin', action, target];
-  if (c.agent === 'codex') return ['plugin', action === 'install' ? 'add' : 'remove', target, '--json'];
-  return claudeArguments(input, options, target);
+  const { action } = input;
+  const verb = pluginAdapter(c.agent).verbs[action];
+  if (!verb) throw new NativeManagementError('unsupported_action');
+  const target = options.plugin?.selector ?? input.source!;
+  if (action.startsWith('marketplace-')) return marketplaceArguments(c.agent, input, options, verb);
+  if (action === 'validate') return ['plugin', verb, options.plugin!.root!, '--json'];
+  if (action === 'configure') return ['plugin', verb, target, '--json', '--values-stdin'];
+  const args = ['plugin', verb, target];
+  if (c.agent === 'claude') return claudeArguments(args, input, options);
+  return c.agent === 'codex' ? [...args, '--json'] : args;
 }
-function claudeArguments(input: NativePluginPrepareInput, options: CommandTarget, target: string) {
+function claudeArguments(args: string[], input: NativePluginPrepareInput, options: CommandTarget) {
   return [
-    'plugin',
-    input.action,
-    target,
+    ...args,
     '--scope',
     options.plugin?.scope ?? input.scope ?? 'user',
     ...(input.action === 'uninstall' ? ['--keep-data'] : []),

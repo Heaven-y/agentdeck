@@ -2,11 +2,17 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { historyItems, reduceChat, type ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import {
+  historyItems,
+  reduceChat,
+  type ChatItem,
+} from '../../../../src/features/conversation/model/conversation-events';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
-import { averageTokenRate } from '../../../../src/features/chat/state/chat-metrics';
+import { averageTokenRate } from '../../../../src/features/conversation/model/chat-metrics';
 import { filterTrajectory, projectTrajectory } from '../../../../src/features/conversation/trajectory/trajectory-model';
-import { TrajectoryContent, TrajectoryView } from '../../../../src/features/conversation/trajectory/TrajectoryView';
+import { LiveTrajectory } from '../../../../src/features/chat/timeline/LiveTrajectory';
+import { LiveConversationSurface } from '../../../../src/features/chat/timeline/LiveConversationSurface';
+import { TrajectoryView } from '../../../../src/features/conversation/trajectory/TrajectoryView';
 import { StatisticsLine } from '../../../../src/features/conversation/timeline/StatisticsLine';
 import { ComposerStatus } from '../../../../src/features/chat/composer/ComposerStatus';
 import { ConversationSidebar } from '../../../../src/app/sidebar/ConversationSidebar';
@@ -64,7 +70,7 @@ it('独立子代理轨迹只选择自己的步骤，不读取父上下文或改�
   });
   const inspect = vi.fn();
   render(
-    <TrajectoryContent
+    <TrajectoryView
       items={[{ kind: 'assistant', id: 'child-step', text: '子代理回复', streaming: false }]}
       running={false}
       inspect={inspect}
@@ -157,7 +163,9 @@ function Fixture() {
   const items = useChat((state) => state.items);
   return (
     <>
-      <TrajectoryView items={items} running />
+      <LiveConversationSurface>
+        <LiveTrajectory items={items} running />
+      </LiveConversationSurface>
       {dock.open && <ConversationSidebar open close={dock.hide} settings={() => undefined} />}
     </>
   );

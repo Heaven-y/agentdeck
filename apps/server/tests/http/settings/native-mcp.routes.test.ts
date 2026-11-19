@@ -5,7 +5,10 @@ import { registerNativeMcpRoutes } from '../../../src/http/settings/native-mcp.r
 import { createNativeMcpService } from '../../../src/native-management/mcp/mcp-service';
 import { createMcpControlService } from '../../../src/native-management/mcp/mcp-control-service';
 import { McpRuntimeRegistry } from '../../../src/native-management/mcp/mcp-runtime';
-import { createWorkspaceActivity } from '../../../src/workspaces/activity';
+import { createWorkspaceActivity, WorkspaceBusyError } from '../../../src/workspaces/activity';
+import { createNativeManagementAccess } from '../../../src/native-management/access';
+import { createCliActivity } from '../../../src/bootstrap/cli-activity';
+import { mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 const apps: FastifyInstance[] = [];
@@ -97,4 +100,90 @@ it('所选实例 GET 按实际目录列配置，写请求不能借 instanceId �
   expect(response.json()).toMatchObject({ instanceId, instances: [{ instanceId, cwd, sessionId: 'child-session' }] });
   const rejected = await app.inject({ method: 'POST', url: base.replace('/mcp?', '/mcp/save?'), headers, payload: {} });
   expect(rejected.statusCode).toBe(400);
+});
+
+it.each([
+  { endpoint: 'save', reason: '换目录', status: 409, code: 'revision_conflict' },
+  { endpoint: 'change', reason: '换目录', status: 409, code: 'revision_conflict' },
+  { endpoint: 'change', reason: '移除项目', status: 404, code: 'project_missing' },
+])('MCP $endpoint 在租约内复核项目：$reason 后不写任何目录', async ({ endpoint, reason, status, code }) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'mcp-http-lease-'));
+  const original = { id: 'demo', name: '合成项目', dir: path.join(root, 'old') };
+  const replacement = { ...original, dir: path.join(root, 'new') };
+  const oldFile = path.join(original.dir, '.mcp.json');
+  const newFile = path.join(replacement.dir, '.mcp.json');
+  await mkdir(original.dir);
+  await mkdir(replacement.dir);
+  try {
+    const content = JSON.stringify({ mcpServers: { demo: { command: 'node' } } });
+    await writeFile(oldFile, content);
+    await writeFile(newFile, content);
+    let current: typeof original | undefined = original;
+    const workspace = createWorkspaceActivity();
+    const store = {
+      get: async () => {
+        if (current !== original) expect(() => workspace.acquire(original.id)()).toThrow(WorkspaceBusyError);
+        return current;
+      },
+    };
+    const access = createNativeManagementAccess({
+      native: createCliActivity(),
+      workspace,
+      withIdleAgent: async (_agent, operation) => {
+        // 路由已读取旧目录，项目写租约尚未取得：此时换目录或移除先赢。
+        await workspace.withIdle(original.id, async () => {
+          current = reason === '换目录' ? replacement : undefined;
+        });
+        return operation();
+      },
+    });
+    const onChanged = vi.fn();
+    const service = createNativeMcpService({
+      access,
+      homeDir: root,
+      env: { ProgramFiles: root },
+      plugins: async () => [],
+      onChanged,
+    });
+    const controls = createMcpControlService({
+      service,
+      access,
+      registry: new McpRuntimeRegistry(),
+      workspace: { acquire: workspace.acquire, get: store.get },
+    });
+    const entry = (await service.readMcp('claude', original)).entries[0]!;
+    const payload =
+      endpoint === 'save'
+        ? {
+            id: entry.id,
+            sourceId: entry.sourceId,
+            revision: entry.revision,
+            name: entry.name,
+            config: { transport: 'stdio', command: 'new-node' },
+          }
+        : { id: entry.id, revision: entry.revision, action: 'delete' };
+    const app = await buildApp({
+      token: 'test-token',
+      port: 4317,
+      routes: (app) => registerNativeMcpRoutes(app, { service, controls, store }),
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/native-management/claude/mcp/' + endpoint + '?projectId=demo',
+      headers: { host: '127.0.0.1:4317', origin: 'http://127.0.0.1:4317', cookie: 'AGENTDECK_session=test-token' },
+      payload,
+    });
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toMatchObject({ code });
+    expect(await readFile(oldFile, 'utf8')).toBe(content);
+    expect(await readFile(newFile, 'utf8')).toBe(content);
+    expect(onChanged).not.toHaveBeenCalled();
+  } finally {
+    await rm(oldFile, { force: true });
+    await rm(newFile, { force: true });
+    await rmdir(original.dir);
+    await rmdir(replacement.dir);
+    await rmdir(root);
+  }
 });

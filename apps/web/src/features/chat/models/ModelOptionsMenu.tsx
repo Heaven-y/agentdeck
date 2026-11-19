@@ -4,8 +4,9 @@ import { ClaudeContextChoices } from '../../../cli/claude/ContextChoices';
 import { ApiError } from '../../../lib/http';
 import { projectsKeys } from '../../projects/api';
 import { Menu, MenuButton, MenuGroup, MenuItem, MenuProvider, MenuSeparator, useMenuStore } from '@ariakit/react';
-import { Brain, ChevronDown, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight, Gauge, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AGENT_KINDS, type AgentCapabilities, type AgentKind } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
@@ -16,8 +17,12 @@ import { agentUnavailable, useEnvironment } from '../../settings/environment/use
 import { sessionActionKey, useChat } from '../state/chat-store';
 import { useAgentCapabilities } from '../controls/use-agent-capabilities';
 import { AgentIcon } from '../../../ui/BrandIcons';
+import { nativeCapabilitiesGeneration } from '../../../cli/shared/capability-cache';
+import { OfficialUsageDialog, useOfficialUsage } from './OfficialUsageDialog';
 import { ManualModelDialog } from './ManualModelDialog';
+import { modelVisibilityKey } from '../../../cli/shared/model-visibility';
 import { findModel, modelDisplay } from '../../../cli/shared/model-identity';
+import { ANTIGRAVITY_CONNECTION_LABELS } from '../../../cli/antigravity/model-policy';
 import { configuredModelEffort, modelEfforts } from '../../../cli/model-capabilities';
 import { ModelCandidateLabel } from './ModelCandidateLabel';
 import { ModelSearchDialog } from './ModelSearchDialog';
@@ -40,11 +45,29 @@ function CatalogStatus({ catalog }: { catalog: ReturnType<typeof useAgentCapabil
         {catalog.error instanceof ApiError ? catalog.error.message : '暂时无法读取模型。'}
       </p>
     );
-  const data = catalog.data;
-  if (!data || data.discovered === false) return null;
-  const warning = data.modelWarning ?? data.warnings[0];
+  const warning = catalogWarning(catalog.data);
   if (warning) return <p className="px-3 py-1 text-xs leading-5 text-warning">{warning}</p>;
   return null;
+}
+function catalogWarning(data?: AgentCapabilities) {
+  if (data?.agent === 'antigravity' && !data.antigravityConnection)
+    return data.modelWarning || '无法确认当前的 AGY 连接方式，请核对原生配置。';
+  return data?.discovered ? (data.modelWarning ?? data.warnings[0]) : undefined;
+}
+function useModelVisibility(catalog?: AgentCapabilities) {
+  return useChat((state) => {
+    const key = modelVisibilityKey(state.agent, catalog?.antigravityConnection);
+    return key ? state.defaults.modelVisibility?.[key] : undefined;
+  });
+}
+function ModelVisibilityNotice({ hidden }: { hidden: number }) {
+  if (hidden < 1) return null;
+  return (
+    <p role="status" className="px-3 py-2 text-xs leading-5 text-muted-foreground">
+      已按保存的显示范围筛选，还有 {hidden} 个模型未显示。到设置 → 模型 → 当前 CLI
+      的「对话菜单中的模型」恢复全部模型，再保存配置。
+    </p>
+  );
 }
 function RefreshModels({ catalog, disabled }: { catalog: ReturnType<typeof useAgentCapabilities>; disabled: boolean }) {
   return (
@@ -196,6 +219,9 @@ function ModelActions({ disabled, model, onManual }: { disabled: boolean; model:
     </MenuProvider>
   );
 }
+function modelHeading(connection?: AgentCapabilities['antigravityConnection']) {
+  return connection ? `模型 · ${ANTIGRAVITY_CONNECTION_LABELS[connection]}` : '模型';
+}
 function ModelChoices({
   disabled,
   catalog,
@@ -220,12 +246,17 @@ function ModelChoices({
   const effort = useChat((state) => state.reasoningEfforts[state.agent]);
   const setEffort = useChat((state) => state.setReasoningEffort);
   const models = catalog.data?.models ?? [];
-  const visible = useChat((state) => state.defaults.modelVisibility?.[state.agent]);
+  const visible = useModelVisibility(catalog.data);
   const candidates = modelCandidates(models, currentModel, visible, { agent, origin });
+  const connection = catalog.data?.antigravityConnection;
+  const modelTitle = modelHeading(connection);
+  const hidden = visible
+    ? modelCandidates(models, currentModel, undefined, { agent, origin }).length - candidates.length
+    : 0;
   return (
     <>
       <MenuGroup aria-label="可选模型">
-        <p className="px-3 py-2 text-xs text-muted-foreground">模型</p>
+        <p className="px-3 py-2 text-xs text-muted-foreground">{modelTitle}</p>
         {candidates.slice(0, 20).map((candidate) => (
           <Choice
             key={candidate.id}
@@ -243,6 +274,7 @@ function ModelChoices({
         </MenuItem>
       )}
       <CatalogStatus catalog={catalog} />
+      <ModelVisibilityNotice hidden={hidden} />
       {agent === 'claude' && (
         <ClaudeContextChoices
           disabled={disabled}
@@ -340,7 +372,12 @@ function EffortControls({
         <ChevronDown aria-hidden className="size-3.5 shrink-0" />
       </MenuButton>
       <Menu store={store} portal unmountOnHide gutter={8} aria-label="推理强度菜单" className={menuClass}>
-        <EffortChoices disabled={disabled} efforts={efforts} effort={effort} defaultEffort={defaultEffort} />
+        <EffortChoices
+          disabled={modelChoicesDisabled(disabled, catalog)}
+          efforts={efforts}
+          effort={effort}
+          defaultEffort={defaultEffort}
+        />
         {!efforts.length && <CatalogStatus catalog={catalog} />}
       </Menu>
     </>
@@ -348,6 +385,27 @@ function EffortControls({
 }
 
 /** 模型菜单只表达下一轮选择，不把候选或覆盖值冒充实际模型报告。 */
+function setModelMenuOpen(open: boolean, setOpen: (open: boolean) => void, catalog: CatalogProps['catalog']) {
+  // 另一个窗口可能切了 AGY 连接；旧目录只向本机复核，不强制重新发现或读取额度。
+  if (open && hasAntigravitySnapshot(catalog)) void catalog.refetch();
+  setOpen(open);
+}
+
+function hasAntigravitySnapshot(catalog: CatalogProps['catalog']) {
+  return catalog.data?.agent === 'antigravity';
+}
+
+function modelChoicesDisabled(disabled: boolean, catalog: CatalogProps['catalog']) {
+  return disabled || (hasAntigravitySnapshot(catalog) && catalog.isRefetching);
+}
+
+function useMenuOfficialUsage(agent: AgentKind, catalog?: AgentCapabilities) {
+  const workspace = useChat((state) => state.workspaceId);
+  const available = agent === 'antigravity' && catalog?.antigravityConnection === 'account';
+  const scope = available ? JSON.stringify([workspace, nativeCapabilitiesGeneration(agent)]) : undefined;
+  return { available, ...useOfficialUsage(scope) };
+}
+
 export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [modelOpen, setModelOpen] = useState(false);
@@ -360,16 +418,25 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
   };
   const [repairProject, setRepairProject] = useState<Workspace>();
   const client = useQueryClient();
-  const modelMenu = useMenuStore({ open: modelOpen, setOpen: setModelOpen, placement: 'top-end' });
-  const effortMenu = useMenuStore({ open: effortOpen, setOpen: setEffortOpen, placement: 'top-end' });
   const agent = useChat((state) => state.agent);
   const model = useChat((state) => state.modelOverrides[state.agent]);
   // 选中会话即读本地缓存；只有首次打开菜单且无缓存时才向 CLI 发现。
   const catalog = useAgentCapabilities(true, modelOpen || effortOpen);
+  const modelMenu = useMenuStore({
+    open: modelOpen,
+    setOpen: (open) => setModelMenuOpen(open, setModelOpen, catalog),
+    placement: 'top-end',
+  });
+  const effortMenu = useMenuStore({
+    open: effortOpen,
+    setOpen: (open) => setModelMenuOpen(open, setEffortOpen, catalog),
+    placement: 'top-end',
+  });
+  const usage = useMenuOfficialUsage(agent, catalog.data);
   const presentation = useModelPresentation(model, catalog.data, catalog.isFetching);
   const setModel = useChat((state) => state.setModel);
   const models = catalog.data?.models ?? [];
-  const visible = useChat((state) => state.defaults.modelVisibility?.[state.agent]);
+  const visible = useModelVisibility(catalog.data);
   return (
     <>
       <MenuButton
@@ -393,8 +460,14 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
       />
       <Menu store={modelMenu} portal unmountOnHide gutter={8} aria-label="模型选项菜单" className={menuClass}>
         <AgentChoices disabled={disabled} />
+        {usage.available && (
+          <MenuItem className={itemClass} disabled={modelChoicesDisabled(disabled, catalog)} onClick={usage.read}>
+            <Gauge aria-hidden className="size-3.5" />
+            查看官方额度
+          </MenuItem>
+        )}
         <ModelChoices
-          disabled={disabled}
+          disabled={modelChoicesDisabled(disabled, catalog)}
           catalog={catalog}
           model={model}
           currentModel={presentation.id}
@@ -410,6 +483,7 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
           }}
         />
       </Menu>
+      {usage.view && <OfficialUsageDialog view={usage.view} read={usage.read} close={usage.close} />}
       {manual && (
         <ManualModelDialog
           model={model}
@@ -433,9 +507,15 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
           close={closeSearch}
         />
       )}
-      {repairProject && (
-        <ProjectManageDialog project={repairProject} action="directory" onClose={() => setRepairProject(undefined)} />
-      )}
+      {repairProject &&
+        createPortal(
+          <ProjectManageDialog
+            project={repairProject}
+            action="directory"
+            onClose={() => setRepairProject(undefined)}
+          />,
+          document.body,
+        )}
     </>
   );
 }

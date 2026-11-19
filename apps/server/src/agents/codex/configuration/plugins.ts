@@ -116,7 +116,7 @@ async function plugin(
         ? installed.manifest.data.version
         : null,
     enabled: typeof record.enabled === 'boolean' ? record.enabled : null,
-    description: installed.manifest ? string(installed.manifest.data.description) : '',
+    description: installed.manifest ? string(installed.manifest.data.description).slice(0, 4096) : '',
     config,
     raw: [record, config.revision, installed.roots, installed.manifest?.revision, policy],
     actions: allowed ? ['enable', 'disable', ...(config.scope === 'user' ? ['uninstall' as const] : [])] : [],

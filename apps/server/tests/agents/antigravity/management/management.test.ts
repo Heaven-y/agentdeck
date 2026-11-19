@@ -72,11 +72,11 @@ it('历史读取在身份校验后补齐原生分页，空页不冒充完整历�
   const result = await f.service.readTrajectory!('source', dir);
   expect(result.trajectory.steps).toHaveLength(2);
   expect(result.trajectory.generatorMetadata).toEqual([]);
-  expect(f.request).toHaveBeenLastCalledWith('GetCascadeTrajectorySteps', {
-    cascadeId: 'source',
-    stepOffset: 1,
-    trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
-  });
+  expect(f.request).toHaveBeenLastCalledWith(
+    'GetCascadeTrajectorySteps',
+    { cascadeId: 'source', stepOffset: 1, trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' },
+    'history',
+  );
   expect(f.close).toHaveBeenCalledOnce();
   f.request.mockResolvedValueOnce({ ...detail(), numTotalSteps: 2 }).mockResolvedValueOnce({ steps: [] });
   await expect(f.service.readTrajectory!('source', dir)).rejects.toMatchObject({ code: 'session_history_incomplete' });

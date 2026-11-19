@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { RunStatus } from '../../../../src/features/chat/runtime/RunStatus';
 import { ToolCard } from '../../../../src/features/conversation/timeline/ToolCard';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
-import type { ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import type { ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 
 const user: ChatItem = { kind: 'user', id: 'u', text: '检查示例' };
 beforeEach(() => {

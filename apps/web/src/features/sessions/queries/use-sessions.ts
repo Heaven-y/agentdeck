@@ -5,7 +5,8 @@ import { sessionsApi, sessionsKeys } from '../api';
 import { useQuery } from '@tanstack/react-query';
 import type { AgentKind, SessionHistory, SessionRef } from '@agentdeck/shared/conversation';
 
-import type { SessionHistoryFailure } from '../history/SessionTimeline';
+/** 历史读取的失败分类：由 use-sessions 从接口错误码推导，界面只负责各说各话。 */
+export type SessionHistoryFailure = { kind: 'not-replayable' | 'missing' | 'network' | 'failed'; message: string };
 
 /** 项目会话列表：与左栏、对话区共用同一个缓存键，切项目不重复取。 */
 export function sessionListQuery(projectId: string, agent: AgentKind) {

@@ -77,7 +77,29 @@ it('Codex 只提交已发现绝对路径，重读同 cwd 证明生效；原生�
         : { data: [{ cwd, skills: [{ name: 'demo', path: file, scope: 'repo', enabled: false }], errors: [] }] },
     );
     await expect(skills.write(cwd, file, true)).rejects.toMatchObject({ code: 'result_unconfirmed' });
-    expect(client.close).toHaveBeenCalledTimes(3);
+    request.mockImplementation(async () => ({
+      data: [{ cwd, skills: [{ name: 'demo', path: file, scope: 'repo', enabled: true, source: { type: 'plugin' } }] }],
+    }));
+    request.mockClear();
+    await expect(skills.write(cwd, file, false)).rejects.toMatchObject({ code: 'unsupported_action' });
+    expect(request.mock.calls.map(([method]) => method)).toEqual(['skills/list']);
+    request
+      .mockResolvedValueOnce({ data: [{ cwd, skills: [{ path: file, scope: 'repo', enabled: true }] }] })
+      .mockResolvedValueOnce({ effectiveEnabled: false })
+      .mockRejectedValueOnce(new Error('目录暂不可读'));
+    await expect(skills.write(cwd, file, false)).rejects.toMatchObject({ code: 'result_unconfirmed' });
+    const owned = { name: 'demo', path: file, scope: 'repo', enabled: true };
+    const alias = `${path.dirname(file)}${path.sep}.${path.sep}SKILL.md`;
+    request.mockClear();
+    request.mockResolvedValueOnce({ data: [{ cwd, skills: [owned, { ...owned, path: alias, scope: 'admin' }] }] });
+    await expect(skills.write(cwd, file, false)).rejects.toMatchObject({ code: 'unsupported_action' });
+    expect(request.mock.calls.map(([method]) => method)).toEqual(['skills/list']);
+    request
+      .mockResolvedValueOnce({ data: [{ cwd, skills: [owned] }] })
+      .mockResolvedValueOnce({ effectiveEnabled: false })
+      .mockResolvedValueOnce({ data: [{ cwd, skills: [{ ...owned, scope: 'user', enabled: false }] }] });
+    await expect(skills.write(cwd, file, false)).rejects.toMatchObject({ code: 'result_unconfirmed' });
+    expect(client.close).toHaveBeenCalledTimes(7);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

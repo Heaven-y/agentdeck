@@ -1,9 +1,10 @@
 ﻿// @vitest-environment jsdom
 import { ApiError } from '../../../../src/lib/http';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { NativeModelSettingsDocument } from '@agentdeck/shared/settings';
 import ProductSettingsDialog from '../../../../src/features/settings/navigation/ProductSettingsDialog';
+import { useModelSettings } from '../../../../src/features/settings/models/use-model-settings';
 import { modelSettingsApi } from '../../../../src/features/settings/models/model-settings-api';
 import { queryClient } from '../../../../src/lib/query-client';
 
@@ -117,6 +118,30 @@ it.each(['claude', 'codex', 'antigravity'] as const)('%s 保存后可读取密�
   fireEvent.click(screen.getByRole('button', { name: '隐藏API Key' }));
   expect(savedSecret.value).toBe('');
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-saved-key');
+});
+
+it('保存切换 AGY 官方连接后，不再显示 API Key 模式的目录错误', async () => {
+  const provider = { key: 'modelProvider', label: '连接方式', value: 'gemini', group: 'connection' } as const;
+  const initial = { ...document, agent: 'antigravity' as const, fields: [provider] };
+  vi.mocked(modelSettingsApi.read).mockResolvedValue(initial);
+  vi.mocked(modelSettingsApi.save).mockResolvedValue({ ...initial, fields: [{ ...provider, value: '' }] });
+  vi.mocked(modelSettingsApi.refreshCatalog).mockResolvedValue({
+    agent: 'antigravity',
+    antigravityConnection: 'gemini',
+    models: [],
+    entries: [],
+    warnings: [],
+    modelWarning: '请填写 API Key',
+  });
+  const { result } = renderHook(() => useModelSettings('antigravity'));
+  await waitFor(() => expect(result.current.document).toEqual(initial));
+  await act(() => result.current.fetchModels());
+  expect(result.current.modelsError).toBe('请填写 API Key');
+  act(() => result.current.change(provider, ''));
+  await act(async () => {
+    await result.current.save();
+  });
+  expect(result.current.modelsError).toBe('');
 });
 
 it('AGY 设置列表合并已确认的同名原生别名，选择当前 High 不改写已有值', async () => {

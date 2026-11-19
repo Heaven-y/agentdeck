@@ -2,16 +2,13 @@ import {
   ChatAttachmentSchema,
   type AttachmentRef,
   type NativeInteractionFeatures,
-  type NativeMediaLocator,
 } from '@agentdeck/shared/conversation';
 import type { ChatIdentity } from '../../../lib/ws';
 import { ApiError } from '../../../lib/http';
 import type { ConversationView } from '../state/chat-state';
-type View = Pick<
-  ConversationView,
-  'workspaceId' | 'agent' | 'conversationId' | 'sessionId' | 'modelOverrides' | 'permission'
->;
-export function attachmentQuery(view: View): URLSearchParams {
+type AttachmentScope = Pick<ConversationView, 'workspaceId' | 'agent' | 'conversationId' | 'sessionId'>;
+type InputView = AttachmentScope & Pick<ConversationView, 'modelOverrides' | 'permission'>;
+export function attachmentQuery(view: AttachmentScope): URLSearchParams {
   const query = new URLSearchParams({ agent: view.agent, conversationId: view.conversationId });
   if (view.sessionId) query.set('sessionId', view.sessionId);
   return query;
@@ -27,7 +24,7 @@ async function call(url: string, identity: ChatIdentity, init: RequestInit = {})
   }
   return response;
 }
-const base = (view: View) => `/api/workspaces/${encodeURIComponent(view.workspaceId ?? '')}`;
+const base = (view: AttachmentScope) => `/api/workspaces/${encodeURIComponent(view.workspaceId ?? '')}`;
 export const attachmentApi = {
   async verifyImage(file: File): Promise<void> {
     const url = URL.createObjectURL(file),
@@ -42,7 +39,7 @@ export const attachmentApi = {
       URL.revokeObjectURL(url);
     }
   },
-  async features(view: View, identity: ChatIdentity): Promise<NativeInteractionFeatures> {
+  async features(view: InputView, identity: ChatIdentity): Promise<NativeInteractionFeatures> {
     const query = attachmentQuery(view);
     const model = view.modelOverrides[view.agent];
     if (model) query.set('model', model);
@@ -51,7 +48,7 @@ export const attachmentApi = {
       await call(`${base(view)}/chat-input-capabilities?${query}`, identity, { method: 'POST' })
     ).json()) as NativeInteractionFeatures;
   },
-  async upload(view: View, identity: ChatIdentity, file: File, signal?: AbortSignal) {
+  async upload(view: AttachmentScope, identity: ChatIdentity, file: File, signal?: AbortSignal) {
     const query = attachmentQuery(view);
     query.set('name', file.name);
     query.set('mimeType', file.type || 'application/octet-stream');
@@ -66,28 +63,19 @@ export const attachmentApi = {
       ).json(),
     );
   },
-  async preview(view: View, identity: ChatIdentity, ref: AttachmentRef, signal?: AbortSignal): Promise<Blob> {
+  async preview(
+    view: AttachmentScope,
+    identity: ChatIdentity,
+    ref: AttachmentRef,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
     const query = attachmentQuery(view);
     query.set('revision', ref.revision);
     return (
       await call(`${base(view)}/chat-attachments/${encodeURIComponent(ref.id)}?${query}`, identity, { signal })
     ).blob();
   },
-  async nativeMedia(view: View, locator: NativeMediaLocator, signal?: AbortSignal): Promise<Blob> {
-    const query = new URLSearchParams({
-      agent: view.agent,
-      messageId: locator.messageId,
-      index: String(locator.index),
-      kind: locator.kind,
-    });
-    if (locator.subagentId) query.set('subagentId', locator.subagentId);
-    const response = await fetch(`${base(view)}/sessions/${encodeURIComponent(locator.sessionId)}/media?${query}`, {
-      signal,
-    });
-    if (!response.ok) throw new Error('这张原生图片当前不可读取。');
-    return response.blob();
-  },
-  async remove(view: View, identity: ChatIdentity, ref: AttachmentRef): Promise<void> {
+  async remove(view: AttachmentScope, identity: ChatIdentity, ref: AttachmentRef): Promise<void> {
     const query = attachmentQuery(view);
     query.set('revision', ref.revision);
     await call(`${base(view)}/chat-attachments/${encodeURIComponent(ref.id)}?${query}`, identity, { method: 'DELETE' });

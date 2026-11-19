@@ -1,10 +1,11 @@
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import type { AgentModel, AntigravityConnection } from '@agentdeck/shared/conversation';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { readConfigFile } from '../../../platform/files/safe-file';
-import { parseModelConfig } from '../../common/configuration/fields';
+import { parseModelConfig, type ConfigObject } from '../../common/configuration/fields';
 import { antigravityModelId, assertAntigravitySelection, selectedAntigravityModel } from '../configuration/identity';
 
+type Options = { homeDir?: string; env?: NodeJS.ProcessEnv };
 type CustomModel = { modelName: string; label?: string; maxTokens?: number };
 export type AntigravityModelSettings = {
   model?: string;
@@ -29,11 +30,7 @@ function customModels(value: unknown): Record<string, CustomModel> {
   return result;
 }
 
-/** 仅读取模型白名单；复制到隔离发现目录时不带入 MCP、插件、Hooks 或认证。 */
-export async function readAntigravityModelSettings(
-  options: { homeDir?: string; env?: NodeJS.ProcessEnv } = {},
-): Promise<AntigravityModelSettings> {
-  const config = await readAntigravityModelConfig(options);
+function modelSettings(config: ConfigObject): AntigravityModelSettings {
   return {
     model: text(config.model) || undefined,
     modelProvider: text(config.modelProvider) || undefined,
@@ -41,8 +38,29 @@ export async function readAntigravityModelSettings(
   };
 }
 
+function connectionFor(value: unknown): AntigravityConnection | undefined {
+  if (value === undefined || (typeof value === 'string' && !value.trim())) return 'account';
+  return text(value) === 'gemini' ? 'gemini' : undefined;
+}
+
+/** 仅读取模型白名单；复制到隔离发现目录时不带入 MCP、插件、Hooks 或认证。 */
+export async function readAntigravityModelSettings(options: Options = {}) {
+  return modelSettings(await readAntigravityModelConfig(options));
+}
+
+/** 发现使用同一份设置快照判定身份，不把内部身份复制到隔离的原生配置。 */
+export async function readAntigravityModelCatalogSettings(options: Options) {
+  const config = await readAntigravityModelConfig(options);
+  return { settings: modelSettings(config), connection: connectionFor(config.modelProvider) };
+}
+
+/** 本机只读，供命中目录缓存使用，不启动 CLI 或解析认证材料。 */
+export async function readAntigravityConnection(options: Options = {}): Promise<AntigravityConnection | undefined> {
+  return connectionFor((await readAntigravityModelConfig(options)).modelProvider);
+}
+
 /** 启动时保留额外模型参数参与冲突检查；不得将此原文返回前端或写进日志。 */
-export async function readAntigravityModelConfig(options: { homeDir?: string; env?: NodeJS.ProcessEnv } = {}) {
+export async function readAntigravityModelConfig(options: Options = {}) {
   const env = options.env ?? process.env;
   const home = options.homeDir ?? (process.platform === 'win32' ? env.USERPROFILE : env.HOME) ?? homedir();
   const { content } = await readConfigFile(path.join(home, '.gemini', 'antigravity-cli', 'settings.json'));

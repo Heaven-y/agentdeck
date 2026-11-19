@@ -1,7 +1,7 @@
-import type { ChatItem } from '../../chat/state/chat-reducer';
+import type { ChatItem } from '../model/conversation-events';
 import { shortToolName, toolDisplayName, toolPrimaryArgument } from '../timeline/tool-presentation';
 import { activityStatus } from '../timeline/activity-presentation';
-import { tokenFields, formatTokens } from '../../chat/state/chat-metrics';
+import { tokenFields, formatTokens } from '../model/chat-metrics';
 
 export type TrajectoryItem = Exclude<ChatItem, { kind: 'fork-point' }>;
 export type TrajectoryRow =

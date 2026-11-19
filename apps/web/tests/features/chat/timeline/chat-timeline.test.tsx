@@ -2,8 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { forwardRef, StrictMode, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ChatTimeline } from '../../../../src/features/chat/timeline/ChatTimeline';
-import { historyItems, type ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import { LiveConversationSurface } from '../../../../src/features/chat/timeline/LiveConversationSurface';
+import { RecordedConversationSurface } from '../../../../src/features/sessions/history/RecordedConversationSurface';
+import { ConversationTimeline } from '../../../../src/features/conversation/timeline/ConversationTimeline';
+import { historyItems, type ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
 
 const host: {
@@ -51,7 +53,7 @@ it('结果未确认只留在过程详情，两轮回复不插入红条且普通�
     { type: 'error', message: '本轮明确错误' },
   ]);
   expect(items.filter((item) => item.kind === 'turn-status')).toHaveLength(2);
-  render(<ChatTimeline items={items} running={false} />);
+  render(<ConversationTimeline items={items} running={false} />);
   expect(screen.getByText('第一条回复')).toBeTruthy();
   expect(screen.getByText('第二条回复')).toBeTruthy();
   expect(screen.queryByText(/原生结果包含无法确认归属的错误/)).toBeNull();
@@ -63,13 +65,18 @@ it('只读错误关闭后虚拟列表重新挂载仍隐藏，且不影响主会�
   const parent = [{ kind: 'error' as const, id: 'error-0', message: '主会话错误' }];
   const child: ChatItem = { kind: 'error', id: 'error-0', message: '只读错误' };
   useChat.setState({ items: parent });
-  const view = render(<ChatTimeline items={[child]} running={false} />);
+  const timeline = (items: ChatItem[]) => (
+    <RecordedConversationSurface>
+      <ConversationTimeline items={items} running={false} />
+    </RecordedConversationSurface>
+  );
+  const view = render(timeline([child]));
 
   fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
   expect(screen.queryByText('只读错误')).toBeNull();
   expect(useChat.getState().items).toEqual(parent);
-  view.rerender(<ChatTimeline items={[]} running={false} />);
-  view.rerender(<ChatTimeline items={[child]} running={false} />);
+  view.rerender(timeline([]));
+  view.rerender(timeline([{ ...child }]));
   expect(screen.queryByText('只读错误')).toBeNull();
 });
 
@@ -84,7 +91,11 @@ it('会话切换后关闭当前错误，不影响后台会话的同编号错误'
 
   function CurrentTimeline() {
     const items = useChat((state) => state.items);
-    return <ChatTimeline items={items} running={false} />;
+    return (
+      <LiveConversationSurface>
+        <ConversationTimeline items={items} running={false} />
+      </LiveConversationSurface>
+    );
   }
   render(<CurrentTimeline />);
   fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
@@ -104,7 +115,7 @@ it('严格模式下按实际视口高亮消息，不把上方预渲染条目当�
   });
   render(
     <StrictMode>
-      <ChatTimeline
+      <ConversationTimeline
         running={false}
         items={[
           { kind: 'user', id: 'one', text: '屏幕上方的问题' },
@@ -133,20 +144,23 @@ it('用户刻度按工具合并后的真实行定位，主动跳转期间不被�
     { kind: 'user', id: 'u2', text: '再运行示例' },
     { kind: 'assistant', id: 'a2', text: '执行中', streaming: true },
   ];
-  const view = render(<ChatTimeline items={items} running />);
+  const view = render(<ConversationTimeline items={items} running />);
   const navigation = within(screen.getByRole('navigation', { name: '用户消息导航' }));
   fireEvent.click(navigation.getByRole('button', { name: '跳转到第 2 条消息：再运行示例' }));
   expect(host.scroll).toHaveBeenLastCalledWith({ index: 3, align: 'start', behavior: 'auto' });
   host.follow.mockClear();
   view.rerender(
-    <ChatTimeline items={[...items, { kind: 'assistant', id: 'a3', text: '更多输出', streaming: true }]} running />,
+    <ConversationTimeline
+      items={[...items, { kind: 'assistant', id: 'a3', text: '更多输出', streaming: true }]}
+      running
+    />,
   );
   expect(host.follow).not.toHaveBeenCalled();
   expect((host.props.followOutput as (bottom: boolean) => unknown)(true)).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '回到底部' }));
   expect(host.scroll).toHaveBeenLastCalledWith({ index: 'LAST', align: 'end', behavior: 'auto' });
   act(() => (host.props.atBottomStateChange as (bottom: boolean) => void)(true));
-  view.rerender(<ChatTimeline items={[...items]} running />);
+  view.rerender(<ConversationTimeline items={[...items]} running />);
   expect(host.follow).toHaveBeenCalledOnce();
   // 当前键盘索引滚出刻度的虚拟窗口后，仍有可见的 Tab 入口。
   act(() => {

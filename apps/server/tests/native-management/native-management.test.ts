@@ -3,10 +3,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createNativeManagementService } from '../../src/native-management/skills/service';
+import { skillAdapters } from '../../src/native-management/skills/adapters';
 import type { NativeSkill } from '../../src/native-management/skills/types';
+import { verifiedSkillVersion } from '../../src/native-management/version';
 import { NativeManagementError } from '../../src/native-management/errors';
 import { createNativeResourcesService } from '../../src/settings/resources/native-resources';
 import { claudeSkillsFromPlugins } from '../../src/agents/claude/configuration/skills';
+
+it('预发行版不是已核实的稳定版，不能开启 Skills 结构化写入', async () => {
+  const ctx = { agent: 'antigravity' as const, homeDir: os.tmpdir(), env: process.env };
+  const resolve = (output: string) => () => ({
+    command: process.execPath,
+    args: ['-e', `process.stdout.write(${JSON.stringify(output)})`, '--'],
+  });
+  await expect(verifiedSkillVersion(ctx, '1.5.3', resolve('1.5.3'))).resolves.toBe(true);
+  await expect(verifiedSkillVersion(ctx, '1.5.3', resolve('1.5.3-beta.1'))).resolves.toBe(false);
+});
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -19,20 +31,30 @@ async function fixture() {
   await mkdir(project.dir);
   const native = vi.fn(async (): Promise<NativeSkill[]> => []);
   const changed = vi.fn(async () => {});
-  const service = createNativeManagementService({ homeDir, env: {}, nativeSkills: native, onChanged: changed });
+  const reads = { readNative: native, verifyVersion: async () => true };
+  const adapters = {
+    claude: { ...skillAdapters.claude, ...reads },
+    codex: { ...skillAdapters.codex, ...reads },
+    antigravity: { ...skillAdapters.antigravity, ...reads },
+  };
+  const service = createNativeManagementService({ homeDir, env: {}, adapters, onChanged: changed });
   async function skill(relative: string, name = 'demo') {
     const file = path.join(homeDir, relative, 'SKILL.md');
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, `---\nname: ${name}\ndescription: 测试技能\n---\n# Skill\n`);
     return file;
   }
-  return { homeDir, project, service, native, changed, skill };
+  return { homeDir, project, service, adapters, native, changed, skill };
 }
 
 it('Claude 同名来源身份独立，四态设置明确写入所选作用域，默认继承不会被 on 替代', async () => {
   const { service, skill, project, homeDir } = await fixture();
   await skill('.claude/skills/demo');
   await skill('project/.claude/skills/demo');
+  await writeFile(
+    path.join(homeDir, '.claude/settings.json'),
+    JSON.stringify({ skillOverrides: { demo: 'name-only' } }),
+  );
   const list = await service.readSkills('claude', project);
   expect(new Set(list.entries.map((e) => e.id)).size).toBe(2);
   const entry = list.entries.find((e) => e.scope === 'project')!;
@@ -45,30 +67,43 @@ it('Claude 同名来源身份独立，四态设置明确写入所选作用域，
   const file = path.join(homeDir, 'project/.claude/settings.local.json');
   expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ skillOverrides: { demo: 'user-invocable-only' } });
   const next = (await service.readSkills('claude', project)).entries.find((e) => e.id === entry.id)!;
+  expect(next).toMatchObject({
+    state: 'user-invocable-only',
+    stateByScope: { user: 'name-only', project: 'inherit', local: 'user-invocable-only' },
+  });
   await service.changeSkill(
     'claude',
     { id: next.id, revision: next.revision, action: 'state', value: 'inherit', scope: 'local' },
     project,
   );
   expect(JSON.parse(await readFile(file, 'utf8')).skillOverrides).toEqual({});
+  const inherited = await service.readSkills('claude', project);
+  expect(inherited.entries.map((item) => item.state)).toEqual(['name-only', 'name-only']);
+  await writeFile(file, '{"skillOverrides":[]}');
+  const invalid = (await service.readSkills('claude', project)).entries.find((item) => item.id === entry.id)!;
+  expect(invalid.state).toBe('unknown');
+  expect(invalid.actions.states).toEqual([]);
 });
 
-it('AGY 私有和 Shared 技能没有伪禁用，标准技能用本层原生清单且保留其他字段', async () => {
+it('AGY 仅标准根技能使用本层原生清单，其他自有技能只提供文件操作', async () => {
   const { service, skill, project, native } = await fixture();
   await skill('.gemini/skills/shared', 'shared');
   await skill('.gemini/antigravity-cli/skills/private', 'private');
   const demo = await skill('project/.agents/skills/demo');
+  const legacy = await skill('project/.agent/skills/legacy', 'legacy');
   const file = path.join(project.dir, '.agents/skills.json');
-  native.mockImplementation(async () =>
-    JSON.parse(await readFile(file, 'utf8')).exclude.includes('demo')
+  native.mockImplementation(async () => [
+    { name: 'legacy', path: legacy, enabled: true },
+    ...(JSON.parse(await readFile(file, 'utf8')).exclude.includes('demo')
       ? []
-      : [{ name: 'demo', path: demo, enabled: true }],
-  );
+      : [{ name: 'demo', path: demo, enabled: true }]),
+  ]);
   await writeFile(file, JSON.stringify({ unknown: true, exclude: [] }));
   const list = await service.readSkills('antigravity', project);
   expect(
     list.entries.filter((e) => ['shared', 'private'].includes(e.name)).every((e) => e.actions.states.length === 0),
   ).toBe(true);
+  expect(list.entries.find((e) => e.name === 'legacy')?.actions).toMatchObject({ edit: true, states: [] });
   const entry = list.entries.find((e) => e.name === 'demo')!;
   await service.changeSkill(
     'antigravity',
@@ -78,18 +113,46 @@ it('AGY 私有和 Shared 技能没有伪禁用，标准技能用本层原生清�
   expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ unknown: true, exclude: ['demo'] });
 });
 
-it('插件与管理员技能只读，Codex 仅将已发现 path 交给原生写入并核实结果', async () => {
+it('插件与管理员技能只读，Codex 同路径来源冲突不开放操作且使旧 revision 失效', async () => {
   const { homeDir, service, native, project, skill } = await fixture();
   const own = await skill('project/.agents/skills/demo');
   native.mockResolvedValue([
-    { name: 'demo', path: own, scope: 'repo', enabled: true },
-    { name: 'demo', path: path.join(homeDir, 'managed/SKILL.md'), scope: 'admin', enabled: true },
-    { name: 'plug:demo', scope: 'plugin', enabled: true },
+    { name: 'demo', path: own, scope: 'project', enabled: true },
+    { name: 'demo', path: path.join(homeDir, 'managed/SKILL.md'), scope: 'admin', origin: 'managed', enabled: true },
+    { name: 'plug:demo', origin: 'plugin', enabled: true },
   ]);
   const entries = (await service.readSkills('codex', project)).entries;
   expect(entries.find((e) => e.origin === 'managed')?.actions).toMatchObject({ delete: false, states: [] });
   expect(entries.find((e) => e.origin === 'plugin')?.actions).toMatchObject({ delete: false, states: [] });
-  expect(entries.find((e) => e.scope === 'project')).not.toHaveProperty('nativePath');
+  const local = entries.find((e) => e.scope === 'project')!;
+  expect(local.actions).toMatchObject({ states: ['enabled', 'disabled'], stateScopes: ['user'] });
+  expect(local).not.toHaveProperty('nativePath');
+  await expect(
+    service.changeSkill(
+      'codex',
+      { id: local.id, revision: local.revision, action: 'state', scope: 'project', value: 'disabled' },
+      project,
+    ),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  const matches: NativeSkill[] = [
+    { name: 'demo', path: own, scope: 'project', enabled: true },
+    { name: 'plug:demo', path: own, scope: 'user', origin: 'plugin', enabled: true },
+  ];
+  native.mockResolvedValue(matches);
+  const ambiguous = (await service.readSkills('codex', project)).entries.find((item) => item.id === local.id)!;
+  expect(ambiguous.actions).toEqual({ edit: false, delete: false, states: [], stateScopes: [] });
+  expect(ambiguous.state).toBe('unknown');
+  native.mockResolvedValue([...matches].reverse());
+  const reordered = (await service.readSkills('codex', project)).entries.find((item) => item.id === local.id)!;
+  expect(reordered).toEqual(ambiguous);
+  const deletion = { id: local.id, revision: local.revision, action: 'delete', confirmation: local.name } as const;
+  await expect(service.changeSkill('codex', deletion, project)).rejects.toMatchObject({ code: 'revision_conflict' });
+  await expect(
+    service.changeSkill('codex', { ...deletion, revision: ambiguous.revision }, project),
+  ).rejects.toMatchObject({
+    code: 'unsupported_action',
+  });
+  expect(await readFile(own, 'utf8')).toContain('# Skill');
 });
 
 it('目录导入保留多文件与二进制，路径越界/深度/超量/链接拒绝，删除须确认且 revision 覆盖整个目录', async () => {
@@ -170,18 +233,12 @@ it('并发导入不覆盖已有目录，状态 revision 冲突不覆盖外部设
 });
 
 it('可能部分写入的失败也失效原生能力与实例，原生读取失败不提供Codex伪开关', async () => {
-  const { homeDir, project, skill } = await fixture();
+  const { project, skill, native, changed, service, adapters } = await fixture();
   const file = await skill('project/.agents/skills/demo');
-  const changed = vi.fn(async () => {});
-  const service = createNativeManagementService({
-    homeDir,
-    env: {},
-    nativeSkills: async () => [{ name: 'demo', path: file, scope: 'repo', enabled: true }],
-    writeCodexSkill: async () => {
-      throw new NativeManagementError('result_unconfirmed');
-    },
-    onChanged: changed,
-  });
+  native.mockResolvedValue([{ name: 'demo', path: file, scope: 'project', enabled: true }]);
+  const change = vi
+    .spyOn(adapters.codex, 'changeState')
+    .mockRejectedValue(new NativeManagementError('result_unconfirmed'));
   const entry = (await service.readSkills('codex', project)).entries[0]!;
   await expect(
     service.changeSkill(
@@ -191,14 +248,9 @@ it('可能部分写入的失败也失效原生能力与实例，原生读取失�
     ),
   ).rejects.toMatchObject({ code: 'result_unconfirmed' });
   expect(changed).toHaveBeenCalledExactlyOnceWith('codex');
-  const unavailable = createNativeManagementService({
-    homeDir,
-    env: {},
-    nativeSkills: async () => {
-      throw new Error('sentinel-private');
-    },
-  });
-  const result = await unavailable.readSkills('codex', project);
+  expect(change).toHaveBeenCalledOnce();
+  native.mockRejectedValue(new Error('sentinel-private'));
+  const result = await service.readSkills('codex', project);
   expect(result.entries[0]?.actions.states).toEqual([]);
   expect(result.warnings).toHaveLength(1);
   expect(JSON.stringify(result)).not.toContain('sentinel-private');
@@ -230,14 +282,9 @@ it('Hooks与代理定义保留实际来源，项目插件资产的原文入口�
 });
 
 it('未核实CLI版本保留本地文件编辑，状态开关保持关闭', async () => {
-  const { homeDir, project, skill } = await fixture();
+  const { service, project, skill, adapters } = await fixture();
   await skill('project/.claude/skills/demo');
-  const service = createNativeManagementService({
-    homeDir,
-    env: {},
-    nativeSkills: async () => [],
-    verifiedVersion: async () => false,
-  });
+  adapters.claude.verifyVersion = async () => false;
   const result = await service.readSkills('claude', project);
   expect(result.entries[0]).toMatchObject({ state: 'unknown', actions: { edit: true, delete: true, states: [] } });
   expect(result.warnings).toHaveLength(1);
@@ -304,5 +351,50 @@ it('AGY 清单选择目录身份，展示名不同也能禁用并从原生目录
       project,
     ),
   ).rejects.toMatchObject({ code: 'result_unconfirmed' });
-  expect((await service.readSkills('antigravity', project)).entries[0]?.state).not.toBe('disabled');
+  const after = (await service.readSkills('antigravity', project)).entries[0]!;
+  expect(after.state).toBe('enabled');
+  native
+    .mockResolvedValueOnce([{ name: 'advertised-name', path: file, enabled: true }])
+    .mockRejectedValueOnce(new Error('目录暂不可读'));
+  const disable = {
+    id: after.id,
+    revision: after.revision,
+    action: 'state',
+    scope: 'project',
+    value: 'disabled',
+  } as const;
+  await expect(service.changeSkill('antigravity', disable, project)).rejects.toMatchObject({
+    code: 'result_unconfirmed',
+  });
+  // 命令目录按原生名称择一展示，目标消失也可能是被同名的其他路径遮蔽。
+  const otherFile = await skill('.gemini/skills/another-directory', 'advertised-name');
+  native
+    .mockResolvedValueOnce([{ name: 'advertised-name', path: file, enabled: true }])
+    .mockResolvedValueOnce([{ name: 'advertised-name', path: otherFile, enabled: true }]);
+  await expect(service.changeSkill('antigravity', disable, project)).rejects.toMatchObject({
+    code: 'result_unconfirmed',
+  });
+});
+
+it('AGY 按目录名识别冲突，写入前再次合并来源', async () => {
+  const { service, project, skill, native } = await fixture();
+  const first = await skill('project/.agents/skills/demo', 'project-name');
+  native.mockResolvedValue([{ name: 'project-name', path: first, enabled: true }]);
+  const initial = (await service.readSkills('antigravity', project)).entries[0]!;
+  expect(initial.actions.stateScopes).toEqual(['project']);
+  await skill('.gemini/config/skills/demo', 'global-name');
+  const entries = (await service.readSkills('antigravity', project)).entries;
+  expect(entries).toHaveLength(2);
+  for (const entry of entries) {
+    expect(entry.actions).toMatchObject({ edit: true, states: [], stateScopes: [] });
+    expect(entry.unavailableReason).toContain('同名');
+  }
+  await expect(
+    service.changeSkill(
+      'antigravity',
+      { id: initial.id, revision: initial.revision, action: 'state', value: 'disabled', scope: 'project' },
+      project,
+    ),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  await expect(readFile(path.join(project.dir, '.agents/skills.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });

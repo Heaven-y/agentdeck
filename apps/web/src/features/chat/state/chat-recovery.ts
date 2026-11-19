@@ -2,7 +2,7 @@ import type { RecoveryNotice, RecoveryTurn } from '@agentdeck/shared/conversatio
 import type { ChatState, ConversationView } from './chat-state';
 import { emptyConversation, DEFAULT_REASONING_EFFORTS, EMPTY_MODEL_OVERRIDES } from './chat-state-helpers';
 import { conversationBusy, conversationById, conversationViews, updateConversation } from './conversations';
-import { reduceChat, type ChatItem } from './chat-reducer';
+import { reduceChat, type ChatItem } from '../../conversation/model/conversation-events';
 import { openedTab } from '../tabs/conversation-tabs';
 import { preserveAttachmentInput } from '../composer/attachment-actions';
 import { applyFollowupSnapshot, invalidateFollowups } from '../followups/followup-events';

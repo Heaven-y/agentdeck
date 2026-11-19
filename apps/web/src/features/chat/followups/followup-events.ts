@@ -5,7 +5,7 @@ import { emptyConversation, EMPTY_MODEL_OVERRIDES, DEFAULT_REASONING_EFFORTS } f
 import { conversationById, conversationViews, updateConversation } from '../state/conversations';
 import { inputItem, sameDraft, type LocalFollowupQueue, type FollowupDraft } from './followup-state';
 import { openedTab } from '../tabs/conversation-tabs';
-import { reduceChat } from '../state/chat-reducer';
+import { reduceChat } from '../../conversation/model/conversation-events';
 import { snapshotQuestions } from '../interactions/async-question-actions';
 type Set = (patch: Partial<ChatState>) => void;
 type Get = () => ChatState;

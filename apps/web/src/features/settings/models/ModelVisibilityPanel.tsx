@@ -3,7 +3,7 @@ import type { AgentKind, AgentModel } from '@agentdeck/shared/conversation';
 import { buttonClass, inputClass } from '../../../ui/styles';
 import { matchingModels, visibilityCandidates, type ModelCandidate } from '../../../cli/shared/model-candidates';
 import { modelDisplay } from '../../../cli/shared/model-identity';
-import type { VisibilitySelection, useVisibilityDraft } from './use-visibility-draft';
+import type { VisibilitySelection, VisibilityDraftView } from './use-visibility-draft';
 
 /**
  * 只改本机产品偏好草稿；范围与模型表单一起由设置页底部“保存配置”提交。
@@ -12,11 +12,13 @@ import type { VisibilitySelection, useVisibilityDraft } from './use-visibility-d
 export function ModelVisibilityPanel({
   agent,
   models,
+  connectionLabel,
   draft,
 }: {
   agent: AgentKind;
   models: AgentModel[];
-  draft: ReturnType<typeof useVisibilityDraft>;
+  connectionLabel?: string;
+  draft: VisibilityDraftView;
 }) {
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(50);
@@ -42,7 +44,10 @@ export function ModelVisibilityPanel({
           {draft.dirty ? '保存设置后生效' : '当前已保存'}
         </span>
       </div>
-      <p className="text-xs leading-5 text-muted-foreground">选择日常使用的型号；当前会话使用的模型始终保留。</p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {connectionLabel && `仅应用于${connectionLabel}。`}
+        选择日常使用的型号；当前会话使用的模型始终保留。
+      </p>
       {choices.length > 0 ? (
         <>
           <input

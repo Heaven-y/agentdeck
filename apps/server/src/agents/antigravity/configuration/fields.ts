@@ -2,7 +2,8 @@ import type { ModelSettingField } from '@agentdeck/shared/settings';
 import { field, string, type ConfigObject } from '../../common/configuration/fields';
 import { antigravityModelId, selectedAntigravityModel } from './identity';
 export function antigravityFields(config: ConfigObject): ModelSettingField[] {
-  const provider = string(config.modelProvider);
+  const invalidProvider = config.modelProvider !== undefined && typeof config.modelProvider !== 'string';
+  const provider = invalidProvider ? 'invalid-native-provider' : string(config.modelProvider).trim();
   const custom = selectedAntigravityModel(config);
   return [
     field('displayName', '模型名称', custom?.label, { group: 'model', placeholder: '与模型 ID 相同' }),
@@ -24,7 +25,9 @@ export function antigravityFields(config: ConfigObject): ModelSettingField[] {
       options: [
         { value: '', label: 'Antigravity 账号登录' },
         { value: 'gemini', label: 'Gemini API Key' },
-        ...(provider && provider !== 'gemini' ? [{ value: provider, label: `${provider} · 已有原生值` }] : []),
+        ...(provider && provider !== 'gemini'
+          ? [{ value: provider, label: invalidProvider ? '未知的原生连接配置' : `${provider} · 已有原生值` }]
+          : []),
       ],
       hint: '自定义地址使用 Gemini API 协议。',
     }),

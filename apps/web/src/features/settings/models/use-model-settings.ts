@@ -129,6 +129,7 @@ export function useModelSettings(agent: AgentKind, extraDirty = false) {
       setDraft({});
       catalogRequest.current?.abort();
       setModelCatalog(undefined);
+      setModelsError('');
       setMessage('配置已保存');
       return true;
     } catch (reason) {

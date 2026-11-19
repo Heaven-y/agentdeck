@@ -1,16 +1,24 @@
 import { SessionError } from '../../errors';
 import {
   managementObject as object,
+  historyLimitExceeded,
+  managementByteLimit,
   type ManagementBackend,
+  type ManagementBudget,
   type ManagementRecord,
 } from '../management/management-rpc';
 
 const MAX_STEPS = 50_000;
-const MAX_BYTES = 32 * 1024 * 1024;
 const MAX_PAGES = 64;
 
 function incomplete(): never {
   throw new SessionError(503, 'session_history_incomplete', 'Antigravity 历史未完整读取，请稍后重试。');
+}
+
+function assertWithinSize(bytes: number, budget?: ManagementBudget) {
+  if (bytes <= managementByteLimit(budget)) return;
+  if (budget === 'history') throw historyLimitExceeded();
+  incomplete();
 }
 
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
@@ -38,6 +46,7 @@ export async function completeTrajectory(
   backend: ManagementBackend,
   response: ManagementRecord,
   signal?: AbortSignal,
+  budget?: ManagementBudget,
 ): Promise<ManagementRecord> {
   const trajectory = object(response.trajectory);
   const steps = [...list(trajectory.steps)];
@@ -45,17 +54,21 @@ export async function completeTrajectory(
   let bytes = Buffer.byteLength(JSON.stringify(response));
   const deadline = Date.now() + 30_000;
   let pages = 0;
-  if (bytes > MAX_BYTES) incomplete();
+  assertWithinSize(bytes, budget);
   while (steps.length < total) {
     signal?.throwIfAborted();
     if (++pages > MAX_PAGES || Date.now() >= deadline) incomplete();
-    const page = await backend.request('GetCascadeTrajectorySteps', {
-      cascadeId: trajectory.cascadeId,
-      stepOffset: steps.length,
-      trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
-    });
+    const page = await backend.request(
+      'GetCascadeTrajectorySteps',
+      {
+        cascadeId: trajectory.cascadeId,
+        stepOffset: steps.length,
+        trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
+      },
+      budget,
+    );
     bytes += Buffer.byteLength(JSON.stringify(page));
-    if (bytes > MAX_BYTES) incomplete();
+    assertWithinSize(bytes, budget);
     addPage(steps, page, total);
   }
   signal?.throwIfAborted();

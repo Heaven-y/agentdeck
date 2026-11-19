@@ -6,8 +6,9 @@ import { buttonClass } from '../../ui/styles';
 import { useProductSettings } from '../settings/general/use-product-settings';
 import { useChat } from './state/chat-store';
 import { Composer } from './composer/Composer';
-import { ChatTimeline } from './timeline/ChatTimeline';
-import { TrajectoryView } from '../conversation/trajectory/TrajectoryView';
+import { ConversationTimeline } from '../conversation/timeline/ConversationTimeline';
+import { LiveTrajectory } from './timeline/LiveTrajectory';
+import { LiveConversationSurface } from './timeline/LiveConversationSurface';
 import { RunStatus } from './runtime/RunStatus';
 import { FollowupQueue } from './followups/FollowupQueue';
 import { RuntimeTasksPanel } from './runtime/RuntimeTasksPanel';
@@ -97,7 +98,7 @@ function Messages({ view }: { view: 'chat' | 'trajectory' }) {
   const sessionId = useChat((s) => s.sessionId);
   if (loading) return <p className="m-auto text-sm text-muted-foreground">正在加载会话…</p>;
   if (historyError && items.length === 0) return null;
-  if (view === 'trajectory') return <TrajectoryView key={version} items={items} running={running} />;
+  if (view === 'trajectory') return <LiveTrajectory key={version} items={items} running={running} />;
   if (items.length === 0)
     return (
       <div className="m-auto max-w-lg px-6 py-12 text-center">
@@ -110,7 +111,7 @@ function Messages({ view }: { view: 'chat' | 'trajectory' }) {
       </div>
     );
 
-  return <ChatTimeline key={version} items={items} running={running} />;
+  return <ConversationTimeline key={version} items={items} running={running} />;
 }
 
 export function ChatView({ workspace }: { workspace: Workspace }) {
@@ -127,7 +128,9 @@ export function ChatView({ workspace }: { workspace: Workspace }) {
       <HistoryFailure />
       <RecoveredHistory />
       <div key={view} className="conversation-view-content flex min-h-0 flex-1 flex-col">
-        <Messages view={view} />
+        <LiveConversationSurface>
+          <Messages view={view} />
+        </LiveConversationSurface>
       </div>
       <RunStatus />
       <FollowupQueue />

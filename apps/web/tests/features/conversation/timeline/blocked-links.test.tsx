@@ -2,7 +2,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
-import type { ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import type { ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 
 afterEach(cleanup);
 /** Streamdown 把可点链接渲染成安全确认按钮，被拦截的降级为纯文本 span。 */

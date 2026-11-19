@@ -16,13 +16,14 @@ afterEach(async () => {
 it('Claude 原生命令补默认参数后仍确认成功，混合状态未知字段保留', async () => {
   const f = await fixture();
   const file = path.join(f.homeDir, '.claude.json');
-  await f.write(file, JSON.stringify({ unknown: 'preserve' }));
+  await f.write(file, JSON.stringify({ unknown: 'preserve', mcpServers: {} }));
   vi.spyOn(executable, 'resolveLocalCommand').mockReturnValue({ command: 'fixture', args: [] });
+  let extra: Record<string, unknown> = {};
   const run = vi.fn(async (_command: string, args: string[]) => {
     const index = args.indexOf('add-json');
     const value = JSON.parse(args[index + 2]!);
     const state = JSON.parse(await readFile(file, 'utf8'));
-    state.mcpServers = { demo: { type: value.type, command: value.command, args: [] } };
+    state.mcpServers[args[index + 1]!] = { type: value.type, command: value.command, args: [], ...extra };
     await writeFile(file, JSON.stringify(state));
     return { exitCode: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   });
@@ -37,11 +38,22 @@ it('Claude 原生命令补默认参数后仍确认成功，混合状态未知字
     }),
   ).resolves.toMatchObject({ status: 'saved' });
   expect(JSON.parse(await readFile(file, 'utf8')).unknown).toBe('preserve');
+  extra = { env: 'unexpected' };
+  const next = (await service.readMcp('claude')).sources[0]!;
+  await expect(
+    service.saveMcp('claude', {
+      name: 'other',
+      sourceId: next.id,
+      revision: next.revision,
+      config: { transport: 'stdio', command: 'node' },
+    }),
+  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
 });
 async function fixture() {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), 'agentdeck-mcp-'));
   dirs.push(homeDir);
-  const project = { id: 'demo', dir: path.join(homeDir, 'project') };
+  const target = { id: 'demo', dir: path.join(homeDir, 'project') };
+  const project = { ...target, reload: async () => target };
   await mkdir(project.dir);
   const write = async (file: string, content: string) => {
     await mkdir(path.dirname(file), { recursive: true });
@@ -53,6 +65,43 @@ async function fixture() {
   const service = createNativeMcpService({ homeDir, env: {}, run, plugins: async () => [] });
   return { homeDir, project, write, service, run };
 }
+it.each([
+  ['claude', 'CLAUDE_CONFIG_DIR', '.claude.json', '{"mcpServers":{"demo":{"command":"node"}}}'],
+  ['codex', 'CODEX_HOME', 'config.toml', '[mcp_servers.demo]\ncommand = "node"\n'],
+] as const)('%s 的相对配置根以原生命令目录为基准', async (agent, key, name, content) => {
+  const f = await fixture();
+  const profile = 'relative-profile';
+  await f.write(path.join(f.project.dir, profile, name), content);
+  const service = createNativeMcpService({ homeDir: f.homeDir, env: { [key]: profile }, plugins: async () => [] });
+  const catalog = await service.readMcp(agent, f.project);
+  expect(catalog.entries).toMatchObject([{ name: 'demo', scope: 'user' }]);
+  expect((await service.readMcp(agent)).entries).toEqual([]);
+});
+it.each(['条目仍存在', '写后不可读', '执行中超时'])('Claude 移除后%s时停止新增，返回结果待核对', async (failure) => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.claude.json');
+  await f.write(file, JSON.stringify({ mcpServers: { demo: { type: 'stdio', command: 'node', args: [] } } }));
+  vi.spyOn(executable, 'resolveLocalCommand').mockReturnValue({ command: 'fixture', args: [] });
+  const run = vi.fn(async (_command: string, args: string[]) => {
+    if (args[1] === 'remove') {
+      if (failure === '执行中超时') throw new Error('fixture-private-diagnostic');
+      if (failure === '写后不可读') await writeFile(file, 'not json');
+    }
+    return { exitCode: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  });
+  const service = createNativeMcpService({ homeDir: f.homeDir, env: {}, run, plugins: async () => [] });
+  const [entry] = (await service.readMcp('claude')).entries;
+  await expect(
+    service.saveMcp('claude', {
+      id: entry!.id,
+      sourceId: entry!.sourceId,
+      revision: entry!.revision,
+      name: 'demo',
+      config: { transport: 'stdio', command: 'other-node' },
+    }),
+  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  expect(run.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([['mcp', 'remove']]);
+});
 it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的用户会话工具归入专用入口', async (agent) => {
   const f = await fixture();
   const command = { command: 'node', args: ['session-tools.mjs'], env: { EXAMPLE: 'fixture' } };
@@ -113,7 +162,10 @@ it('离线列表区分真实来源且不回传 URL、参数和环境秘密', asy
         },
       },
       projects: {
-        [f.project.dir]: {
+        ...(process.platform === 'win32'
+          ? { [f.project.dir]: { mcpServers: { demo: { command: 'legacy-node' } } } }
+          : {}),
+        [f.project.dir.split(path.sep).join('/')]: {
           mcpServers: { demo: { command: 'node', args: ['sentinel-secret'], env: { TOKEN: 'sentinel-secret' } } },
         },
       },
@@ -123,6 +175,7 @@ it('离线列表区分真实来源且不回传 URL、参数和环境秘密', asy
   const result = await f.service.readMcp('claude', f.project);
   expect(result.entries.map((entry) => entry.scope).sort()).toEqual(['local', 'project', 'user']);
   expect(new Set(result.entries.map((entry) => entry.id)).size).toBe(3);
+  expect(result.entries.find((entry) => entry.scope === 'local')?.config.command).toBe('node');
   expect(JSON.stringify(result)).not.toContain('sentinel-secret');
   expect(JSON.stringify(result)).not.toContain('secret-path');
   expect(f.run).not.toHaveBeenCalled();
@@ -194,6 +247,180 @@ it('项目 JSON 保存秘密仅写、保留未知配置，持久禁用与运行�
     },
   });
   expect((await f.service.readMcp('antigravity', f.project)).entries[0]!.runtime).toBe('unchecked');
+});
+it('Codex 只认自己的 HTTP、凭据和启停字段，拒绝 SSE', async () => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.codex/config.toml');
+  await f.write(
+    file,
+    stringifyToml({
+      mcp_servers: {
+        tagged: { command: 'node', type: 'not-a-codex-field', enabled: false },
+        foreign: { serverUrl: 'https://example.com/legacy' },
+        demo: { url: 'https://example.com/mcp', http_headers: { TOKEN: 'fixture' }, disabled: true },
+      },
+    }),
+  );
+  const catalog = await f.service.readMcp('codex');
+  expect(catalog.sources[0]!.transports).toEqual(['stdio', 'http']);
+  expect(catalog.entries.find((e) => e.name === 'tagged')).toMatchObject({ transport: 'stdio', enabled: false });
+  expect(catalog.entries.find((e) => e.name === 'foreign')).toMatchObject({
+    transport: 'unknown',
+    enabled: null,
+    actions: { edit: false, enable: false, disable: false },
+    config: { urlConfigured: false },
+  });
+  const demo = catalog.entries.find((e) => e.name === 'demo')!;
+  expect(demo).toMatchObject({ transport: 'http', enabled: true, config: { headerKeys: ['TOKEN'] } });
+  const input = { sourceId: demo.sourceId, revision: demo.revision, id: demo.id, name: demo.name };
+  const before = await readFile(file, 'utf8');
+  await expect(f.service.saveMcp('codex', { ...input, config: { transport: 'sse' } })).rejects.toMatchObject({
+    code: 'unsupported_action',
+  });
+  await expect(
+    f.service.saveMcp('codex', { ...input, config: { transport: 'stdio', command: 'node' } }),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  expect(await readFile(file, 'utf8')).toBe(before);
+  await f.service.saveMcp('codex', {
+    ...input,
+    config: { transport: 'http', headers: { TOKEN: { action: 'clear' } }, bearerTokenEnvVar: 'TOKEN' },
+  });
+  const after = (await f.service.readMcp('codex')).entries.find((e) => e.name === 'demo')!;
+  expect(after.config).toMatchObject({ bearerTokenEnvVar: 'TOKEN', headerKeys: [] });
+  await f.service.operateMcp('codex', { id: after.id, revision: after.revision, action: 'disable' });
+  expect(await readFile(file, 'utf8')).toContain('enabled = false');
+  expect((await f.service.readMcp('codex')).entries.find((e) => e.name === 'demo')!.enabled).toBe(false);
+});
+it('Antigravity 新 HTTP 写 url，旧 serverUrl 原键更新，只识别本家凭据', async () => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.gemini/config/mcp_config.json');
+  await f.write(
+    file,
+    JSON.stringify({
+      mcpServers: { old: { serverUrl: 'https://example.com/old', bearer_token_env_var: 'FOREIGN', enabled: false } },
+    }),
+  );
+  const { sources, entries } = await f.service.readMcp('antigravity');
+  const old = entries[0]!;
+  expect(old.config.bearerTokenEnvVar).toBeUndefined();
+  expect(old).toMatchObject({ transport: 'http', enabled: true, config: { urlConfigured: true } });
+  expect(sources[0]!.transports).toEqual(['stdio', 'http']);
+  const edit = { id: old.id, name: old.name, sourceId: old.sourceId, revision: old.revision };
+  await expect(
+    f.service.saveMcp('antigravity', { ...edit, config: { transport: 'http', bearerTokenEnvVar: 'TOKEN' } }),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  const config = { transport: 'http' as const, url: { action: 'replace' as const, value: 'https://example.com/new' } };
+  await f.service.saveMcp('antigravity', { ...edit, config });
+  const source = (await f.service.readMcp('antigravity')).sources[0]!;
+  await f.service.saveMcp('antigravity', { name: 'fresh', sourceId: source.id, revision: source.revision, config });
+  expect(JSON.parse(await readFile(file, 'utf8')).mcpServers).toEqual({
+    old: { serverUrl: config.url.value, bearer_token_env_var: 'FOREIGN', enabled: false },
+    fresh: { url: config.url.value },
+  });
+});
+it('Claude 命令来源拒绝畸形参数与跨来源传输，项目 SSE 可回读', async () => {
+  const f = await fixture();
+  await f.write(
+    path.join(f.homeDir, '.claude.json'),
+    JSON.stringify({ mcpServers: { bad: { command: 'node', args: 'fixture' } } }),
+  );
+  const { entries, sources } = await f.service.readMcp('claude', f.project);
+  expect(entries[0]).toMatchObject({ enabled: null, actions: { edit: false, enable: false, disable: false } });
+  const user = sources.find((s) => s.scope === 'user')!,
+    project = sources.find((s) => s.scope === 'project')!;
+  expect(user.transports).toEqual(['stdio']);
+  expect(project.transports).toEqual(['stdio', 'http', 'sse']);
+  const config = { transport: 'sse' as const, url: { action: 'replace' as const, value: 'https://example.com/mcp' } };
+  await expect(
+    f.service.saveMcp('claude', { name: 'remote', sourceId: user.id, revision: user.revision, config }, f.project),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  await f.service.saveMcp(
+    'claude',
+    { name: 'remote', sourceId: project.id, revision: project.revision, config },
+    f.project,
+  );
+  expect((await f.service.readMcp('claude', f.project)).entries.find((e) => e.name === 'remote')).toMatchObject({
+    transport: 'sse',
+    config: { urlOrigin: 'https://example.com' },
+  });
+  expect(f.run).not.toHaveBeenCalled();
+});
+it('Claude 不先移除原生 add-json 无法重新添加的名称', async () => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.claude.json');
+  const data = JSON.stringify({ mcpServers: { 'old.name': { command: 'node' } } });
+  await f.write(file, data);
+  vi.spyOn(executable, 'resolveLocalCommand').mockReturnValue({ command: 'fixture', args: [] });
+  const [entry] = (await f.service.readMcp('claude')).entries;
+  await expect(
+    f.service.saveMcp('claude', {
+      id: entry!.id,
+      name: entry!.name,
+      sourceId: entry!.sourceId,
+      revision: entry!.revision,
+      config: { transport: 'stdio', command: 'new-node' },
+    }),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  expect(entry!.actions).toMatchObject({ edit: false, delete: true });
+  expect(await readFile(file, 'utf8')).toBe(data);
+  expect(f.run).not.toHaveBeenCalled();
+});
+it('Claude 项目 HTTP 保留原生 URL 占位符，不展开或回填', async () => {
+  const f = await fixture();
+  const file = path.join(f.project.dir, '.mcp.json');
+  const url = '${FIXTURE_MCP_URL}/mcp';
+  await f.write(file, JSON.stringify({ mcpServers: { demo: { type: 'http', url } } }));
+  const [entry] = (await f.service.readMcp('claude', f.project)).entries;
+  await f.service.saveMcp(
+    'claude',
+    {
+      id: entry!.id,
+      name: entry!.name,
+      sourceId: entry!.sourceId,
+      revision: entry!.revision,
+      config: {
+        transport: 'http',
+        url: { action: 'keep' },
+        headers: { Example: { action: 'replace', value: 'fixture' } },
+      },
+    },
+    f.project,
+  );
+  expect(JSON.parse(await readFile(file, 'utf8')).mcpServers.demo).toEqual({
+    type: 'http',
+    url,
+    headers: { Example: 'fixture' },
+  });
+  expect(JSON.stringify((await f.service.readMcp('claude', f.project)).entries)).not.toContain(url);
+});
+it('Claude 畸形项目状态不是可新增的空列表', async () => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.claude.json');
+  await f.write(file, JSON.stringify({ projects: [] }));
+  expect((await f.service.readMcp('claude')).entries).toEqual([]);
+  await expect(f.service.readMcp('claude', f.project)).rejects.toMatchObject({ code: 'invalid_json' });
+});
+it('持久修改后重启失败要核对结果，但不覆盖原始的 revision 冲突', async () => {
+  const f = await fixture();
+  const file = path.join(f.homeDir, '.codex/config.toml');
+  const service = createNativeMcpService({
+    homeDir: f.homeDir,
+    env: {},
+    plugins: async () => [],
+    onChanged: () => {
+      throw new Error('fixture-private-diagnostic');
+    },
+  });
+  const [source] = (await service.readMcp('codex')).sources;
+  const input = {
+    sourceId: source!.id,
+    revision: source!.revision,
+    name: 'demo',
+    config: { transport: 'stdio' as const, command: 'node' },
+  };
+  await expect(service.saveMcp('codex', input)).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  expect(await readFile(file, 'utf8')).toContain('command = "node"');
+  await expect(service.saveMcp('codex', input)).rejects.toMatchObject({ code: 'revision_conflict' });
 });
 it('插件资源只读且用户维护动作取得写租约，失败也使缓存失效', async () => {
   const f = await fixture();

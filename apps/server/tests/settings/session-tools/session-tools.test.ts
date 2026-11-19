@@ -159,18 +159,23 @@ it('各 CLI 路径跟随解析后的环境，环境切换使旧 revision 失效�
   });
 });
 
-it('Claude 通过原生用户作用域增删，只在空闲锁内写入并重启，保留混合状态', async () => {
+it.each(['绝对', '相对'])('Claude %s配置根与 CLI cwd 一致，只在空闲锁内增删及重启', async (mode) => {
   const { homeDir, deps } = await fixture();
   const configDir = path.join(homeDir, 'claude-custom');
+  const override = mode === '相对' ? path.basename(configDir) : configDir;
+  const serverDir = path.join(homeDir, 'server');
   const file = path.join(configDir, '.claude.json');
   await mkdir(configDir);
+  await mkdir(serverDir);
   await writeFile(file, '{"projects":{"demo":{"keep":true}},"mcpServers":{"other":{"command":"existing"}}}');
   let locked = false;
   let restarts = 0;
   const run: ProcessRunner = async (_executable, args, options) => {
     expect(locked).toBe(true);
-    expect(options.env?.CLAUDE_CONFIG_DIR).toBe(configDir);
-    const data = JSON.parse(await readFile(file, 'utf8'));
+    expect(options.env?.CLAUDE_CONFIG_DIR).toBe(override);
+    // 用 CLI 实际收到的 cwd 和覆盖值定位落盘文件，不能让替身绕过路径错误。
+    const target = path.resolve(options.cwd!, options.env!.CLAUDE_CONFIG_DIR!, '.claude.json');
+    const data = JSON.parse(await readFile(target, 'utf8'));
     if (args[1] === 'add-json') {
       expect(args.slice(0, 5)).toEqual(['mcp', 'add-json', '--scope', 'user', 'agentdeck_sessions']);
       data.mcpServers.agentdeck_sessions = JSON.parse(args[5]!);
@@ -178,12 +183,12 @@ it('Claude 通过原生用户作用域增删，只在空闲锁内写入并重启
       expect(args).toEqual(['mcp', 'remove', '--scope', 'user', 'agentdeck_sessions']);
       delete data.mcpServers.agentdeck_sessions;
     }
-    await writeFile(file, JSON.stringify(data));
+    await writeFile(target, JSON.stringify(data));
     return { exitCode: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   };
   const service = createSessionToolsService({
     ...deps,
-    environment: async () => ({ CLAUDE_CONFIG_DIR: configDir }),
+    environment: async () => ({ CLAUDE_CONFIG_DIR: override }),
     run,
     withIdleAgent: async (_agent, operation) => {
       locked = true;
@@ -198,11 +203,19 @@ it('Claude 通过原生用户作用域增删，只在空闲锁内写入并重启
       restarts++;
     },
   });
-  const before = await service.read('claude');
-  const on = await service.save('claude', { enabled: true, revision: before.revision });
-  expect(on.enabled).toBe(true);
-  await service.save('claude', { enabled: false, revision: on.revision });
+  const cwd = vi.spyOn(process, 'cwd').mockReturnValue(serverDir);
+  try {
+    const before = await service.read('claude');
+    const on = await service.save('claude', { enabled: true, revision: before.revision });
+    expect(on.enabled).toBe(true);
+    expect(JSON.parse(await readFile(file, 'utf8')).mcpServers.agentdeck_sessions).toBeDefined();
+    await service.save('claude', { enabled: false, revision: on.revision });
+  } finally {
+    cwd.mockRestore();
+  }
   expect(restarts).toBe(2);
+  expect(await readdir(serverDir)).toEqual([]);
+  expect(await readdir(configDir)).toEqual(['.claude.json']);
   expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
     projects: { demo: { keep: true } },
     mcpServers: { other: { command: 'existing' } },

@@ -1,9 +1,21 @@
 import path from 'node:path';
 import { readNativeConfigSource } from '../../../native-management/config';
-import type { McpContext, McpSource } from '../../../native-management/mcp/mcp-types';
-export async function claudeMcpSources(context: McpContext): Promise<McpSource[]> {
+import type { McpAdapter, McpContext, McpSource } from '../../../native-management/mcp/mcp-types';
+export const claudeMcp: McpAdapter = {
+  sources: claudeMcpSources,
+  format: 'json',
+  transports: ['stdio', 'http', 'sse'],
+  transportTag: 'explicit',
+  urlFields: ['url'],
+  headerField: 'headers',
+  bearerField: null,
+  enabledField: null,
+};
+async function claudeMcpSources(context: McpContext): Promise<McpSource[]> {
+  const cwd = context.project?.dir ?? context.homeDir;
+  const nativeHome = (process.platform === 'win32' ? context.env.USERPROFILE : context.env.HOME) || context.homeDir;
   const state = await readNativeConfigSource(
-    path.resolve(context.env.CLAUDE_CONFIG_DIR || context.homeDir, '.claude.json'),
+    path.resolve(cwd, context.env.CLAUDE_CONFIG_DIR || nativeHome, '.claude.json'),
     'user',
   );
   const sources: McpSource[] = [{ ...state, key: ['mcpServers'], label: 'Claude 用户配置', commandScope: 'user' }];
@@ -11,13 +23,11 @@ export async function claudeMcpSources(context: McpContext): Promise<McpSource[]
     sources.push({
       ...state,
       scope: 'local',
-      key: ['projects', context.project.dir.replace(/\\/g, '/'), 'mcpServers'],
+      // Windows 的原生命令用正斜线写入 cwd 键，不匹配旧键或相近目录。
+      key: ['projects', path.resolve(cwd).split(path.sep).join('/'), 'mcpServers'],
       label: 'Claude 个人项目配置',
       commandScope: 'local',
     });
-    // 旧 Windows 原生记录可能使用反斜线；只匹配当前项目的准确键。
-    const projects = state.data.projects as Record<string, unknown> | undefined;
-    if (projects && Object.hasOwn(projects, context.project.dir)) sources.at(-1)!.key[1] = context.project.dir;
     sources.push({
       ...(await readNativeConfigSource(path.join(context.project.dir, '.mcp.json'), 'project')),
       key: ['mcpServers'],

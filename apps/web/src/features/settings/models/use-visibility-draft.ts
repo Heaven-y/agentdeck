@@ -1,30 +1,44 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
-import type { ProductSettingsDocument } from '@agentdeck/shared/settings';
+import type { ModelVisibilityKey, ProductSettingsDocument } from '@agentdeck/shared/settings';
 import { queryClient } from '../../../lib/query-client';
 import { useChat } from '../../chat/state/chat-store';
 import { settingsApi, settingsKeys } from '../api';
 import { nativeSettingsError } from '../resources/native-resource-labels';
 
-/** 'all' 表示“恢复全部”：保存时删除该 CLI 的范围，后续目录新增型号仍会显示。 */
+/** “恢复全部”删除当前范围；显式空列表则只保留当前模型。 */
 export type VisibilitySelection = string[] | 'all';
+type Visibility = ProductSettingsDocument['settings']['modelVisibility'];
+type Drafts = Partial<Record<ModelVisibilityKey, VisibilitySelection>>;
+export type VisibilityDraftView = {
+  selected: VisibilitySelection;
+  dirty: boolean;
+  ready: boolean;
+  error: string;
+  change(selection: VisibilitySelection): void;
+  reload(): void;
+};
 
 function sameSelection(selection: VisibilitySelection, saved?: string[]) {
   if (selection === 'all') return saved === undefined;
+  if (saved === undefined) return false;
   const next = new Set(selection);
-  const current = new Set(saved ?? []);
+  const current = new Set(saved);
   return next.size === current.size && [...next].every((id) => current.has(id));
 }
 
-/**
- * 模型显示范围是设置页里的普通表单：勾选只改草稿，点“保存配置”才写入。
- * 逐次自动保存会在连续点击时丢改动，也会让迟到响应覆盖用户的最新选择。
- */
+function changedKeys(drafts: Drafts, saved: Visibility) {
+  return (Object.keys(drafts) as ModelVisibilityKey[]).filter((key) => !sameSelection(drafts[key]!, saved?.[key]));
+}
+
+/** 草稿归属于编辑时的连接方式；保存或切换原生连接不能把草稿挪给新目录。 */
 export function useVisibilityDraft(agent: AgentKind) {
   const [document, setDocument] = useState<ProductSettingsDocument>();
-  const [draft, setDraft] = useState<VisibilitySelection>();
+  const [drafts, setDrafts] = useState<Drafts>({});
   const [error, setError] = useState('');
-  const [reload, setReload] = useState(0);
+  const [reloadCount, setReloadCount] = useState(0);
+  const lock = useRef(false);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void settingsApi
@@ -36,16 +50,41 @@ export function useVisibilityDraft(agent: AgentKind) {
         if (!controller.signal.aborted) setError(nativeSettingsError(reason));
       });
     return () => controller.abort();
-  }, [reload, agent]);
-  const saved = document?.settings.modelVisibility?.[agent];
-  const selected: VisibilitySelection = draft ?? saved ?? 'all';
-  const dirty = !!document && !sameSelection(selected, saved);
-  const change = useCallback((selection: VisibilitySelection) => setDraft(selection), []);
-  const save = useCallback(async () => {
+  }, [reloadCount, agent]);
+  const saved = document?.settings.modelVisibility;
+  const dirty = !!document && changedKeys(drafts, saved).length > 0;
+  function reload() {
+    if (lock.current) return;
+    setDrafts({});
+    setError('');
+    setDocument(undefined);
+    setReloadCount((value) => value + 1);
+  }
+  function range(key: ModelVisibilityKey | undefined): VisibilityDraftView {
+    const selection = key ? drafts[key] : undefined;
+    const savedSelection = key ? saved?.[key] : undefined;
+    return {
+      selected: selection ?? savedSelection ?? 'all',
+      dirty: selection !== undefined && !sameSelection(selection, savedSelection),
+      ready: Boolean(key && document && !saving),
+      error,
+      change(selection) {
+        if (key && !lock.current) setDrafts((items) => ({ ...items, [key]: selection }));
+      },
+      reload,
+    };
+  }
+  async function save() {
+    if (lock.current) return false;
     if (!document || !dirty) return true;
-    const modelVisibility = { ...document.settings.modelVisibility };
-    if (selected === 'all') delete modelVisibility[agent];
-    else modelVisibility[agent] = selected;
+    const modelVisibility = { ...saved };
+    for (const key of changedKeys(drafts, saved)) {
+      const selection = drafts[key];
+      if (selection === 'all') delete modelVisibility[key];
+      else modelVisibility[key] = selection;
+    }
+    lock.current = true;
+    setSaving(true);
     try {
       await settingsApi.saveProductSettings({
         revision: document.revision,
@@ -60,26 +99,16 @@ export function useVisibilityDraft(agent: AgentKind) {
       });
       useChat.getState().setDefaults(result.settings);
       setDocument(result);
-      setDraft(undefined);
+      setDrafts({});
       setError('');
       return true;
     } catch (reason) {
       setError(nativeSettingsError(reason));
       return false;
+    } finally {
+      lock.current = false;
+      setSaving(false);
     }
-  }, [agent, dirty, document, selected]);
-  return {
-    selected,
-    dirty,
-    ready: !!document,
-    error,
-    change,
-    save,
-    reload() {
-      setDraft(undefined);
-      setError('');
-      setDocument(undefined);
-      setReload((value) => value + 1);
-    },
-  };
+  }
+  return { dirty, saving, range, save, reload };
 }

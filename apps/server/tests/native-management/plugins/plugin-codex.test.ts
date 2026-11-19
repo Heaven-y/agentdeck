@@ -14,7 +14,10 @@ async function fixture() {
   const base = path.join(root, '.codex');
   const plugin = path.join(base, 'plugins/cache/fixture/demo/1.0.0');
   await mkdir(path.join(plugin, '.codex-plugin'), { recursive: true });
-  await writeFile(path.join(plugin, '.codex-plugin/plugin.json'), JSON.stringify({ name: 'demo', version: '1.0.0' }));
+  await writeFile(
+    path.join(plugin, '.codex-plugin/plugin.json'),
+    JSON.stringify({ name: 'demo', version: '1.0.0', description: 'x'.repeat(4097) }),
+  );
   const file = path.join(base, 'config.toml');
   await writeFile(file, '# retained\n[plugins."demo@fixture"]\nenabled = true\nextra = "keep"\n');
   const commands: string[][] = [];
@@ -49,6 +52,7 @@ it('Codex 离线列表不用 plugin RPC 或联网 list，定点启停保留未�
   const catalog = await f.service.read('codex');
   const entry = catalog.entries[0]!;
   expect(entry.version).toBe('1.0.0');
+  expect(entry.description).toHaveLength(4096);
   expect(entry.actions).not.toContain('update');
   const task = await f.service.prepare('codex', { action: 'disable', id: entry.id, revision: entry.revision });
   await f.service.start('codex', { operationId: task.operationId, revision: task.revision });
@@ -59,6 +63,28 @@ it('Codex 离线列表不用 plugin RPC 或联网 list，定点启停保留未�
   expect(text).toContain('extra = "keep"');
   expect(text).toContain('# retained');
   expect(f.commands.every((args) => args[0] === '--version')).toBe(true);
+});
+it('Codex 插件版本探测与 app-server 共用官方 npm 入口，不采用通用 shim 的另一份程序', async () => {
+  const f = await fixture();
+  const npmEntry = path.join(f.root, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  const otherEntry = path.join(f.root, 'other-codex.js');
+  const shim = path.join(f.root, 'codex.cmd');
+  await mkdir(path.dirname(npmEntry), { recursive: true });
+  await writeFile(npmEntry, '');
+  await writeFile(otherEntry, '');
+  await writeFile(shim, '@node "%~dp0other-codex.js" %*');
+  const commands: string[][] = [];
+  const service = createNativePluginService({
+    homeDir: f.root,
+    env: { AGENTDECK_CODEX: shim },
+    readCodexPolicy: async () => f.policy,
+    run: async (_command, args) => {
+      commands.push(args);
+      return { stdout: Buffer.from('0.166.0'), stderr: Buffer.alloc(0), exitCode: 0 };
+    },
+  });
+  await service.read('codex');
+  expect(commands).toEqual([[npmEntry, '--version']]);
 });
 it('Codex 托管来源禁止启停，未核实策略不得开放写入', async () => {
   const f = await fixture();

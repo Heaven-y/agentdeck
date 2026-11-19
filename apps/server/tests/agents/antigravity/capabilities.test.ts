@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { discoverAntigravityCapabilities } from '../../../src/agents/antigravity/capabilities';
 import {
   parseAntigravityModelList,
+  readAntigravityConnection,
   readAntigravityModelSettings,
   configuredAntigravityModels,
   antigravityModelSelector,
@@ -51,9 +52,29 @@ it('账号模式通过隔离 models 读取目录，不触发交互式登录或�
   const catalog = await discoverAntigravityCapabilities('project', { homeDir, env: {} });
   expect(catalog.models).toEqual([{ id: 'Example Native', label: 'Example Native' }]);
   expect(catalog.defaultModel).toBe('Example Native');
+  expect(catalog.antigravityConnection).toBe('account');
   expect(catalog.modelWarning).toBe('');
   expect(catalog.features?.images).toMatchObject({ support: 'unsupported', available: false });
   expect(runProcess).toHaveBeenCalledOnce();
+});
+
+it.each([
+  { modelProvider: '  ', connection: 'account' },
+  { modelProvider: 'future-provider', connection: undefined },
+  { modelProvider: 12, connection: undefined },
+])('本机设置 $modelProvider 与发现中的连接身份一致，读取不启动 CLI', async ({ modelProvider, connection }) => {
+  const homeDir = await fixture({ modelProvider });
+  expect(await readAntigravityConnection({ homeDir })).toBe(connection);
+  expect(runProcess).not.toHaveBeenCalled();
+  expect(discoverAntigravityCommands).not.toHaveBeenCalled();
+  vi.mocked(runProcess).mockResolvedValue({
+    exitCode: 0,
+    stderr: Buffer.alloc(0),
+    stdout: Buffer.from('example\tExample\n'),
+  });
+  expect((await discoverAntigravityCapabilities('project', { homeDir, env: {} })).antigravityConnection).toBe(
+    connection,
+  );
 });
 
 it('模型目录兼容裸 ID 和旧 URI，使用稳定键并保留显示名', async () => {
@@ -136,7 +157,7 @@ it('Gemini 发现隔离用户目录和工作目录，保留自定义键与真实
     const content = await readFile(path.join(isolated, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8');
     const checked = await stat(path.join(isolated, '.gemini', 'antigravity-cli', 'last_check.timestamp'));
     expect(Date.now() - checked.mtimeMs).toBeLessThan(5000);
-    expect(content).not.toMatch(/fixture-key|must-not-run|must-not-copy/);
+    expect(content).not.toMatch(/fixture-key|must-not-run|must-not-copy|antigravityConnection/);
     expect(JSON.parse(content)).toMatchObject({
       enableTelemetry: false,
       customModelsConfig: { customModels: { custom: { maxTokens: 100000 } } },
@@ -196,6 +217,7 @@ it('Gemini 缺少 Key 只提示配置，旧数组格式不能伪装成可用自�
   expect(result.models).toEqual([]);
   expect(result.defaultModel).toBeUndefined();
   expect(result.modelWarning).toContain('API Key');
+  expect(result.antigravityConnection).toBe('gemini');
   expect(runProcess).not.toHaveBeenCalled();
 });
 

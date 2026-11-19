@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import type { ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 import {
   projectTimeline,
   toolCounts,

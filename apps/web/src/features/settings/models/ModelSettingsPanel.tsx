@@ -9,6 +9,8 @@ import { modelSettingValue, modelSettingsFields, useModelSettings } from './use-
 import type { SettingsLeave } from '../navigation/settings-navigation';
 import { leaveSettings } from '../navigation/settings-navigation';
 import { modelEfforts } from '../../../cli/model-capabilities';
+import { ANTIGRAVITY_CONNECTION_LABELS, antigravityConnectionField } from '../../../cli/antigravity/model-policy';
+import { modelVisibilityKey } from '../../../cli/shared/model-visibility';
 import { antigravityModelSuggestions } from '../../../cli/antigravity/model-suggestions';
 import { ModelVisibilityPanel } from './ModelVisibilityPanel';
 import { useVisibilityDraft } from './use-visibility-draft';
@@ -43,7 +45,7 @@ function suggestionsFor(field: ModelSettingField, state: State) {
 }
 function FetchModels({ state }: { state: State }) {
   const hasCatalog = state.modelCatalog && state.modelCatalog.discovered !== false;
-  const label = state.dirty ? '保存并获取模型' : hasCatalog ? '重新获取' : '获取模型';
+  const label = Object.keys(state.draft).length ? '保存并获取模型' : hasCatalog ? '重新获取' : '获取模型';
   return (
     <button
       type="button"
@@ -249,6 +251,64 @@ function SettingsFooter({
   );
 }
 
+function visibleCatalog(
+  state: State,
+  agent: AgentKind,
+  connection: ReturnType<typeof antigravityConnectionField>,
+  switching: boolean,
+) {
+  const catalog = state.modelCatalog;
+  if (agent === 'antigravity' && (switching || catalog?.antigravityConnection !== connection)) return undefined;
+  return catalog;
+}
+
+function connectionInfo(state: State) {
+  const provider = state.document?.fields.find((field) => field.key === 'modelProvider');
+  const connection = antigravityConnectionField(provider?.value);
+  const switching = !!provider && modelSettingValue(provider, state.draft) !== provider.value;
+  return { connection, switching };
+}
+
+function VisibilitySection({
+  agent,
+  state,
+  visibility,
+  info,
+}: {
+  agent: AgentKind;
+  state: State;
+  visibility: ReturnType<typeof useVisibilityDraft>;
+  info: ReturnType<typeof connectionInfo>;
+}) {
+  if (info.switching) {
+    return (
+      <p role="status" className="text-xs text-muted-foreground">
+        保存连接方式后，再获取该连接的模型并设置显示范围。
+      </p>
+    );
+  }
+  const scope = modelVisibilityKey(agent, info.connection);
+  return (
+    <ModelVisibilityPanel
+      key={scope}
+      agent={agent}
+      models={state.modelCatalog?.models ?? []}
+      connectionLabel={info.connection ? ANTIGRAVITY_CONNECTION_LABELS[info.connection] : undefined}
+      draft={visibility.range(scope)}
+    />
+  );
+}
+
+function connectedSettings(native: State, agent: AgentKind, saving: boolean, info: ReturnType<typeof connectionInfo>) {
+  return {
+    ...native,
+    saving: native.saving || saving,
+    modelCatalog: visibleCatalog(native, agent, info.connection, info.switching),
+    modelsError: info.switching ? '' : native.modelsError,
+    modelMessage: info.switching ? '' : native.modelMessage,
+  };
+}
+
 export function ModelSettingsPanel({
   agent,
   guardRef,
@@ -262,7 +322,9 @@ export function ModelSettingsPanel({
 }) {
   const visibility = useVisibilityDraft(agent);
   // 显示范围草稿也属于这张表单：未保存时同样阻止离开。
-  const state = useModelSettings(agent, visibility.dirty);
+  const native = useModelSettings(agent, visibility.dirty);
+  const info = connectionInfo(native);
+  const state = connectedSettings(native, agent, visibility.saving, info);
   const fields = state.document ? visibleFields(modelSettingsFields(state.document, state.draft), state) : [];
   const dirty = state.dirty;
   const saving = state.saving;
@@ -290,7 +352,7 @@ export function ModelSettingsPanel({
         {state.document && (
           <>
             <ModelSettingsForm state={state} fields={fields} />
-            <ModelVisibilityPanel agent={agent} models={state.modelCatalog?.models ?? []} draft={visibility} />
+            <VisibilitySection agent={agent} state={state} visibility={visibility} info={info} />
             <AdvancedSettings
               state={state}
               fields={fields}

@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import type { AddressInfo } from 'node:net';
+import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
 const log = args[args.indexOf('--log-file') + 1]!;
@@ -21,7 +22,25 @@ const server = http.createServer((request, response) => {
       );
       return;
     }
+    if (mode === 'rpc-over-history-budget') {
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': 65 * 1024 * 1024 });
+      response.flushHeaders();
+      return;
+    }
     response.writeHead(200, { 'content-type': 'application/json' });
+    if (mode === 'rpc-large-history') {
+      response.end(
+        JSON.stringify({
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          trajectory: {
+            cascadeId: 'fixture',
+            metadata: { workspaceUris: [pathToFileURL(process.cwd()).href] },
+            steps: [{ type: 'CORTEX_STEP_TYPE_VIEW_FILE', viewFile: { content: 'x'.repeat(33 * 1024 * 1024) } }],
+          },
+        }),
+      );
+      return;
+    }
     response.end('{"fixture":true}');
   });
 });

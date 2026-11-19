@@ -10,7 +10,7 @@ import {
   type NativePluginPrepareInput,
   type NativePluginStartInput,
 } from '@agentdeck/shared/settings';
-import { resolveLocalCommand, type ResolvedCommand } from '../../platform/process/executable';
+import type { ResolvedCommand } from '../../platform/process/executable';
 import { runInstallationProcess } from '../../cli-installation/transaction/installation-process';
 import type { ProcessRunner } from '../../platform/process/run';
 import { resourcePathKey } from '../../agents/common/configuration/resources';
@@ -18,6 +18,7 @@ import { NativeResourceError } from '../../agents/common/configuration/errors';
 import type { NativeManagementAccess, NativeManagementProject } from '../access';
 import { NativeManagementError } from '../errors';
 import { pluginDigest, jsonResult, arrayResult } from './plugin-utils';
+import { pluginAdapter } from './plugin-adapters';
 import { PluginError } from './plugin-errors';
 import { codexPluginPolicy, type PluginPolicy } from './plugin-policy';
 import { object, type PluginContext, type PluginRecord, type PluginMarketplace } from './plugin-types';
@@ -61,8 +62,9 @@ export function createNativePluginService(deps: Deps = {}) {
   const tasks = new Map<string, Task>();
   const homeDir = path.resolve(deps.homeDir ?? os.homedir());
   async function context(agent: AgentKind, project?: NativeManagementProject): Promise<PluginContext> {
+    const adapter = pluginAdapter(agent);
     const env = deps.environment ? await deps.environment(agent) : (deps.env ?? process.env);
-    const command = deps.command?.(agent, env) ?? resolveLocalCommand(agent === 'antigravity' ? 'agy' : agent, env);
+    const command = deps.command?.(agent, env) ?? (await adapter.resolve(env));
     const c: PluginContext = {
       agent,
       homeDir,
@@ -77,7 +79,7 @@ export function createNativePluginService(deps: Deps = {}) {
           ...options,
         }),
     };
-    if (agent === 'codex') c.readPolicy = () => (deps.readCodexPolicy ?? codexPluginPolicy)(c);
+    if (agent === 'codex') c.readPolicy = () => deps.readCodexPolicy?.(c) ?? codexPluginPolicy(c, command);
     return c;
   }
   const sameProject = (a: NativeManagementProject | undefined, b: NativeManagementProject | undefined) =>

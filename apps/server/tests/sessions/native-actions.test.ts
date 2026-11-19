@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 import { expect, it, vi } from 'vitest';
 import { createNativeActionsService } from '../../src/sessions/native-actions';
 
@@ -171,6 +172,7 @@ it('预览拒绝跨工作区、大文件、错误操作类型，缺失文件也�
     await expect(service.execute(scope, preview.token)).rejects.toThrow('变化');
     expect(native).not.toHaveBeenCalled();
     await expect(service.catalog({ ...scope, agent: 'antigravity' })).rejects.toThrow('没有');
+    await expect(service.catalog({ ...scope, agent: 'fixture-new-cli' as AgentKind })).rejects.toThrow('没有');
   } finally {
     await rm(dir, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
