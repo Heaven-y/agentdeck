@@ -109,6 +109,13 @@ export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'r
       output: `Antigravity 的 auto 模式不可用：${reason}。原生 CLI 已回退到默认权限模式，需要确认的工具仍可能被拒绝。请检查原生权限与沙箱支持。`,
     };
   }
+  return failureDiagnostic(line, source);
+}
+
+function failureDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
+  // 只认生成终态的明确拒绝，不将后台探测的 403 视为回合失败。
+  if (source === 'run' && /\bUser location is not supported for the API use\b/i.test(line))
+    return { type: 'error', message: 'Antigravity 官方服务不支持当前访问地区。请核对网络出口与 Google 的可用地区。' };
   if (
     /\b(?:unauthenticated|unauthorized|authentication required|authentication failed|login required|invalid api[ _-]?key|expired (?:credentials|token)|missing (?:credentials|api[ _-]?key))\b/i.test(
       line,
