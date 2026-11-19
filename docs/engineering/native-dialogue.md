@@ -73,7 +73,7 @@ AGY ACP 仅在安装了工作台交互处理器时声明 elicitation 能力；�
 
 ### 待发列表与本轮引导
 
-运行中输入默认进入宿主队列，只有最新 `FollowupSnapshot.canSteer`、未暂停及本轮模型/强度/权限一致时提供显式引导。网页不以静态能力开启引导，也不在未知投递后切路径重试。queued/failed 排队项可按 revision 编辑；unknown 只能核对历史后处理，移除仅删除列表记录。继续为用户显式动作，重连不自动恢复调度。
+运行中输入默认进入宿主队列，只有最新 `FollowupSnapshot.canSteer`、未暂停及本轮模型/强度/权限一致时提供显式引导。网页不以静态能力开启引导，也不在未知投递后切路径重试。queued/failed 的普通排队项按 revision 取回；收到带取回标记的已移除快照后才恢复到输入框。不兼容或已开始投递的条目不能转为引导。待发转引导需核对原项版本与本轮 ID，先移出下一轮调度，再使用原消息 ID 调用原生通道。unknown 只能核对历史后处理，移除仅删除列表记录。继续为用户显式动作，重连不自动恢复调度。
 
 `followup.state` 与恢复握手的 `connection.followups` 共用快照处理。追加回执按 clientMessageId 绑定本页草稿，迟到回执不清不同的新输入；自动 `turn.started.input` 使用独立 clientTurnId 重建前台或后台轮次，不能将其与 followupClientMessageId 等同。引导确认单独按消息 ID 去重，保持原会话归属。
 

@@ -154,7 +154,7 @@ it('AGY 官方面板不继承 API Key 或旧的共用筛选，换回 API Key 仍
 
   client.setQueryData(key, { ...catalog, antigravityConnection: 'gemini' });
   await waitFor(() => expect(within(group).getAllByRole('menuitemradio')).toHaveLength(1));
-  expect(screen.getByRole('status').textContent).toMatch(/还有 1 个模型未显示.*恢复全部模型.*保存配置/);
+  expect(screen.getByRole('status').textContent).toMatch(/已隐藏 1 个模型.*设置 → 模型/);
   expect(useChat.getState().modelOverrides.antigravity).toBe('');
 });
 
@@ -195,6 +195,23 @@ it('只有 AGY 官方连接可点选读取额度，不把 API Key 或回合 toke
     '/api/settings/models/antigravity/official-usage',
     expect.objectContaining({ method: 'POST' }),
   );
+  let respond!: (response: Response) => void;
+  fetcher.mockReturnValueOnce(
+    new Promise<Response>((resolve) => {
+      respond = resolve;
+    }),
+  );
+  fireEvent.click(within(dialog).getByRole('button', { name: '刷新额度' }));
+  expect(within(dialog).getByText('<0.1%')).toBeTruthy();
+  expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: '正在刷新…' }).disabled).toBe(true);
+  respond(
+    Response.json({
+      checkedAt: 1795050010000,
+      groups: [{ name: '官方模型组', buckets: [{ id: 'short', name: '短期额度', remainingFraction: 0.5 }] }],
+    }),
+  );
+  await within(dialog).findByText('50%');
+  expect(within(dialog).queryByText('<0.1%')).toBeNull();
 });
 
 it.each([

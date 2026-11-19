@@ -55,7 +55,7 @@ it('引导附件先按实际通道校验，准备失败保留可撤销草稿，�
     await rm(root, { recursive: true, force: true });
   }
 });
-it('原生迟到确认收敛未知且只发布一次完整引导，队列仍须显式继续', async () => {
+it('从待发转引导校验回合与版本，迟到确认不重复回放或投递', async () => {
   const owner = { send: vi.fn<(message: ServerMessage) => void>(), isOpen: () => true };
   let delivered!: NativeSteerInput;
   const native = vi.fn(async (input: NativeSteerInput) => {
@@ -89,14 +89,16 @@ it('原生迟到确认收敛未知且只发布一次完整引导，队列仍须�
       'turn',
     );
     const text = '完整引导'.repeat(100);
-    await host.handle(owner, {
-      type: 'chat.followup',
-      queueId,
-      clientMessageId: randomUUID(),
-      mode: 'steer',
-      turnId: 'turn',
-      content: { text },
-    });
+    const clientMessageId = randomUUID();
+    await host.handle(owner, { type: 'chat.followup', queueId, clientMessageId, mode: 'queue', content: { text } });
+    const steer = { type: 'followup.steer', queueId, clientMessageId, revision: 0, turnId: 'turn' } as const;
+    await host.handle(owner, { ...steer, turnId: 'expired' });
+    expect(native).not.toHaveBeenCalled();
+    expect(host.snapshots(owner)[0]!.items[0]).toMatchObject({ mode: 'queue', status: 'queued', revision: 0 });
+    await host.handle(owner, steer);
+    await host.handle(owner, steer);
+    expect(native).toHaveBeenCalledOnce();
+    expect(delivered.clientMessageId).toBe(clientMessageId);
     await host.handle(owner, {
       type: 'chat.followup',
       queueId,

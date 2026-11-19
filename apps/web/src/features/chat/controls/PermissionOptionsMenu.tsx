@@ -14,16 +14,18 @@ export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   disabled ||= pending || running;
   const choices = permissionChoices[agent];
   const current = choices.find((entry) => entry.selection.mode === selected?.mode);
+  const label = current?.label ?? (pending ? '权限' : '原生默认');
   return (
     <MenuProvider placement="top-end">
       <MenuButton
         disabled={disabled}
         aria-label="权限模式"
-        title={current?.label ?? '权限模式'}
+        aria-busy={pending}
+        title={label}
         className={`${buttonClass('ghost')} min-h-7 gap-1 rounded-lg px-2 text-[13px]`}
       >
         <ShieldCheck aria-hidden className="size-3.5" />
-        {current && <span>{current.label}</span>}
+        <span>{label}</span>
         <ChevronDown aria-hidden className="size-3" />
       </MenuButton>
       <Menu

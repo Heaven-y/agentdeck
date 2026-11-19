@@ -5,7 +5,6 @@ import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { ClientMessage, FollowupSnapshot, ServerMessage, AsyncQuestion } from '@agentdeck/shared/conversation';
 import { startChatConnection, useChat } from '../../../../src/features/chat/state/chat-store';
 import { Composer } from '../../../../src/features/chat/composer/Composer';
-import { FollowupQueue } from '../../../../src/features/chat/followups/FollowupQueue';
 import { AsyncQuestionCard } from '../../../../src/features/chat/interactions/AsyncQuestionCard';
 import { chatKeys } from '../../../../src/features/chat/api';
 const sent: ClientMessage[] = [];
@@ -65,7 +64,6 @@ const state = (items: FollowupSnapshot['items'] = []): FollowupSnapshot => ({
 function mount() {
   render(
     <QueryClientProvider client={client}>
-      <FollowupQueue />
       <Composer />
     </QueryClientProvider>,
   );
@@ -74,8 +72,8 @@ it('运行中默认排队、显式引导与独立停止，IME确认不会排队'
   emit({ type: 'followup.state', snapshot: state() });
   mount();
   expect(screen.queryByText('继续输入会排队为下一轮；引导本轮仅在原生运行时支持时可用。')).toBeNull();
-  expect(screen.getByRole('button', { name: '排队发送' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '引导本轮' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '排队发送' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '引导本轮' })).toBeNull();
   const input = screen.getByLabelText('输入消息');
   fireEvent.change(input, { target: { value: '输入法消息' } });
   fireEvent.compositionStart(input);
@@ -101,13 +99,24 @@ it('运行中默认排队、显式引导与独立停止，IME确认不会排队'
     }),
   );
   await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(''));
-  fireEvent.change(input, { target: { value: '明确引导' } });
   fireEvent.click(screen.getByRole('button', { name: '引导本轮' }));
+  expect(sent.at(-1)).toMatchObject({
+    type: 'followup.steer',
+    clientMessageId: message.clientMessageId,
+    revision: 0,
+    turnId: 'turn',
+  });
+  fireEvent.change(input, { target: { value: '明确引导' } });
+  fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
   expect(sent.at(-1)).toMatchObject({ type: 'chat.followup', mode: 'steer', turnId: 'turn' });
+  act(() => emit({ type: 'followup.state', snapshot: { ...state(), canSteer: false, revision: 2 } }));
+  const count = sent.length;
+  fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+  expect(sent).toHaveLength(count);
   fireEvent.click(screen.getByRole('button', { name: '停止' }));
   expect(sent.at(-1)).toEqual({ type: 'chat.interrupt', turnId: 'turn' });
 });
-it('队列编辑沿版本发送，unknown只能确认移除，清空与继续按状态启用', async () => {
+it('待发项收到取回确认才回到输入框，保留已有草稿；未知受理仍须确认移除', () => {
   const id = '00000000-0000-4000-8000-000000000002';
   emit({
     type: 'followup.state',
@@ -126,16 +135,39 @@ it('队列编辑沿版本发送，unknown只能确认移除，清空与继续按
     },
   });
   mount();
-  fireEvent.click(screen.getByText(/待发列表 ·/));
+  const input = screen.getByLabelText<HTMLTextAreaElement>('输入消息');
+  fireEvent.change(input, { target: { value: '现有草稿' } });
   fireEvent.click(screen.getByRole('button', { name: '编辑' }));
-  fireEvent.change(screen.getByLabelText('编辑待发文字'), { target: { value: '修正消息' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
-  expect(sent.at(-1)).toMatchObject({ type: 'followup.edit', revision: 4, content: { text: '修正消息' } });
+  expect(sent.at(-1)).toMatchObject({ type: 'followup.cancel', revision: 4, returnToDraft: true });
+  expect(input.value).toBe('现有草稿');
+  expect(document.activeElement).toBe(input);
   act(() =>
     emit({
       type: 'followup.state',
       snapshot: {
-        ...state([{ clientMessageId: id, mode: 'steer', revision: 5, status: 'unknown', text: '未确认' }]),
+        ...state([
+          {
+            clientMessageId: id,
+            mode: 'queue',
+            revision: 5,
+            status: 'cancelled',
+            text: '失败消息',
+            returnedToDraft: true,
+          },
+        ]),
+        revision: 2,
+        paused: true,
+      },
+    }),
+  );
+  expect(input.value).toBe('失败消息');
+  expect(useChat.getState().draftBackups.map(({ text }) => text)).toEqual(['现有草稿']);
+  act(() =>
+    emit({
+      type: 'followup.state',
+      snapshot: {
+        ...state([{ clientMessageId: 'unknown', mode: 'steer', revision: 5, status: 'unknown', text: '未确认' }]),
+        revision: 3,
         paused: true,
       },
     }),

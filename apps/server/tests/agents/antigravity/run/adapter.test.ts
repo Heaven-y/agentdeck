@@ -191,7 +191,10 @@ describe('Antigravity 原生对话运行器', () => {
   it('普通 stderr 进度和包含 permission 的日志不会把成功回合标成诊断错误', async () => {
     const f = await setup();
     f.init();
-    f.child.stderr.write('Loading settings\ninfo: permission mode: request-review\nwarning: checking for updates\n');
+    f.child.stderr.write(
+      'Loading settings\ninfo: permission mode: request-review\n' +
+        'warning: HTTP 403: Your location is not eligible for this service at this time.\n',
+    );
     f.finish();
     await f.handle.done;
     expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
@@ -282,6 +285,8 @@ describe('Antigravity 原生对话运行器', () => {
   });
 
   it.each([
+    ['result-first', 'FAILED_PRECONDITION (code 400): User location is not supported for the API use.', '当前访问地区'],
+    ['stderr-first', 'FAILED_PRECONDITION (code 400): User location is not supported for the API use.', '当前访问地区'],
     ['result-first', 'Error 401, Message: invalid API key, Status: UNAUTHENTICATED', '认证'],
     ['stderr-first', 'Error 503, Message: model unavailable, Status: UNAVAILABLE', '503'],
     ['result-first', 'Error 500, Message: Upstream gateway error, Status: INTERNAL', 'HTTP 500'],

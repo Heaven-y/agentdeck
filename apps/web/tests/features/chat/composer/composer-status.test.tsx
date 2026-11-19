@@ -186,13 +186,16 @@ it('待核实结果没有可信回复步骤时不借用压缩或上一轮统计'
   ]);
   useChat.setState({ items });
   render(<ComposerStatus />);
-  expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('— tok/s');
+  expect(screen.getByRole('button', { name: '最近一次统计详情' }).textContent).toContain('10.0 tok/s');
+  expect(screen.queryByRole('button', { name: '本轮统计详情' })).toBeNull();
   expect(screen.getByRole('button', { name: '查看本轮状态' })).toBeTruthy();
 });
 
-it('底部摘要保留上下文与 tok/s，token 明细按需展开，运行中隐藏旧统计', async () => {
+it('页脚保留最近可用速度，按范围标记并在本轮有新值后替换', async () => {
+  const first: ChatItem[] = [{ kind: 'user', id: 'first', text: '第一轮' }, statistics];
+  const second: ChatItem[] = [...first, { kind: 'user', id: 'second', text: '第二轮' }];
   useChat.setState({
-    items: [statistics],
+    items: first,
     contextUsage: { source: 'claude_estimate', usedTokens: 1000, windowTokens: 20000 },
   });
   render(<ComposerStatus />);
@@ -208,9 +211,28 @@ it('底部摘要保留上下文与 tok/s，token 明细按需展开，运行中�
   fireEvent.click(screen.getByRole('button', { name: '本轮统计详情' }));
   expect(await screen.findByRole('dialog', { name: '本轮统计详情' })).toBeTruthy();
   expect(screen.getByText('输入 300')).toBeTruthy();
-  act(() => useChat.setState({ running: true }));
+  act(() =>
+    useChat.setState({
+      running: true,
+      items: [
+        ...second,
+        {
+          ...statistics,
+          scope: 'step',
+          id: 'running-step',
+          usage: { ...statistics.usage!, scope: 'step', outputTokens: 2000 },
+        },
+        { kind: 'user', id: 'steer', steeringInput: true, text: '本轮内的引导' },
+      ],
+    }),
+  );
+  expect(screen.getByRole('button', { name: '最近一次统计详情' }).textContent).toContain('60.0 tok/s');
+  act(() => useChat.setState({ running: false, items: second }));
+  expect(screen.getByRole('button', { name: '最近一次统计详情' }).textContent).toContain('60.0 tok/s');
+  act(() => useChat.setState({ items: [...second, { ...statistics, id: 'second-rate', durationMs: 4000 }] }));
+  expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('30.0 tok/s');
+  act(() => useChat.setState({ conversationId: 'new', items: [] }));
   expect(screen.getByRole('button', { name: '本轮统计详情' }).textContent).toContain('— tok/s');
-  expect(screen.queryByText('60.0 tok/s')).toBeNull();
 });
 
 it('没有原生统计时固定显示未知值，不伪造零速与窗口', () => {

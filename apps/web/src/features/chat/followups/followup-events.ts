@@ -3,7 +3,7 @@ import type { ChatState, ConversationView } from '../state/chat-state';
 import type { DraftAttachment } from '../composer/attachment-actions';
 import { emptyConversation, EMPTY_MODEL_OVERRIDES, DEFAULT_REASONING_EFFORTS } from '../state/chat-state-helpers';
 import { conversationById, conversationViews, updateConversation } from '../state/conversations';
-import { inputItem, sameDraft, type LocalFollowupQueue, type FollowupDraft } from './followup-state';
+import { inputItem, sameDraft, restoreDraft, type LocalFollowupQueue, type FollowupDraft } from './followup-state';
 import { openedTab } from '../tabs/conversation-tabs';
 import { reduceChat } from '../../conversation/model/conversation-events';
 import { snapshotQuestions } from '../interactions/async-question-actions';
@@ -70,6 +70,17 @@ function bindFiles(files: DraftAttachment[], sessionId?: string) {
       : entry,
   );
 }
+function returnedDraft(view: ConversationView, snapshot: FollowupSnapshot, pending: LocalFollowupQueue['returning']) {
+  if (!pending) return {};
+  const item = snapshot.items.find((entry) => entry.clientMessageId === pending.clientMessageId);
+  if (!item || item.revision < pending.revision) return {};
+  if (item.revision === pending.revision) return { returning: pending };
+  if (item.revision !== pending.revision + 1 || item.status !== 'cancelled' || !item.returnedToDraft) return {};
+  const backup = { ...pending.backup, attachments: bindFiles(pending.backup.attachments, snapshot.sessionId) };
+  // 取回期间新加的附件可能还在上传，此时把取回内容留作备份，不打断现有草稿。
+  const patch = view.attachmentsBusy ? { draftBackups: [...view.draftBackups, backup] } : restoreDraft(view, backup);
+  return { patch };
+}
 export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnapshot) {
   const state = get(),
     old = state.followups[snapshot.queueId];
@@ -78,14 +89,17 @@ export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnap
   const view = knownView(state, snapshot);
   if (!view || !matchesView(view, snapshot)) return;
   const { drafts, clearDraft } = mergeDrafts(old, snapshot, view);
+  const cleared = clearDraft ? { draft: '', draftAttachments: [], selectedCapability: undefined } : {};
+  const returned = returnedDraft({ ...view, ...cleared }, snapshot, old?.returning);
   const patch = {
     queueId: snapshot.queueId,
     sessionId: snapshot.sessionId ?? view.sessionId,
     items: snapshotQuestions(view.items, snapshot),
-    ...(clearDraft ? { draft: '', draftAttachments: [], selectedCapability: undefined } : {}),
+    ...cleared,
+    ...returned.patch,
   };
   set({
-    followups: { ...state.followups, [snapshot.queueId]: { snapshot, drafts } },
+    followups: { ...state.followups, [snapshot.queueId]: { snapshot, drafts, returning: returned.returning } },
     ...updateConversation(state, view, patch),
   });
 }
@@ -93,6 +107,7 @@ export function invalidateFollowups(get: Get, set: Set) {
   const clearAsset = (queue: LocalFollowupQueue): LocalFollowupQueue => ({
     ...queue,
     invalid: true,
+    returning: undefined,
     error: '恢复身份已失效；请核对历史后恢复到草稿，不会自动重发。',
     drafts: Object.fromEntries(
       Object.entries(queue.drafts).map(([id, draft]) => [
@@ -147,12 +162,9 @@ function startedPatch(
     queueId: message.queueId,
     runningInput: input,
     sessionId: input.sessionId ?? view.sessionId,
-    items: inputItem(
-      reduceChat(view.items, { type: 'turn_end', isError: false }),
-      input,
-      input.clientTurnId,
-      draft?.attachments.flatMap((item) => (item.asset ? [item.asset] : [])),
-    ),
+    items: inputItem(reduceChat(view.items, { type: 'turn_end', isError: false }), input, input.clientTurnId, {
+      attachments: draft?.attachments.flatMap((item) => (item.asset ? [item.asset] : [])),
+    }),
     running: true,
     contextWindow: undefined,
     turnId: message.turnId,
@@ -203,7 +215,10 @@ export function followupDelivered(get: Get, set: Set, message: Extract<ServerMes
   if (view.receivedInputs.includes(message.clientMessageId)) return;
   set(
     updateConversation(state, view, {
-      items: inputItem(view.items, message, message.clientMessageId, message.attachments),
+      items: inputItem(view.items, message, message.clientMessageId, {
+        attachments: message.attachments,
+        steeringInput: true,
+      }),
       receivedInputs: [...view.receivedInputs, message.clientMessageId].slice(-1000),
       unread: view.conversationId !== state.conversationId || !state.conversationVisible,
     }),
@@ -218,5 +233,8 @@ export function followupError(get: Get, set: Set, message: Extract<ServerMessage
     draft && message.clientMessageId
       ? { ...queue.drafts, [message.clientMessageId]: { ...draft, error: message.message } }
       : queue.drafts;
-  set({ followups: { ...state.followups, [message.queueId]: { ...queue, drafts, error: message.message } } });
+  const returning = queue.returning?.clientMessageId === message.clientMessageId ? undefined : queue.returning;
+  set({
+    followups: { ...state.followups, [message.queueId]: { ...queue, drafts, returning, error: message.message } },
+  });
 }

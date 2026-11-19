@@ -4,12 +4,15 @@ import {
   type ClientMessage,
   type FollowupMode,
 } from '@agentdeck/shared/conversation';
-import type { ChatState, ConversationView } from '../state/chat-state';
+import type { ChatState } from '../state/chat-state';
 import type { ChatSocket } from '../../../lib/ws';
 import { attachmentBlocked } from '../composer/attachment-actions';
 import {
+  canReturnToDraft,
+  canSteerQueued,
   draftContent,
   pendingFollowups,
+  restoreDraft,
   steerAvailable,
   viewQueue,
   type FollowupDraft,
@@ -77,18 +80,52 @@ export function createFollowupActions(get: () => ChatState, set: Set, send: Chat
       });
       return true;
     },
-    editFollowup(queueId: string, id: string, text: string) {
+    editFollowup(queueId: string, id: string) {
+      const state = get();
       const found = entry(queueId, id);
       if (
         !found ||
-        found.item.mode !== 'queue' ||
-        !['queued', 'failed'].includes(found.item.status) ||
-        !found.item.content
+        found.queue.returning ||
+        viewQueue(state) !== found.queue ||
+        !canReturnToDraft(found.item, found.queue) ||
+        state.attachmentsBusy
       )
         return false;
-      const content = { ...found.item.content, text };
-      if (!FollowupContentSchema.safeParse(content).success) return false;
-      return action({ type: 'followup.edit', queueId, clientMessageId: id, revision: found.item.revision, content });
+      const backup = restoreEntry(found.queue, id, state.selectedCapability);
+      if (!backup) return false;
+      const blocked = recoveryBlocked(backup);
+      if (blocked) {
+        set({ banner: blocked });
+        return false;
+      }
+      const revision = found.item.revision;
+      if (!action({ type: 'followup.cancel', queueId, clientMessageId: id, revision, returnToDraft: true }))
+        return false;
+      set({
+        followups: {
+          ...state.followups,
+          [queueId]: { ...found.queue, returning: { clientMessageId: id, revision, backup } },
+        },
+      });
+      return true;
+    },
+    steerFollowup(queueId: string, id: string) {
+      const state = get();
+      const found = entry(queueId, id);
+      return (
+        !!state.turnId &&
+        !!found &&
+        viewQueue(state) === found.queue &&
+        !found.queue.returning &&
+        canSteerQueued(state, found.item, found.queue) &&
+        action({
+          type: 'followup.steer',
+          queueId,
+          clientMessageId: id,
+          revision: found.item.revision,
+          turnId: state.turnId,
+        })
+      );
     },
     cancelFollowup(queueId: string, id: string) {
       const found = entry(queueId, id);
@@ -122,12 +159,9 @@ export function createFollowupActions(get: () => ChatState, set: Set, send: Chat
       const view = conversationById(state, queue.snapshot.conversationId);
       const backup = restoreEntry(queue, id, view?.selectedCapability);
       if (!backup || !view || view.attachmentsBusy) return;
-      if (backup.content.selection && !backup.selection) {
-        set({ banner: `请重新选择原生技能或命令 ${backup.content.selection.id} 后再恢复，原备份仍保留。` });
-        return;
-      }
-      if (backup.missingFiles) {
-        set({ banner: '当前页面没有原文件备份，请重新选择附件。' });
+      const reason = recoveryBlocked(backup);
+      if (reason) {
+        set({ banner: reason });
         return;
       }
       set(updateConversation(state, view, restoreDraft(view, backup)));
@@ -183,6 +217,10 @@ function restoreEntry(queue: LocalFollowupQueue, id: string, selected?: DraftBac
     missingFiles: !!content.attachments?.length && !attachments.length,
   };
 }
+function recoveryBlocked(backup: NonNullable<ReturnType<typeof restoreEntry>>) {
+  if (backup.content.selection && !backup.selection) return `请重新选择原生命令 /${backup.content.selection.id}。`;
+  if (backup.missingFiles) return '当前页面没有原文件备份，无法取回附件。';
+}
 function restoredSelection(id: string | undefined, local?: FollowupDraft, selected?: DraftBackup['selection']) {
   return local?.selection ?? (selected?.id === id ? selected : undefined);
 }
@@ -194,31 +232,6 @@ function followupCapacity(queue: LocalFollowupQueue) {
   );
   if (pendingFollowups(queue).length + localOnly.length >= FOLLOWUP_LIMITS.perConversation)
     return '待发列表已满，最多10条，请先处理待发记录或本页备份。';
-}
-function restoreDraft(view: ConversationView, saved: DraftBackup): Partial<ConversationView> {
-  const current: DraftBackup = {
-    id: crypto.randomUUID(),
-    text: view.draft,
-    attachments: view.draftAttachments,
-    selection: view.selectedCapability,
-    content: draftContent(view, view.draft),
-  };
-  return {
-    draft: saved.text,
-    draftAttachments: saved.attachments,
-    selectedCapability: saved.selection,
-    ...(saved.content
-      ? {
-          modelOverrides: { ...view.modelOverrides, [view.agent]: saved.content.model ?? '' },
-          reasoningEfforts: { ...view.reasoningEfforts, [view.agent]: saved.content.reasoningEffort ?? '' },
-          collaborationMode: saved.content.collaborationMode,
-        }
-      : {}),
-    draftBackups: [
-      ...view.draftBackups,
-      ...(current.text || current.attachments.length || current.selection ? [current] : []),
-    ],
-  };
 }
 export function followupRestriction(state: ChatState, text: string, mode: FollowupMode) {
   if (

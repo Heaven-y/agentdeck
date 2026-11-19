@@ -40,6 +40,9 @@ export class FollowupQuestions {
   get(id: string): AsyncQuestionState | undefined {
     return this.entries.get(id);
   }
+  ownsInput(clientMessageId: string): boolean {
+    return [...this.entries.values()].some((entry) => entry.clientMessageId === clientMessageId);
+  }
   snapshot(items: FollowupItem[]): AsyncQuestionState[] {
     for (const entry of this.entries.values()) {
       const item = items.find((item) => item.clientMessageId === entry.clientMessageId);

@@ -41,7 +41,14 @@ export type ChatItem =
     })
   | { kind: 'fork-point'; id: string; pointId: string }
   | { kind: 'compaction'; id: string; state: CompactionState; incomplete?: boolean }
-  | { kind: 'user'; id: string; text: string; attachments?: MessageAttachment[]; clientMessageId?: string }
+  | {
+      kind: 'user';
+      id: string;
+      text: string;
+      attachments?: MessageAttachment[];
+      clientMessageId?: string;
+      steeringInput?: true;
+    }
   | { kind: 'assistant'; id: string; text: string; streaming: boolean; responseModel?: string }
   | { kind: 'reasoning'; id: string; text: string }
   | {

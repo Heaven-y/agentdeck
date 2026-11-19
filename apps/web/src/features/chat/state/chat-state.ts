@@ -26,7 +26,8 @@ export type ChatState = {
   draftBackups: DraftBackup[];
   receivedInputs: string[];
   sendFollowup(text: string, mode: FollowupMode): boolean;
-  editFollowup(queueId: string, id: string, text: string): boolean;
+  editFollowup(queueId: string, id: string): boolean;
+  steerFollowup(queueId: string, id: string): boolean;
   cancelFollowup(queueId: string, id: string): boolean;
   clearFollowups(queueId: string): boolean;
   resumeFollowups(queueId: string): boolean;

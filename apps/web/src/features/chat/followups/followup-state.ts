@@ -1,4 +1,10 @@
-import type { AgentCapability, FollowupContent, FollowupSnapshot, ClientMessage } from '@agentdeck/shared/conversation';
+import type {
+  AgentCapability,
+  FollowupContent,
+  FollowupItem,
+  FollowupSnapshot,
+  ClientMessage,
+} from '@agentdeck/shared/conversation';
 import type { DraftAttachment } from '../composer/attachment-actions';
 import type { ChatState, ConversationView } from '../state/chat-state';
 import type { ChatItem } from '../../conversation/model/conversation-events';
@@ -13,6 +19,7 @@ export type FollowupDraft = DraftBackup & { content: FollowupContent; acknowledg
 export type LocalFollowupQueue = {
   snapshot: FollowupSnapshot;
   drafts: Record<string, FollowupDraft>;
+  returning?: { clientMessageId: string; revision: number; backup: DraftBackup };
   invalid?: boolean;
   error?: string;
 };
@@ -52,33 +59,52 @@ export function draftContent(view: ConversationView, text: string): FollowupCont
     ...(view.permission ? { permission: view.permission } : {}),
   };
 }
-export function steerAvailable(state: ChatState): boolean {
-  const queue = viewQueue(state);
-  if (
-    [
-      !state.running,
-      !state.turnId,
-      !queue?.snapshot.canSteer,
-      queue?.invalid,
-      queue?.snapshot.paused,
-      state.selectedCapability,
-    ].some(Boolean)
-  )
-    return false;
-  return sameSteeringSettings(state);
+function questionInput(queue: LocalFollowupQueue, id: string): boolean {
+  return !!queue.snapshot.questions?.some((entry) => entry.clientMessageId === id);
 }
-function sameSteeringSettings(state: ChatState): boolean {
-  const active = state.runningInput;
-  const next = {
-    model: state.modelOverrides[state.agent].trim() || undefined,
-    reasoningEffort: state.reasoningEfforts[state.agent].trim() || undefined,
-    permission: state.permission,
-  };
+export function canReturnToDraft(item: FollowupItem, queue: LocalFollowupQueue): boolean {
+  return (
+    !queue.invalid &&
+    item.mode === 'queue' &&
+    !!item.content &&
+    ['queued', 'failed'].includes(item.status) &&
+    !questionInput(queue, item.clientMessageId)
+  );
+}
+function steerTarget(state: ChatState, queue?: LocalFollowupQueue): boolean {
+  return (
+    state.running &&
+    !!state.turnId &&
+    queue?.snapshot.activeTurnId === state.turnId &&
+    !!queue.snapshot.canSteer &&
+    !queue.invalid &&
+    !queue.snapshot.paused
+  );
+}
+export function steerAvailable(state: ChatState): boolean {
+  return (
+    steerTarget(state, viewQueue(state)) &&
+    !state.selectedCapability &&
+    sameSteeringSettings(state.runningInput, draftContent(state, state.draft))
+  );
+}
+export function canSteerQueued(state: ChatState, item: FollowupItem, queue: LocalFollowupQueue): boolean {
+  return (
+    steerTarget(state, queue) &&
+    item.mode === 'queue' &&
+    item.status === 'queued' &&
+    !!item.content &&
+    !item.content.selection &&
+    !questionInput(queue, item.clientMessageId) &&
+    sameSteeringSettings(state.runningInput, item.content)
+  );
+}
+function sameSteeringSettings(active: FollowupContent | undefined, next: FollowupContent): boolean {
   return (
     !!active &&
     active.model === next.model &&
     active.reasoningEffort === next.reasoningEffort &&
-    active.collaborationMode === state.collaborationMode &&
+    active.collaborationMode === next.collaborationMode &&
     JSON.stringify(active.permission) === JSON.stringify(next.permission)
   );
 }
@@ -86,7 +112,7 @@ export function inputItem(
   items: ChatItem[],
   message: Pick<Extract<ClientMessage, { type: 'chat.send' }>, 'text' | 'selection'>,
   id: string,
-  attachments?: Extract<ChatItem, { kind: 'user' }>['attachments'],
+  { attachments, steeringInput }: Pick<Extract<ChatItem, { kind: 'user' }>, 'attachments' | 'steeringInput'> = {},
 ): ChatItem[] {
   if (items.some((item) => item.kind === 'user' && item.clientMessageId === id)) return items;
   return [
@@ -95,6 +121,7 @@ export function inputItem(
       kind: 'user',
       id: `user-input:${id}`,
       clientMessageId: id,
+      ...(steeringInput ? { steeringInput } : {}),
       text: message.text || (message.selection ? `/${message.selection.id}` : ''),
       ...(attachments?.length ? { attachments } : {}),
     },
@@ -107,4 +134,30 @@ export function sameDraft(view: ConversationView, draft: FollowupDraft) {
     JSON.stringify(view.draftAttachments.map((item) => item.id)) ===
       JSON.stringify(draft.attachments.map((item) => item.id))
   );
+}
+
+export function restoreDraft(view: ConversationView, saved: DraftBackup): Partial<ConversationView> {
+  const current: DraftBackup = {
+    id: crypto.randomUUID(),
+    text: view.draft,
+    attachments: view.draftAttachments,
+    selection: view.selectedCapability,
+    content: draftContent(view, view.draft),
+  };
+  return {
+    draft: saved.text,
+    draftAttachments: saved.attachments,
+    selectedCapability: saved.selection,
+    ...(saved.content
+      ? {
+          modelOverrides: { ...view.modelOverrides, [view.agent]: saved.content.model ?? '' },
+          reasoningEfforts: { ...view.reasoningEfforts, [view.agent]: saved.content.reasoningEffort ?? '' },
+          collaborationMode: saved.content.collaborationMode,
+        }
+      : {}),
+    draftBackups: [
+      ...view.draftBackups,
+      ...(current.text || current.attachments.length || current.selection ? [current] : []),
+    ],
+  };
 }

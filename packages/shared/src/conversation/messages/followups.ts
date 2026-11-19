@@ -43,6 +43,7 @@ export type FollowupItem = {
   revision: number;
   mode: FollowupMode;
   status: FollowupStatus;
+  returnedToDraft?: true;
   text: string;
   content?: FollowupContent;
   reason?: string;

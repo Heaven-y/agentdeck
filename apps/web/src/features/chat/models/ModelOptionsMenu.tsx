@@ -64,8 +64,7 @@ function ModelVisibilityNotice({ hidden }: { hidden: number }) {
   if (hidden < 1) return null;
   return (
     <p role="status" className="px-3 py-2 text-xs leading-5 text-muted-foreground">
-      已按保存的显示范围筛选，还有 {hidden} 个模型未显示。到设置 → 模型 → 当前 CLI
-      的「对话菜单中的模型」恢复全部模型，再保存配置。
+      已隐藏 {hidden} 个模型，可在设置 → 模型中调整。
     </p>
   );
 }
@@ -387,7 +386,7 @@ function EffortControls({
 /** 模型菜单只表达下一轮选择，不把候选或覆盖值冒充实际模型报告。 */
 function setModelMenuOpen(open: boolean, setOpen: (open: boolean) => void, catalog: CatalogProps['catalog']) {
   // 另一个窗口可能切了 AGY 连接；旧目录只向本机复核，不强制重新发现或读取额度。
-  if (open && hasAntigravitySnapshot(catalog)) void catalog.refetch();
+  if (open && hasAntigravitySnapshot(catalog)) void catalog.refetch({ cancelRefetch: false });
   setOpen(open);
 }
 

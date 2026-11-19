@@ -733,9 +733,14 @@ function nativeFollowupOutcome(turn: Turn) {
   };
 }
 function isFollowupAction(message: ClientMessage): message is Parameters<FollowupHost['handle']>[1] {
-  return new Set(['chat.followup', 'followup.edit', 'followup.cancel', 'followup.clear', 'followup.resume']).has(
-    message.type,
-  );
+  return new Set([
+    'chat.followup',
+    'followup.edit',
+    'followup.cancel',
+    'followup.clear',
+    'followup.resume',
+    'followup.steer',
+  ]).has(message.type);
 }
 function validateInputFeatures(assets: ChatAttachment[], features: NativeInteractionFeatures): void {
   if (assets.some((file) => file.kind === 'image') && !features.images.available)
