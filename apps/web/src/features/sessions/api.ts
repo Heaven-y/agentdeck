@@ -13,12 +13,23 @@ import type {
   SubagentRead,
   PermissionSelection,
 } from '@agentdeck/shared/conversation';
+import { SessionPermissionDefaultsSchema } from '@agentdeck/shared/conversation';
 import { request } from '../../lib/http';
 
 const sessionPath = (workspaceId: string, sessionId: string, agent: AgentKind) =>
   `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}`;
 
 export const sessionsApi = {
+  permissionDefaults: (signal?: AbortSignal) =>
+    request<unknown>('/api/sessions/permission-defaults', { signal, cache: 'no-store' }).then((value) =>
+      SessionPermissionDefaultsSchema.parse(value),
+    ),
+  savePermissionDefault: (agent: AgentKind, permission: PermissionSelection | null) =>
+    request<{ permission: PermissionSelection | null }>(`/api/sessions/permission-defaults/${agent}`, {
+      method: 'PUT',
+      body: JSON.stringify({ permission }),
+      cache: 'no-store',
+    }),
   sessionPermission: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) =>
     request<{ permission: PermissionSelection | null }>(
       `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}/permission`,

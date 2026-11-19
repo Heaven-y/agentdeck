@@ -1,6 +1,7 @@
 import { ArrowUp, Square } from 'lucide-react';
 import { lazy, Suspense, useId, type FormEvent } from 'react';
 import { managementPending, useChat } from '../state/chat-store';
+import { conversationPermissionError, permissionPending } from '../state/chat-permission';
 import { selectionRestriction } from '../controls/capability-selection';
 import { ComposerInput } from './ComposerInput';
 import { useResumeSession } from './use-resume-session';
@@ -98,10 +99,10 @@ export function Composer() {
   const setText = useChat((s) => s.setDraft);
   const connected = useChat((s) => s.connection === 'open');
   const loading = useChat((s) => s.loadingHistory);
-  const historyError = useChat((s) => s.historyError || s.permissionError);
+  const historyError = useChat((s) => s.historyError || conversationPermissionError(s));
   const selection = useChat((s) => s.selectedCapability);
   const agent = useChat((s) => s.agent);
-  const permissionPending = useChat((s) => s.permissionLoading || s.permissionSaving);
+  const waitingForPermission = useChat(permissionPending);
   const sessionId = useChat((s) => s.sessionId);
   const managing = useChat(managementPending);
   const send = useChat((s) => s.send);
@@ -110,7 +111,7 @@ export function Composer() {
   const steer = useChat((s) => s.sendFollowup);
   const restriction = selectionRestriction(selection, sessionId, text);
   const resumeSearch = selection ? undefined : resumeArgument(text, agent);
-  const busy = anyBlocked([loading, managing, permissionPending]);
+  const busy = anyBlocked([loading, managing, waitingForPermission]);
   const empty = emptyInput(text, selection) && !attachments.length;
   const blocked = anyBlocked([
     !connected,
@@ -120,7 +121,7 @@ export function Composer() {
     restriction,
     attachmentBlocked({ draftAttachments: attachments, attachmentsBusy: uploading }),
   ]);
-  const dropDisabled = anyBlocked([busy, !connected]);
+  const dropDisabled = anyBlocked([busy, historyError, !connected]);
   const pickerDisabled = anyBlocked([dropDisabled, uploading]);
   const inputHint = selection?.argumentHint || runningHint(running, canSteer);
   const steerBlocked = anyBlocked([!canSteer, blocked, resumeSearch !== undefined]);

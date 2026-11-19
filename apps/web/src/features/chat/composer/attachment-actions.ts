@@ -2,6 +2,7 @@ import { ATTACHMENT_LIMITS, type ChatAttachment, type NativeInteractionFeatures 
 import type { ChatIdentity } from '../../../lib/ws';
 import type { ChatState, ConversationView } from '../state/chat-state';
 import { conversationById, conversationViews, updateConversation } from '../state/conversations';
+import { conversationPermission, conversationPermissionError, permissionPending } from '../state/chat-permission';
 import { attachmentApi } from './attachment-api';
 type DraftAttachmentScope = Pick<ConversationView, 'workspaceId' | 'agent' | 'conversationId' | 'sessionId'>;
 export type DraftAttachment = {
@@ -244,13 +245,15 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
   }
   async function process(id: string) {
     syncAttachmentIdentity();
-    const view = conversationById(get(), id);
+    const state = get();
+    const view = conversationById(state, id);
     const owner = identity();
     if (!view || !owner || view.attachmentsBusy) return;
+    if (permissionPending(state, view) || conversationPermissionError(state, view)) return;
     const startedGeneration = generation;
     update(id, () => ({ attachmentsBusy: true }));
     try {
-      await uploadDraft(view, owner, startedGeneration);
+      await uploadDraft({ ...view, permission: conversationPermission(state, view) }, owner, startedGeneration);
     } catch (error) {
       if (!currentUpload(owner, startedGeneration)) return;
       update(id, (current) => ({

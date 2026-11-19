@@ -132,9 +132,9 @@ Codex 原有的原生 OpenAI/API Key 与自定义服务设置不改。发现能�
 
 ## 会话权限偏好
 
-工作台在自己的 `session-preferences.json` 中保存会话权限覆盖，与原生默认配置分开。version 1 文档保留 `archived`，增加可选 `permissions` 数组；每项只有 `agent`、原生 `sessionId` 和该 CLI 支持的权限选择，不写会话正文、标题或项目路径。旧文档缺少该数组时视为空。
+工作台的 `session-preferences.json` 与原生配置分开。version 1 文档除 `archived` 外，可有 `permissions`（按 CLI 和原生 ID 保存的会话权限），以及 `permissionDefaults`（每个 CLI 独立的新会话默认）。缺省字段视为空，不用旧会话的权限推断新默认。默认以 CLI 为键，不再按项目、模型或登录方式细分；文件不保存标题、正文或项目路径。
 
-归档和恢复保留权限，删除会话时清理对应记录。Claude/Antigravity 重置时移除覆盖；Codex 的显式重置保留 `native` 动作，以便续接时重新读取原生有效配置。写入沿用事务与文件身份核对，不能覆盖同时发生的其他偏好更新；记录损坏时报告不可用，不静默重建。
+手动修改已有会话时，当前会话和对应 CLI 默认在同一次事务写入。重置清除该 CLI 默认：Claude/Antigravity 移除当前会话的覆盖，已有 Codex 会话保留 `native` 重置动作供续接使用，该动作不写入新会话默认。删除会话只清理该会话记录；归档、恢复与轮次结束都不改新默认。读写核对文件身份，索引损坏时不静默重建。
 
 ## MCP 配置与运行管理
 

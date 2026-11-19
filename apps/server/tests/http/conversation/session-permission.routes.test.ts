@@ -70,25 +70,52 @@ async function fixture() {
   });
   const url = (agent: AgentKind = 'claude', projectId = 'project') =>
     `/api/projects/${projectId}/sessions/${agent}/native/permission`;
-  return { app, sessions, preferences, provider, turns, activity, project, url };
+  return { app, sessions, preferences, provider, turns, activity, project, root, url };
 }
 
-it('权限接口独立于原生历史，按 CLI 读取保存并支持重置为原生设置', async () => {
+it('手选权限独立于原生历史，按 CLI 持久化新会话默认，不覆盖其他会话', async () => {
   const f = await fixture();
   const permission = { agent: 'antigravity', mode: 'plan' };
+  const defaults = '/api/sessions/permission-defaults';
+  const codex = { agent: 'codex', mode: 'ask' };
   const initial = await f.app.inject(f.url('antigravity'));
   expect(initial.statusCode).toBe(200);
   expect(initial.json()).toEqual({ permission: null });
   expect(initial.headers['cache-control']).toBe('no-store');
+  expect((await f.app.inject({ method: 'PUT', url: `${defaults}/codex`, payload: { permission } })).statusCode).toBe(
+    400,
+  );
+  expect(
+    (await f.app.inject({ method: 'PUT', url: `${defaults}/codex`, payload: { permission: codex } })).statusCode,
+  ).toBe(200);
+  expect((await f.app.inject(f.url('codex'))).json()).toEqual({ permission: null });
   const saved = await f.app.inject({ method: 'PUT', url: f.url('antigravity'), payload: { permission } });
   expect(saved.statusCode).toBe(200);
   expect(saved.json()).toEqual({ permission });
   expect((await f.app.inject(f.url('antigravity'))).json()).toEqual({ permission });
   expect((await f.app.inject(f.url('claude'))).json()).toEqual({ permission: null });
+  const reloaded = createSessionPreferences({ configDir: f.root });
+  expect(await reloaded.permissionDefaults()).toEqual({ antigravity: permission, codex });
+  await f.sessions.rememberPermission(
+    { agent: 'antigravity', sessionId: 'older' },
+    { agent: 'antigravity', mode: 'auto' },
+  );
+  expect((await f.app.inject(defaults)).json()).toEqual({ antigravity: permission, codex });
   const reset = await f.app.inject({ method: 'PUT', url: f.url('antigravity'), payload: { permission: null } });
   expect(reset.statusCode).toBe(200);
   expect(reset.json()).toEqual({ permission: null });
   expect(await f.preferences.permission({ agent: 'antigravity', sessionId: 'native' })).toBeUndefined();
+  expect(await f.preferences.permission({ agent: 'antigravity', sessionId: 'older' })).toEqual({
+    agent: 'antigravity',
+    mode: 'auto',
+  });
+  expect((await f.app.inject(defaults)).json()).toEqual({ codex });
+  const native = { agent: 'codex', mode: 'native' };
+  expect((await f.app.inject({ method: 'PUT', url: f.url('codex'), payload: { permission: native } })).statusCode).toBe(
+    200,
+  );
+  expect((await f.app.inject(f.url('codex'))).json()).toEqual({ permission: native });
+  expect((await f.app.inject(defaults)).json()).toEqual({});
   expect(f.provider.read).not.toHaveBeenCalled();
   expect(f.provider.mutate).not.toHaveBeenCalled();
 });

@@ -140,6 +140,9 @@ it('批量附件遵守数量和字节预算，上传失败保持文字草稿，�
   const features = vi.spyOn(attachmentApi, 'features').mockResolvedValue(supported());
   vi.spyOn(attachmentApi, 'upload').mockResolvedValue(asset);
   const remove = vi.spyOn(attachmentApi, 'remove').mockResolvedValue();
+  const permission = { agent: 'claude' as const, mode: 'plan' as const };
+  const { permissionDefaults } = useChat.getState();
+  useChat.setState({ permissionDefaults: { ...permissionDefaults, values: { claude: permission } } });
   useChat.getState().setDraft('原草稿');
   for (const files of [
     Array.from({ length: 9 }, () => new File(['x'], 'a.txt')),
@@ -154,6 +157,7 @@ it('批量附件遵守数量和字节预算，上传失败保持文字草稿，�
   }
   expect(features).not.toHaveBeenCalled();
   await useChat.getState().addAttachments([new File(['x'], 'notes.txt')]);
+  expect(features).toHaveBeenCalledWith(expect.objectContaining({ permission }), expect.anything());
   const id = useChat.getState().draftAttachments[0]!.id;
   useChat.getState().attachmentPreviewFailed(id);
   expect(useChat.getState().draftAttachments[0]?.error).toContain('无法解码');

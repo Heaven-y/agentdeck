@@ -4,10 +4,13 @@ import {
   AgentKindSchema,
   NativeSessionIdSchema,
   PermissionSelectionSchema,
+  SessionPermissionDefaultsSchema,
+  permissionForNewSession,
   type AgentKind,
   type PermissionSelection,
   type SessionRef,
 } from '@agentdeck/shared/conversation';
+import { SessionError } from '../agents/errors';
 import { nativeFileTransaction } from '../platform/files/transactions';
 import {
   assertDirectoryUnchanged,
@@ -25,20 +28,34 @@ const Stored = z.strictObject({
   version: z.literal(1),
   archived: z.array(Entry).max(3000),
   permissions: z.array(PermissionEntry).max(3000).default([]),
+  permissionDefaults: SessionPermissionDefaultsSchema.optional(),
 });
 type Preferences = z.infer<typeof Stored>;
 const sameSession = (left: SessionRef, right: SessionRef) =>
   left.agent === right.agent && left.sessionId === right.sessionId;
 
-export class SessionPreferencesError extends Error {
-  readonly status = 503;
-  readonly code = 'session_preferences_unavailable';
+export class SessionPreferencesError extends SessionError {
   constructor() {
-    super('工作台会话偏好暂不可用，请检查本机配置文件。');
+    super(503, 'session_preferences_unavailable', '工作台会话偏好暂不可用，请检查本机配置文件。');
   }
 }
 
-/** 只存会话身份和用户手选权限，不保存标题、项目路径或正文；外部更新仍核对文件身份。 */
+function withPermissionDefault(
+  stored: Preferences,
+  agent: AgentKind,
+  permission: PermissionSelection | null,
+): Preferences {
+  AgentKindSchema.parse(agent);
+  if (permission && permission.agent !== agent) throw new SessionPreferencesError();
+  const permissionDefaults = { ...stored.permissionDefaults };
+  const selected = permissionForNewSession(permission);
+  if (selected) permissionDefaults[agent] = selected;
+  else delete permissionDefaults[agent];
+  const { permissionDefaults: _previous, ...rest } = stored;
+  return Object.keys(permissionDefaults).length ? { ...rest, permissionDefaults } : rest;
+}
+
+/** 只存归档身份、会话权限和各 CLI 的新会话默认，不保存标题、路径或正文。 */
 export function createSessionPreferences({ configDir }: { configDir: string }) {
   const directory = path.resolve(configDir);
   const file = path.join(directory, 'session-preferences.json');
@@ -57,9 +74,8 @@ export function createSessionPreferences({ configDir }: { configDir: string }) {
       throw new SessionPreferencesError();
     });
   }
-  function update(session: SessionRef, change: (stored: Preferences) => Preferences) {
+  function update(change: (stored: Preferences) => Preferences) {
     return transaction(async () => {
-      Entry.parse(session);
       const { snapshot, stored } = await load();
       const next = Stored.parse(change(stored));
       if (JSON.stringify(next) === JSON.stringify(stored)) return;
@@ -67,6 +83,12 @@ export function createSessionPreferences({ configDir }: { configDir: string }) {
       if (data.length > MAX_CONFIG_BYTES) throw new SessionPreferencesError();
       const parents = await inspectDirectory(directory, true);
       await writeConfigFile(file, data, snapshot, parents!);
+    });
+  }
+  function updateSession(session: SessionRef, change: (stored: Preferences) => Preferences) {
+    return update((stored) => {
+      Entry.parse(session);
+      return change(stored);
     });
   }
   return {
@@ -78,7 +100,7 @@ export function createSessionPreferences({ configDir }: { configDir: string }) {
           ),
       ),
     setArchived: (session: SessionRef, archived: boolean) =>
-      update(session, (stored) => {
+      updateSession(session, (stored) => {
         const entries = stored.archived.filter((entry) => !sameSession(entry, session));
         if (archived) entries.push({ agent: session.agent, sessionId: session.sessionId });
         return { ...stored, archived: entries };
@@ -88,14 +110,18 @@ export function createSessionPreferences({ configDir }: { configDir: string }) {
         Entry.parse(session);
         return (await load()).stored.permissions.find((entry) => sameSession(entry, session))?.permission;
       }),
-    setPermission: (session: SessionRef, permission: PermissionSelection | null) =>
-      update(session, (stored) => {
+    permissionDefaults: () => transaction(async () => (await load()).stored.permissionDefaults ?? {}),
+    setPermissionDefault: (agent: AgentKind, permission: PermissionSelection | null) =>
+      update((stored) => withPermissionDefault(stored, agent, permission)),
+    setPermission: (session: SessionRef, permission: PermissionSelection | null, rememberDefault = false) =>
+      updateSession(session, (stored) => {
         const permissions = stored.permissions.filter((entry) => !sameSession(entry, session));
         if (permission) permissions.push(PermissionEntry.parse({ ...session, permission }));
-        return { ...stored, permissions };
+        const next = { ...stored, permissions };
+        return rememberDefault ? withPermissionDefault(next, session.agent, permission) : next;
       }),
     remove: (session: SessionRef) =>
-      update(session, (stored) => ({
+      updateSession(session, (stored) => ({
         ...stored,
         archived: stored.archived.filter((entry) => !sameSession(entry, session)),
         permissions: stored.permissions.filter((entry) => !sameSession(entry, session)),

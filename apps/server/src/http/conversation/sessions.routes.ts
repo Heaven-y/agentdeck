@@ -10,6 +10,7 @@ import {
   SessionPageQuerySchema,
   SessionPermissionInputSchema,
   SubagentQuerySchema,
+  permissionForNewSession,
 } from '@agentdeck/shared/conversation';
 import { type Workspace } from '@agentdeck/shared/projects';
 import { SessionError } from '../../agents/errors';
@@ -113,6 +114,26 @@ export function registerSessionRoutes(app: FastifyInstance, deps: Deps): void {
   }
   app.get('/api/sessions', routeOptions, (req, reply) => globalList(req, reply, false));
   app.get('/api/sessions/archived', routeOptions, (req, reply) => globalList(req, reply, true));
+  app.get('/api/sessions/permission-defaults', routeOptions, async (req, reply) => {
+    if (!EmptyQuery.safeParse(req.query).success) return reply.code(400).send({ message: '权限默认值请求格式不正确' });
+    try {
+      return await deps.sessions.permissionDefaults();
+    } catch (error) {
+      return sendFailure(reply, error, '新会话权限读取失败');
+    }
+  });
+  app.put('/api/sessions/permission-defaults/:agent', routeOptions, async (req, reply) => {
+    const params = Query.safeParse(req.params);
+    const input = SessionPermissionInputSchema.safeParse(req.body);
+    if (!params.success || !EmptyQuery.safeParse(req.query).success || !input.success)
+      return reply.code(400).send({ message: '权限默认值请求格式不正确' });
+    try {
+      await deps.sessions.setPermissionDefault(params.data.agent, input.data.permission);
+      return { permission: permissionForNewSession(input.data.permission) ?? null };
+    } catch (error) {
+      return sendFailure(reply, error, '新会话权限保存失败');
+    }
+  });
   async function writeInProject<T>(id: string, operation: (workspace: Workspace) => Promise<T>): Promise<T> {
     // 同步取得租约再读取项目，避免管理事务先换目录、会话写操作后使用旧快照。
     const release = deps.activity?.acquire(id);

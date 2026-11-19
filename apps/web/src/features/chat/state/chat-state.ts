@@ -16,6 +16,7 @@ import type { DraftAttachment } from '../composer/attachment-actions';
 import type { ChatIdentity } from '../../../lib/ws';
 import type { FollowupContent, FollowupMode, AsyncQuestion } from '@agentdeck/shared/conversation';
 import type { LocalFollowupQueue, DraftBackup } from '../followups/followup-state';
+import type { PermissionDefaultsState } from './chat-permission';
 export type SessionOperation = { action: SessionActionInput['action'] | 'fork'; pending: boolean; error?: string };
 export type ChatState = {
   followups: Record<string, LocalFollowupQueue>;
@@ -76,6 +77,8 @@ export type ChatState = {
   initialDefaultsEligible: boolean;
   reasoningEfforts: Record<AgentKind, string>;
   permission?: PermissionSelection;
+  permissionDefaults: PermissionDefaultsState;
+  readPermissionDefaults(): Promise<void>;
   permissionLoading: boolean;
   permissionSaving: boolean;
   permissionError?: string;

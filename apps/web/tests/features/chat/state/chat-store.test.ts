@@ -11,9 +11,11 @@ import type {
   ServerMessage,
   SessionActionInput,
   SessionHistory,
+  SessionPermissionDefaults,
   RecoveryNotice,
 } from '@agentdeck/shared/conversation';
 import type { ConnectionStatus } from '../../../../src/lib/ws';
+import { conversationPermission } from '../../../../src/features/chat/state/chat-permission';
 
 // node 环境没有 localStorage，用内存实现
 const storage = new Map<string, string>();
@@ -78,6 +80,7 @@ beforeEach(() => {
   vi.spyOn(sessionsApi, 'saveSessionPermission').mockImplementation(
     async (_workspace, _session, _agent, permission) => ({ permission }),
   );
+  vi.spyOn(sessionsApi, 'savePermissionDefault').mockImplementation(async (_agent, permission) => ({ permission }));
   open = true;
   useChat.setState(useChat.getInitialState(), true);
   useChat.getState().newSession('claude');
@@ -234,6 +237,7 @@ it('运行中可离开并新建，后台输出和审批仍归属原会话', asyn
   useChat.getState().setModel('selected-a');
   useChat.getState().setReasoningEffort('high');
   useChat.getState().setPermission({ agent: 'claude', mode: 'auto' });
+  await vi.waitFor(() => expect(conversationPermission(useChat.getState())).toEqual({ agent: 'claude', mode: 'auto' }));
   const turnId = startTurn('任务A');
   const firstId = useChat.getState().conversationId;
   useChat.getState().selectWorkspace('another');
@@ -1386,21 +1390,34 @@ it('停止答复未确认时恢复后允许用户再次停止，审批答复同�
   ]);
 });
 
-it('权限只作用于当前会话，运行中锁定，新建和跨CLI选择不继承', () => {
-  useChat.getState().setPermission({ agent: 'claude', mode: 'auto' });
-  useChat.getState().send('带权限选择');
-  expect(sent.at(-1)).toMatchObject({ permission: { agent: 'claude', mode: 'auto' } });
-  useChat.getState().setPermission({ agent: 'claude', mode: 'bypassPermissions' });
-  expect(useChat.getState().permission).toEqual({ agent: 'claude', mode: 'auto' });
-  useChat.setState({ running: false, pendingClientTurnId: undefined });
+it('启动读回各 CLI 的权限，草稿切换使用各自默认，发送锁定快照', async () => {
+  const stored = deferred<SessionPermissionDefaults>();
+  const read = vi.spyOn(sessionsApi, 'permissionDefaults').mockReturnValueOnce(stored.promise);
+  const pending = useChat.getState().readPermissionDefaults();
+  expect(useChat.getState().send('尚未读取权限')).toBe(false);
+  const plan = { agent: 'antigravity' as const, mode: 'plan' as const };
+  const ask = { agent: 'codex' as const, mode: 'ask' as const };
+  stored.resolve({ antigravity: plan, codex: ask });
+  await pending;
   useChat.getState().newSession('codex');
-  expect(useChat.getState().permission).toBeUndefined();
-  useChat.getState().setPermission({ agent: 'claude', mode: 'auto' });
-  expect(useChat.getState().permission).toBeUndefined();
-  useChat.getState().setPermission({ agent: 'codex', mode: 'auto-review' });
+  expect(conversationPermission(useChat.getState())).toEqual(ask);
+  useChat.getState().setAgent('antigravity');
+  expect(conversationPermission(useChat.getState())).toEqual(plan);
+  expect(useChat.getState().send('带继承的权限')).toBe(true);
+  expect(sent.at(-1)).toMatchObject({ agent: 'antigravity', permission: plan });
+  useChat.getState().setPermission({ agent: 'antigravity', mode: 'bypass' });
+  expect(useChat.getState().permission).toEqual(plan);
+  expect(sessionsApi.savePermissionDefault).not.toHaveBeenCalled();
+  useChat.getState().newSession('antigravity');
+  expect(conversationPermission(useChat.getState())).toEqual(plan);
   useChat.getState().setPermission(undefined);
-  useChat.getState().send('清除覆盖');
+  expect(useChat.getState().send('尚未保存权限')).toBe(false);
+  await vi.waitFor(() => expect(conversationPermission(useChat.getState())).toBeUndefined());
+  expect(useChat.getState().send('清除覆盖')).toBe(true);
   expect(JSON.parse(JSON.stringify(sent.at(-1)))).not.toHaveProperty('permission');
+  useChat.getState().newSession('codex');
+  expect(conversationPermission(useChat.getState())).toEqual(ask);
+  expect(read).toHaveBeenCalledTimes(1);
 });
 
 it('错误条目可以手动关闭，且只移除目标条目', () => {

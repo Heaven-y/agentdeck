@@ -45,7 +45,6 @@ async function safeOperation<T>(agent: AgentKind, operation: () => Promise<T>, v
     return await operation();
   } catch (error) {
     if (error instanceof SessionError) throw error;
-    if (error instanceof SessionPreferencesError) throw new SessionError(error.status, error.code, error.message);
     throw new SessionError(
       503,
       'session_runtime_failed',
@@ -133,12 +132,21 @@ export function createSessionsService(
   async function permission(session: SessionRef): Promise<PermissionSelection | undefined> {
     return operations.preferences?.permission(session);
   }
-  async function rememberPermission(session: SessionRef, selected: PermissionSelection | null): Promise<void> {
-    if (selected && selected.agent !== session.agent)
+  function assertPermissionAgent(agent: AgentKind, selected: PermissionSelection | null) {
+    if (selected && selected.agent !== agent)
       throw new SessionError(400, 'permission_agent_mismatch', '权限模式不属于当前 CLI');
-    if (!operations.preferences)
-      throw new SessionError(503, 'session_preferences_unavailable', '工作台会话偏好暂不可用');
-    await operations.preferences.setPermission(session, selected);
+  }
+  function requiredPreferences() {
+    if (!operations.preferences) throw new SessionPreferencesError();
+    return operations.preferences;
+  }
+  async function rememberPermission(
+    session: SessionRef,
+    selected: PermissionSelection | null,
+    rememberDefault = false,
+  ) {
+    assertPermissionAgent(session.agent, selected);
+    await requiredPreferences().setPermission(session, selected, rememberDefault);
   }
   return {
     media(ws: Workspace, agent: AgentKind, locator: NativeMediaLocator, signal?: AbortSignal) {
@@ -226,6 +234,11 @@ export function createSessionsService(
     // 仅供已经持有轮次锁并核实原生身份的 TurnManager 调用，避免再次取得空闲锁。
     permission,
     rememberPermission,
+    permissionDefaults: () => requiredPreferences().permissionDefaults(),
+    setPermissionDefault(agent: AgentKind, selected: PermissionSelection | null) {
+      assertPermissionAgent(agent, selected);
+      return requiredPreferences().setPermissionDefault(agent, selected);
+    },
     readPermission(
       ws: Workspace,
       agent: AgentKind,
@@ -243,7 +256,7 @@ export function createSessionsService(
         () =>
           operations.withIdleSession({ agent, sessionId: id }, async () => {
             await scopedWorkspace(ws, agent, id);
-            await rememberPermission({ agent, sessionId: id }, permission);
+            await rememberPermission({ agent, sessionId: id }, permission, true);
           }),
         '保存权限',
       );

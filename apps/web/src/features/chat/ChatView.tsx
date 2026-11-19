@@ -5,6 +5,7 @@ import { conversationWidth } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../ui/styles';
 import { useProductSettings } from '../settings/general/use-product-settings';
 import { useChat } from './state/chat-store';
+import { conversationPermissionError } from './state/chat-permission';
 import { Composer } from './composer/Composer';
 import { ConversationTimeline } from '../conversation/timeline/ConversationTimeline';
 import type { HistoryPagination } from '../conversation/timeline/history-pages';
@@ -38,11 +39,12 @@ function Banner() {
 
 function HistoryFailure() {
   const historyError = useChat((s) => s.historyError);
-  const permissionError = useChat((s) => s.permissionError);
+  const permissionError = useChat(conversationPermissionError);
   const sessionId = useChat((s) => s.sessionId);
   const agent = useChat((s) => s.agent);
   const openSession = useChat((s) => s.openSession);
   const newSession = useChat((s) => s.newSession);
+  const readPermissionDefaults = useChat((s) => s.readPermissionDefaults);
 
   if (!historyError && !permissionError) return null;
   return (
@@ -53,11 +55,13 @@ function HistoryFailure() {
       <button
         type="button"
         className={buttonClass('outline')}
-        onClick={() =>
-          sessionId ? void openSession({ agent, sessionId }, { preserveDraft: true }) : newSession(agent)
-        }
+        onClick={() => {
+          if (sessionId) void openSession({ agent, sessionId }, { preserveDraft: true });
+          else if (historyError) newSession(agent);
+          else void readPermissionDefaults();
+        }}
       >
-        {sessionId ? (historyError ? '重新读取历史' : '重新读取权限') : '开始新会话'}
+        {historyError ? (sessionId ? '重新读取历史' : '开始新会话') : '重新读取权限'}
       </button>
     </div>
   );

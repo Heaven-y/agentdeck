@@ -22,7 +22,15 @@ import { createAttachmentActions, attachmentBlocked } from '../composer/attachme
 import { createFollowupActions } from '../followups/followup-actions';
 import { draftContent, pendingFollowups, viewQueue } from '../followups/followup-state';
 import { createAsyncQuestionActions } from '../interactions/async-question-actions';
-import { saveConversationPermission } from './chat-permission';
+import {
+  conversationPermission,
+  conversationPermissionError,
+  emptyPermissionDefaults,
+  permissionEditorPending,
+  permissionPending,
+  readPermissionDefaults,
+  saveConversationPermission,
+} from './chat-permission';
 import { createConversationTabs, existingTabs, openedTab } from '../tabs/conversation-tabs';
 import {
   conversationBusy,
@@ -52,9 +60,8 @@ function cannotSend(current: ChatState, text: string): boolean {
   return [
     conversationBusy(current),
     current.loadingHistory,
-    current.permissionLoading,
-    current.permissionSaving,
-    current.permissionError,
+    permissionPending(current),
+    conversationPermissionError(current),
     current.historyError,
     empty,
     attachmentBlocked(current),
@@ -166,6 +173,8 @@ export const useChat = create<ChatState>()((set, get) => {
     agent: 'claude',
     modelOverrides: { ...EMPTY_MODEL_OVERRIDES },
     defaults: { defaultAgent: 'claude' },
+    permissionDefaults: emptyPermissionDefaults,
+    readPermissionDefaults: () => readPermissionDefaults(get, set),
     initialDefaultsEligible: true,
     reasoningEfforts: { ...DEFAULT_REASONING_EFFORTS },
     sessionOperations: {},
@@ -327,8 +336,7 @@ export const useChat = create<ChatState>()((set, get) => {
         current.running ||
         current.pendingClientTurnId ||
         current.loadingHistory ||
-        current.permissionLoading ||
-        current.permissionSaving ||
+        permissionEditorPending(current) ||
         managementPending(current)
       )
         return;
@@ -420,7 +428,8 @@ export const useChat = create<ChatState>()((set, get) => {
       }
       const clientTurnId = crypto.randomUUID();
       const message = text;
-      const sent = socket.send(sendMessagePayload(current, message, clientTurnId));
+      const submitted = { ...current, permission: conversationPermission(current) };
+      const sent = socket.send(sendMessagePayload(submitted, message, clientTurnId));
       if (!sent) {
         set({ banner: '连接已断开，消息未发送。请等待重新连接后再试。' });
         return false;
@@ -442,7 +451,8 @@ export const useChat = create<ChatState>()((set, get) => {
         running: true,
         lastSentAt: Date.now(),
         pendingClientTurnId: clientTurnId,
-        runningInput: draftContent(current, message),
+        permission: submitted.permission,
+        runningInput: draftContent(submitted, message),
         interruptRequested: false,
         banner: undefined,
       }));

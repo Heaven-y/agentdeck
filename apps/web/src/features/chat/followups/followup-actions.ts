@@ -21,6 +21,7 @@ import {
 } from './followup-state';
 import { selectionRestriction } from '../controls/capability-selection';
 import { conversationById, updateConversation } from '../state/conversations';
+import { conversationPermission, conversationPermissionError, permissionPending } from '../state/chat-permission';
 import { openedTab } from '../tabs/conversation-tabs';
 type Set = (patch: Partial<ChatState>) => void;
 export function createFollowupActions(get: () => ChatState, set: Set, send: ChatSocket['send']) {
@@ -46,7 +47,7 @@ export function createFollowupActions(get: () => ChatState, set: Set, send: Chat
         set({ banner: reason ?? '正在准备待发列表，请保留草稿稍候。' });
         return false;
       }
-      const content = draftContent(state, text),
+      const content = draftContent({ ...state, permission: conversationPermission(state) }, text),
         clientMessageId = crypto.randomUUID();
       if (!FollowupContentSchema.safeParse(content).success) {
         set({ banner: '追加消息过大或格式不正确。' });
@@ -238,9 +239,8 @@ export function followupRestriction(state: ChatState, text: string, mode: Follow
     [
       state.loadingHistory,
       state.historyError,
-      state.permissionLoading,
-      state.permissionSaving,
-      state.permissionError,
+      permissionPending(state),
+      conversationPermissionError(state),
       managementBusy(state),
       attachmentBlocked(state),
     ].some(Boolean)

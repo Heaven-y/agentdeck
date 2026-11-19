@@ -4,15 +4,16 @@ import { permissionChoices } from '../../../cli/permission-policies';
 import { MenuChoice, modelMenuItemClass } from '../../../ui/fields/MenuChoice';
 import { buttonClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
+import { conversationPermission, conversationPermissionError, permissionEditorPending } from '../state/chat-permission';
 
-const nativeDefault = { label: '跟随 CLI', description: '由 CLI 决定权限；手动选择只影响当前会话' };
+const nativeDefault = { label: '跟随 CLI', description: '由 CLI 决定权限；手动选择也会用于该 CLI 的新会话' };
 
 export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   const agent = useChat((state) => state.agent);
-  const selected = useChat((state) => state.permission);
+  const selected = useChat(conversationPermission);
   const choose = useChat((state) => state.setPermission);
-  const pending = useChat((state) => state.permissionLoading || state.permissionSaving);
-  const permissionError = useChat((state) => state.permissionError);
+  const pending = useChat(permissionEditorPending);
+  const permissionError = useChat(conversationPermissionError);
   const running = useChat((state) => state.running || !!state.pendingClientTurnId);
   disabled ||= pending || running;
   const choices = permissionChoices[agent];
@@ -56,6 +57,7 @@ export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
             <MenuItem
               className={modelMenuItemClass}
               disabled={disabled}
+              title="恢复 CLI 权限，并清除该 CLI 的新会话权限设置"
               onClick={() => choose(agent === 'codex' ? { agent: 'codex', mode: 'native' } : undefined)}
             >
               重置权限
