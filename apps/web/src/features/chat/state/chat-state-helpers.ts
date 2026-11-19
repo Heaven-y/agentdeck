@@ -1,6 +1,6 @@
 import type { AgentKind, AgentEvent, ContextUsage, CompactionState, SessionRef } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from './chat-state';
-import type { ChatItem } from './chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import { ApiError } from '../../../lib/http';
 import type { DraftAttachment } from '../composer/attachment-actions';
 export const sessionActionKey = (workspaceId: string, session: SessionRef): string =>

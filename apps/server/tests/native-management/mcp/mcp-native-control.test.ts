@@ -102,6 +102,17 @@ it('Claude 显式检查仅连接选中配置、等待状态并关闭，绝不发
   ).toMatchObject({ behavior: 'deny' });
   expect(query.close).toHaveBeenCalled();
 });
+it('Claude 单次检查不把需要原生作用域的 headersHelper 注入 SDK 配置', async () => {
+  fakeClaude([[{ name: 'demo', status: 'connected' }]]);
+  await expect(
+    checkMcpConnection({ ...context, agent: 'claude' }, 'demo', {
+      type: 'http',
+      url: 'https://example.test/mcp',
+      headersHelper: 'fixture-helper',
+    }),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  expect(claudeQuery.nativeClaudeQuery).not.toHaveBeenCalled();
+});
 it('Codex 检查失败仍关闭子进程，AGY不会创建假连接；重载使用固定原生入口', async () => {
   const client = fakeClient(async () => {
     throw new Error('secret');

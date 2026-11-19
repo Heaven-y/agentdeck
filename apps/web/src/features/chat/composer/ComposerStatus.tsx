@@ -1,7 +1,7 @@
 import { Popover, PopoverDisclosure, usePopoverStore } from '@ariakit/react';
 import { ChevronDown, Clock3, Gauge } from 'lucide-react';
-import type { ChatItem } from '../state/chat-reducer';
-import { averageTokenRate, finiteCount, formatDuration, tokenFields } from '../state/chat-metrics';
+import type { ChatItem } from '../../conversation/model/conversation-events';
+import { averageTokenRate, finiteCount, formatDuration, tokenFields } from '../../conversation/model/chat-metrics';
 import { ContextStatus } from '../models/ContextStatus';
 import { StatisticsLine } from '../../conversation/timeline/StatisticsLine';
 import { useChat } from '../state/chat-store';

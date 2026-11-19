@@ -1,10 +1,9 @@
 import { ArrowDown, Bot, ChevronRight, Layers, User, Wrench } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import type { ChatItem } from '../../chat/state/chat-reducer';
+import type { ChatItem } from '../model/conversation-events';
 import type { ContextUsage } from '@agentdeck/shared/conversation';
-import { useChat } from '../../chat/state/chat-store';
-import { finiteCount, formatDuration } from '../../chat/state/chat-metrics';
+import { finiteCount, formatDuration } from '../model/chat-metrics';
 import {
   projectTrajectory,
   filterTrajectory,
@@ -16,12 +15,10 @@ import {
   trajectorySummary,
   type TrajectoryRow,
 } from './trajectory-model';
-import { PermissionCard } from '../../chat/interactions/PermissionCard';
-import { InteractionCard } from '../../chat/interactions/InteractionCard';
-import { AsyncQuestionCard } from '../../chat/interactions/AsyncQuestionCard';
 import { buttonClass } from '../../../ui/styles';
 import { SegmentedControl } from '../../../ui/fields/SegmentedControl';
 import { TrajectoryContext } from './TrajectoryContext';
+import { ConversationControlView } from '../timeline/ConversationControlView';
 
 const roleIcons = { context: Layers, user: User, tool: Wrench, assistant: Bot };
 const filters = [
@@ -82,19 +79,10 @@ function StepRow({
         </span>
         <StepIndicators item={item} />
       </button>
-      {item.kind === 'permission' && !item.resolved && (
+      {(item.kind === 'async-question' ||
+        ((item.kind === 'permission' || item.kind === 'interaction') && !item.resolved)) && (
         <div className="px-4 pb-3">
-          <PermissionCard item={item} />
-        </div>
-      )}
-      {item.kind === 'interaction' && !item.resolved && (
-        <div className="px-4 pb-3">
-          <InteractionCard item={item} />
-        </div>
-      )}
-      {item.kind === 'async-question' && (
-        <div className="px-4 pb-3">
-          <AsyncQuestionCard item={item} />
+          <ConversationControlView item={item} />
         </div>
       )}
     </div>
@@ -141,23 +129,8 @@ function TrajectoryEntry({
 }
 
 /** 同一组聊天条目提供另一种投影，不维护第二份会话正文。 */
-export function TrajectoryView({ items, running }: { items: ChatItem[]; running: boolean }) {
-  const context = useChat((state) => state.contextUsage);
-  const selectedItemId = useChat((state) => state.inspectedItemId);
-  const inspect = useChat((state) => state.inspectItem);
-  return (
-    <TrajectoryContent
-      items={items}
-      running={running}
-      context={context}
-      selectedItemId={selectedItemId}
-      inspect={inspect}
-    />
-  );
-}
-
 /** 只渲染传入的记录；子代理视图不读取或修改父会话状态。 */
-export function TrajectoryContent({
+export function TrajectoryView({
   items,
   running,
   context,

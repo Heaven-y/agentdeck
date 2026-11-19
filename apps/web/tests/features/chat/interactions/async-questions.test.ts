@@ -7,7 +7,7 @@ import type {
   RecoveryNotice,
 } from '@agentdeck/shared/conversation';
 import { startChatConnection, useChat } from '../../../../src/features/chat/state/chat-store';
-import { reduceChat } from '../../../../src/features/chat/state/chat-reducer';
+import { reduceChat } from '../../../../src/features/conversation/model/conversation-events';
 import { sessionsApi } from '../../../../src/features/sessions/api';
 const question: AsyncQuestion = {
   sessionId: 'session',

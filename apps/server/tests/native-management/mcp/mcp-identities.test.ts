@@ -54,6 +54,19 @@ async function fixture() {
   };
   return { homeDir, a, b, service, controls, registry, activity, workspace, change, status };
 }
+it.each(['check', 'login'] as const)('Codex 未知配置不启动独立 %s', async (action) => {
+  const f = await fixture();
+  await writeFile(path.join(f.homeDir, '.codex/config.toml'), '[mcp_servers.empty]\n');
+  const probe = vi.spyOn(check, 'checkMcpConnection').mockResolvedValue(f.status);
+  const authorize = vi.spyOn(login, 'loginCodexMcp').mockResolvedValue(undefined);
+  const [entry] = (await f.service.readMcp('codex')).entries;
+  expect(entry?.transport).toBe('unknown');
+  await expect(f.controls.operate('codex', { id: entry!.id, revision: entry!.revision, action })).rejects.toMatchObject(
+    { code: 'unsupported_action' },
+  );
+  expect(probe).not.toHaveBeenCalled();
+  expect(authorize).not.toHaveBeenCalled();
+});
 it('项目ID不变但目录改变后，旧实例不被列出且直接控制与OAuth均拒绝', async () => {
   const f = await fixture();
   const toggle = vi.fn(() => Promise.resolve());

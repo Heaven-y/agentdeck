@@ -57,8 +57,7 @@ async function assertDirectory(metadata: ManagementRecord, dir: string) {
 
 type RunOptions = {
   recoverDelete?: boolean;
-  full?: boolean;
-  stable?: boolean;
+  trajectory?: 'history' | 'turn';
   signal?: AbortSignal;
   readOnly?: boolean;
   child?: SubagentTrajectoryIdentity;
@@ -96,17 +95,21 @@ async function checkedReadOnly(backend: ManagementBackend, rootId: string, dir: 
   const id = child?.id ?? rootId;
   assertId(id);
   assertReadChild(rootId, child);
-  const response = await backend.request('GetCascadeTrajectory', {
-    cascadeId: id,
-    trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
-  });
+  const response = await backend.request(
+    'GetCascadeTrajectory',
+    { cascadeId: id, trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' },
+    'history',
+  );
   const trajectory = object(response.trajectory);
   const metadata = object(trajectory.metadata);
   if (trajectory.cascadeId !== id) throw missing();
   await assertDirectory(metadata, dir);
   assertReadIdentity(metadata, rootId, child);
   options.signal?.throwIfAborted();
-  return { trajectory: await completeTrajectory(backend, response, options.signal), status: text(response.status) };
+  return {
+    trajectory: await completeTrajectory(backend, response, options.signal, 'history'),
+    status: text(response.status),
+  };
 }
 async function idleTrajectory(result: ManagementRecord, id: string, dir: string): Promise<ManagementRecord> {
   const trajectory = object(result.trajectory);
@@ -140,17 +143,20 @@ async function recheckTurnPages(
 }
 
 async function checked(backend: ManagementBackend, id: string, dir: string, options: RunOptions = {}) {
-  const result = await backend.request('GetCascadeTrajectory', {
-    cascadeId: id,
-    ...(options.full ? { trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' } : {}),
-  });
+  const budget = options.trajectory === 'history' ? 'history' : undefined;
+  const result = await backend.request(
+    'GetCascadeTrajectory',
+    { cascadeId: id, ...(options.trajectory ? { trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' } : {}) },
+    budget,
+  );
   const trajectory = await idleTrajectory(result, id, dir);
-  if (!options.full) return trajectory;
+  if (!options.trajectory) return trajectory;
   const total = result.numTotalSteps;
-  if (options.stable && !Number.isSafeInteger(total)) unstableTurnTrajectory();
-  const complete = await completeTrajectory(backend, result, options.signal);
+  const checkStable = options.trajectory === 'turn';
+  if (checkStable && !Number.isSafeInteger(total)) unstableTurnTrajectory();
+  const complete = await completeTrajectory(backend, result, options.signal, budget);
   const firstPage = Array.isArray(trajectory.steps) ? trajectory.steps.length : 0;
-  if (options.stable && firstPage !== total)
+  if (checkStable && firstPage !== total)
     await recheckTurnPages(backend, { id, dir }, { steps: trajectory.steps, total });
   return complete;
 }
@@ -282,9 +288,9 @@ export function createAntigravitySessionManagement(
         signal,
       }),
     readTrajectory: (id, dir, signal) =>
-      run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { full: true, signal }),
+      run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { trajectory: 'history', signal }),
     readTurnTrajectory: (id, dir, signal) =>
-      run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { full: true, stable: true, signal }),
+      run(id, dir, (_backend, trajectory) => Promise.resolve({ trajectory }), { trajectory: 'turn', signal }),
     async dispose() {
       controller.abort();
       const close = Promise.allSettled([

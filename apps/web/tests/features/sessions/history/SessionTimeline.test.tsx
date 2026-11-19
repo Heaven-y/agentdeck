@@ -9,6 +9,7 @@ import { useChat } from '../../../../src/features/chat/state/chat-store';
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   useChat.setState(useChat.getInitialState(), true);
 });
 
@@ -30,8 +31,8 @@ it('关闭只读历史的错误只影响该处展示，不误删主会话同编�
 
   expect(screen.queryByText('只读历史错误')).toBeNull();
   expect(useChat.getState().items).toEqual(items);
-  view.rerender(<SessionTimeline events={[{ type: 'error', message: '只读历史错误' }]} />);
-  expect(screen.getByText('只读历史错误')).toBeTruthy();
+  view.rerender(<SessionTimeline events={[{ type: 'error', message: '只读历史中的新错误' }]} />);
+  expect(screen.getByText('只读历史中的新错误')).toBeTruthy();
 });
 
 it('把连续文本增量合并成一条助手消息，并让流式状态落定', () => {
@@ -46,7 +47,7 @@ it('把连续文本增量合并成一条助手消息，并让流式状态落定'
     />,
   );
   expect(screen.getByText('答案')).toBeTruthy();
-  // M1 只读：历史里不出现「从此处创建分支」这类交互入口。
+  // 只读：历史里不出现「从此处创建分支」这类交互入口。
   expect(screen.queryByText('从此处创建分支')).toBeNull();
 });
 
@@ -85,9 +86,9 @@ it('读取失败时显示原因并可重试，不与不可回放混为一谈', (
   expect(retry).toHaveBeenCalledTimes(1);
 });
 
-it('底部说明 M2 才接入对话，M1 不提供输入框', () => {
+it('只读历史有明确说明且不提供输入框', () => {
   render(<SessionTimeline events={[userEvent]} />);
-  expect(screen.getByText(/M2 接入对话/)).toBeTruthy();
+  expect(screen.getByText(/只读浏览原生会话记录/)).toBeTruthy();
   expect(screen.queryByRole('textbox')).toBeNull();
 });
 
@@ -109,4 +110,38 @@ it('CLI 徽标用首字母并保留完整名称', () => {
   render(<AgentBadge agent="antigravity" />);
   expect(screen.getByText('A')).toBeTruthy();
   expect(screen.getByTitle('Antigravity')).toBeTruthy();
+});
+
+it('历史图片使用记录的项目和 CLI，拒绝跨会话定位与临时上传身份', async () => {
+  const scope = { workspaceId: 'history-project', agent: 'codex' as const, sessionId: 'history' };
+  useChat.setState({
+    workspaceId: 'active-project',
+    agent: 'claude',
+    sessionId: 'active',
+    connection: 'open',
+    attachmentIdentity: () => ({ token: 'owner', instanceId: 'instance' }),
+  });
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 }));
+  vi.stubGlobal('fetch', fetcher);
+  const locator = { sessionId: 'history', kind: 'user' as const, messageId: 'image', index: 0 };
+  render(
+    <SessionTimeline
+      source={scope}
+      events={[
+        {
+          type: 'user_message',
+          text: '附件',
+          attachments: [
+            { kind: 'native-image', name: '记录图片', locator },
+            { kind: 'native-image', name: '其他会话图片', locator: { ...locator, sessionId: 'other' } },
+            { kind: 'image', id: 'temp', revision: 'r', mimeType: 'image/png', size: 3, name: '临时图片' },
+          ],
+        },
+      ]}
+    />,
+  );
+  await screen.findAllByText('这张原生图片当前不可读取。');
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    '/api/workspaces/history-project/sessions/history/media?agent=codex&messageId=image&index=0&kind=user',
+  ]);
 });

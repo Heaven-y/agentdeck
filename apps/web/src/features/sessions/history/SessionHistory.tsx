@@ -30,7 +30,15 @@ export function SessionHistory({ projectId, projectDir }: { projectId: string; p
   const agent = useChat((state) => state.agent);
   const sessionId = useChat((state) => state.sessionId);
   if (!sessionId) return <SelectSession />;
-  return <SelectedSession projectId={projectId} projectDir={projectDir} agent={agent} sessionId={sessionId} />;
+  return (
+    <SelectedSession
+      key={JSON.stringify([projectId, agent, sessionId])}
+      projectId={projectId}
+      projectDir={projectDir}
+      agent={agent}
+      sessionId={sessionId}
+    />
+  );
 }
 
 function SelectedSession({
@@ -61,6 +69,7 @@ function SelectedSession({
       />
       <SessionTimeline
         events={history?.events ?? []}
+        source={{ workspaceId: projectId, agent, sessionId }}
         notReplayable={notReplayable}
         error={failure}
         loading={loading}

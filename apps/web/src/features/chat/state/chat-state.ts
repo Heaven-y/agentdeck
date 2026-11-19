@@ -10,7 +10,7 @@ import type {
 } from '@agentdeck/shared/conversation';
 import type { ProductSettings } from '@agentdeck/shared/settings';
 import type { ConnectionStatus } from '../../../lib/ws';
-import type { ChatItem } from './chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import type { DraftAttachment } from '../composer/attachment-actions';
 import type { ChatIdentity } from '../../../lib/ws';
 import type { FollowupContent, FollowupMode, AsyncQuestion } from '@agentdeck/shared/conversation';

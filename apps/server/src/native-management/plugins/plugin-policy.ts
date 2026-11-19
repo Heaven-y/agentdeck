@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { CodexClient } from '../../agents/codex/run/client';
 import type { ResourceContext } from '../../agents/common/configuration/resources';
+import type { ResolvedCommand } from '../../platform/process/executable';
 import { object, string } from './plugin-types';
 export type PluginPolicy = {
   verified: boolean;
@@ -14,8 +15,8 @@ export type PluginPolicy = {
     marketplaces: Record<string, unknown>;
   }>;
 };
-export async function codexPluginPolicy(c: ResourceContext): Promise<PluginPolicy> {
-  const client = await CodexClient.start({ env: c.env, cwd: c.project?.dir ?? c.homeDir, timeoutMs: 15000 });
+export async function codexPluginPolicy(c: ResourceContext, command?: ResolvedCommand): Promise<PluginPolicy> {
+  const client = await CodexClient.start({ command, env: c.env, cwd: c.project?.dir ?? c.homeDir, timeoutMs: 15000 });
   try {
     await client.initialize();
     const value = await client.request('config/read', { cwd: c.project?.dir ?? c.homeDir, includeLayers: true });

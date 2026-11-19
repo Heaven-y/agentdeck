@@ -4,6 +4,7 @@ import type { Workspace } from '@agentdeck/shared/projects';
 import { useChat } from '../../features/chat/state/chat-store';
 import { AGENT_LABELS } from '../../cli/shared/labels';
 import { buttonClass } from '../../ui/styles';
+import { LiveConversationSurface } from '../../features/chat/timeline/LiveConversationSurface';
 import { TrajectoryDetails } from '../../features/conversation/trajectory/TrajectoryDetails';
 
 /** 右侧按需呈现当前会话上下文；不连接服务器，也不扫描项目文件。 */
@@ -71,7 +72,9 @@ export function ConversationSidebar({
       </header>
       <div className="min-h-0 space-y-6 overflow-auto p-5 text-sm">
         {inspected ? (
-          <TrajectoryDetails item={inspected} />
+          <LiveConversationSurface>
+            <TrajectoryDetails item={inspected} />
+          </LiveConversationSurface>
         ) : workspace ? (
           <>
             <dl className="space-y-5">

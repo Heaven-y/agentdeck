@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import {
   SessionReferenceText,
   sessionMarkdownUrl,
-} from '../../../../src/features/chat/references/SessionReferenceText';
+} from '../../../../src/features/conversation/references/SessionReferenceText';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
 
 afterEach(() => {

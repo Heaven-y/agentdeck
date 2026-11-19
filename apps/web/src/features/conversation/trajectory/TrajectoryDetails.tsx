@@ -1,4 +1,5 @@
-import type { ChatItem } from '../../chat/state/chat-reducer';
+import type { ChatItem } from '../model/conversation-events';
+import { MessageAttachments } from '../timeline/MessageAttachments';
 import { MessageItem } from '../timeline/MessageItem';
 import { shortToolName } from '../timeline/ToolCard';
 import { StatisticsLine } from '../timeline/StatisticsLine';
@@ -27,6 +28,7 @@ export function TrajectoryDetails({ item }: { item: ChatItem }) {
         <StatisticsLine statistics={{ ...item, scope: 'step' }} />
       </div>
       {item.progress && <p className="text-xs text-muted-foreground">{item.progress}</p>}
+      <MessageAttachments attachments={item.attachments} />
       <DetailText label="输入" text={JSON.stringify(item.input, null, 2) ?? ''} />
       {item.output !== undefined && <DetailText label={item.isError ? '错误输出' : '输出'} text={item.output} />}
     </div>

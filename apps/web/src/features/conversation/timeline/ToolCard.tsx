@@ -1,7 +1,7 @@
 import { ChevronRight, CircleAlert, CircleCheck, CircleX, LoaderCircle, Wrench } from 'lucide-react';
-import type { ChatItem } from '../../chat/state/chat-reducer';
+import type { ChatItem } from '../model/conversation-events';
 import type { ExpandedProps } from './timeline-model';
-import { finiteCount, formatDuration } from '../../chat/state/chat-metrics';
+import { finiteCount, formatDuration } from '../model/chat-metrics';
 import { StatisticsLine } from './StatisticsLine';
 import { MessageAttachments } from './MessageAttachments';
 import { toolDisplayName, toolDescription, toolPrimaryArgument } from './tool-presentation';

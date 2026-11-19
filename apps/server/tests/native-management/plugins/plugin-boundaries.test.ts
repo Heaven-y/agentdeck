@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { createNativePluginService } from '../../../src/native-management/plugins/plugin-service';
 import type { AgentKind } from '@agentdeck/shared/conversation';
+import { pluginArguments } from '../../../src/native-management/plugins/plugin-native';
 import { sourceLabel } from '../../../src/native-management/plugins/plugin-utils';
 const roots: string[] = [];
 it('原生市场摘要保留仓库来源并剥离 URL 凭据与查询参数', () => {
@@ -69,9 +70,13 @@ it('托管及未知插件不会因 manifest 声明配置而获得写权限，未
     version: null,
     components: ['agents: a', 'hooks: h'],
   });
-  version = '99.0.0';
   records = [];
-  for (const agent of ['claude', 'antigravity'] as AgentKind[]) {
+  for (const [agent, reportedVersion] of [
+    ['claude', '99.0.0'],
+    ['antigravity', '99.0.0'],
+    ['claude', '2.1.317-rc.1 (Claude Code)'],
+  ] as const) {
+    version = reportedVersion;
     const c = await service.read(agent);
     expect(c.installScopes).toEqual([]);
     await expect(
@@ -79,6 +84,25 @@ it('托管及未知插件不会因 manifest 声明配置而获得写权限，未
     ).rejects.toMatchObject({ code: 'unsupported_action' });
   }
   await service.dispose();
+});
+it.each([
+  ['codex', 'update'],
+  ['antigravity', 'marketplace-add'],
+  ['future-cli' as AgentKind, 'install'],
+] as const)('%s 未登记的 %s 动作不生成原生命令', (agent, action) => {
+  const run = () => {
+    throw new Error('不应执行原生命令');
+  };
+  expect(() =>
+    pluginArguments(
+      { agent, homeDir: os.tmpdir(), env: {}, run },
+      {
+        action,
+        revision: 'a'.repeat(64),
+        source: 'demo@fixture',
+      },
+    ),
+  ).toThrow(expect.objectContaining({ code: 'unsupported_action' }));
 });
 it('Codex 项目插件受不可信层约束，畸形 selector 不读取任意缓存路径', async () => {
   const f = await fixture(),

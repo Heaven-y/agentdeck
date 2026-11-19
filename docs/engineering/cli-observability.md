@@ -117,4 +117,4 @@ headless 将服务故障暂存，并按同一会话、目录和本轮输入边�
 - Claude：[SDK 用量](https://platform.claude.com/docs/en/agent-sdk/cost-tracking)、[类型参考](https://platform.claude.com/docs/en/agent-sdk/typescript)、[流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)，以及本机 SDK 类型与实现。
 - Codex：本机 `app-server generate-json-schema` 的 0.166.0 schema；字段依据来自生成协议；早期网页取证失败的记录仍保留在历史文档。
 - Antigravity：[headless](https://antigravity.google/docs/cli/headless/)、[statusLine](https://antigravity.google/docs/cli/statusline)、本机 protobuf 描述和隔离 GetCascadeTrajectory 读取。
-- 当前数据入口：[Claude 上下文](../../apps/server/src/agents/claude/run/query.ts)、[Antigravity 映射](../../apps/server/src/agents/antigravity/run/mapper.ts)、[前端上下文状态](../../apps/web/src/features/chat/models/ContextStatus.tsx)、[事件归并](../../apps/web/src/features/chat/state/chat-reducer.ts)。
+- 当前数据入口：[Claude 上下文](../../apps/server/src/agents/claude/run/query.ts)、[Antigravity 映射](../../apps/server/src/agents/antigravity/run/mapper.ts)、[前端上下文状态](../../apps/web/src/features/chat/models/ContextStatus.tsx)、[事件归并](../../apps/web/src/features/conversation/model/conversation-events.ts)。

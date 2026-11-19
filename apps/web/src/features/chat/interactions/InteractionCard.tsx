@@ -6,7 +6,7 @@ import {
 } from '@agentdeck/shared/conversation';
 import { buttonClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
-import type { ChatItem } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import { InteractionFieldInput, type FormValue } from './InteractionFields';
 
 type Props = {

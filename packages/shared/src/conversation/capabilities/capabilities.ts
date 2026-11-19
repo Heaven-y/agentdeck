@@ -28,8 +28,22 @@ export type AgentModel = {
   /** 仅保留原生明确报告的输入类型；缺省表示未知，不能从名称推断。 */
   inputModalities?: string[];
 };
+export const AntigravityConnectionSchema = z.enum(['account', 'gemini']);
+export type AntigravityConnection = z.infer<typeof AntigravityConnectionSchema>;
+
+/** 账号额度不是回合 token；数据来自 AGY 原生 /usage 命令。 */
+export type AntigravityOfficialUsage = {
+  checkedAt: number;
+  groups: Array<{
+    name: string;
+    buckets: Array<{ id: string; name: string; window?: string; remainingFraction?: number; resetAt?: string }>;
+  }>;
+};
+
 export type AgentCapabilities = {
   agent: AgentKind;
+  /** Antigravity 原生目录的连接身份，缺失时不套用任一模式的偏好。 */
+  antigravityConnection?: AntigravityConnection;
   /** 原生配置的默认选择；未知时省略，不以候选第一项代替。 */
   defaultModel?: string;
   defaultReasoningEffort?: string;

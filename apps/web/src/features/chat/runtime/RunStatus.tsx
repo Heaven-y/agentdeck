@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
-import type { ChatItem } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 import { useChat } from '../state/chat-store';
 import { toolDisplayName } from '../../conversation/timeline/tool-presentation';
 

@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { AgentCapability, AgentKind, AgentModel, NativeInteractionFeatures } from '@agentdeck/shared/conversation';
+import type {
+  AgentCapability,
+  AgentKind,
+  AgentModel,
+  AntigravityConnection,
+  NativeInteractionFeatures,
+} from '@agentdeck/shared/conversation';
 
 export type NativeInvocation =
   | { kind: 'skill'; name: string; path?: string }
@@ -9,6 +15,7 @@ export type NativeInvocation =
 export type NativeCapabilityCatalog = {
   entries: Array<AgentCapability & { invocation?: NativeInvocation }>;
   models: AgentModel[];
+  antigravityConnection?: AntigravityConnection;
   defaultModel?: string;
   defaultReasoningEffort?: string;
   warnings: string[];

@@ -12,8 +12,9 @@ export type ManagementMethod =
   | 'DeleteCascadeTrajectory'
   | 'JetboxDeleteSummary'
   | 'UpdateConversationAnnotations';
+export type ManagementBudget = 'history';
 export type ManagementBackend = {
-  request(method: ManagementMethod, params: ManagementRecord): Promise<ManagementRecord>;
+  request(method: ManagementMethod, params: ManagementRecord, budget?: ManagementBudget): Promise<ManagementRecord>;
   close(): Promise<void>;
 };
 export const managementObject = (value: unknown): ManagementRecord =>
@@ -21,6 +22,15 @@ export const managementObject = (value: unknown): ManagementRecord =>
 export const managementText = (value: unknown) => (typeof value === 'string' ? value : '');
 export const managementFailure = () =>
   new SessionError(503, 'session_runtime_failed', 'Antigravity 原生管理请求失败，请核对 CLI 版本与本机配置。');
+const MIB = 1024 * 1024;
+export const managementByteLimit = (budget?: ManagementBudget) => (budget === 'history' ? 64 : 32) * MIB;
+export const historyLimitExceeded = () =>
+  new SessionError(
+    503,
+    'session_history_incomplete',
+    `Antigravity 原生历史超过工作台的 ${managementByteLimit('history') / MIB} MiB 读取上限。请在原生 agy CLI 中打开。`,
+  );
+
 export class NativeTrajectoryMissing extends SessionError {
   constructor() {
     super(404, 'session_missing', 'Antigravity 原生会话不存在。');
@@ -41,7 +51,7 @@ export function managementRequest(
   port: number,
   method: ManagementMethod,
   params: ManagementRecord,
-  signal?: AbortSignal,
+  { signal, budget }: { signal?: AbortSignal; budget?: ManagementBudget } = {},
 ): Promise<ManagementRecord> {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify(params));
@@ -61,16 +71,25 @@ export function managementRequest(
     };
     request.once('error', () => finish(managementFailure()));
     request.once('response', (response) => {
+      const code = response.statusCode ?? 500;
+      const limit = managementByteLimit(budget);
+      const exceeded = () => {
+        finish(budget === 'history' && code >= 200 && code < 300 ? historyLimitExceeded() : managementFailure());
+        response.destroy();
+      };
+      if (Number(response.headers['content-length']) > limit) {
+        exceeded();
+        return;
+      }
       const chunks: Buffer[] = [];
       let bytes = 0;
       response.on('data', (chunk: Buffer) => {
         bytes += chunk.length;
-        if (bytes > 32 * 1024 * 1024) response.destroy(managementFailure());
+        if (bytes > limit) exceeded();
         else chunks.push(chunk);
       });
       response.once('error', () => finish(managementFailure()));
       response.once('end', () => {
-        const code = response.statusCode ?? 500;
         const body = Buffer.concat(chunks);
         if (code === 404) {
           finish(trajectoryMissing(method, body) ? new NativeTrajectoryMissing() : managementFailure());

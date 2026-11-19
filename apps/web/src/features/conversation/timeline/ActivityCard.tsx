@@ -1,6 +1,6 @@
 import { ChevronRight, ListTree } from 'lucide-react';
 import { activityStatus, type ActivityItem } from './activity-presentation';
-import { finiteCount, formatDuration } from '../../chat/state/chat-metrics';
+import { finiteCount, formatDuration } from '../model/chat-metrics';
 import type { ExpandedProps } from './timeline-model';
 
 export function ActivityCard({ item, expanded, onExpandedChange }: { item: ActivityItem } & ExpandedProps) {

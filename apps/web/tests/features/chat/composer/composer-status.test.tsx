@@ -5,7 +5,7 @@ import { modelSettingsApi } from '../../../../src/features/settings/models/model
 import { queryClient } from '../../../../src/lib/query-client';
 import { ComposerStatus, latestComposerStatistics } from '../../../../src/features/chat/composer/ComposerStatus';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
-import { historyItems, type ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import { historyItems, type ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 import { StatisticsLine } from '../../../../src/features/conversation/timeline/StatisticsLine';
 import { antigravityHistory } from '../../../../../server/src/agents/antigravity/history/history';
 

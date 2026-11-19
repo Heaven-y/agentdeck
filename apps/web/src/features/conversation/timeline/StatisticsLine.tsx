@@ -7,7 +7,7 @@ import {
   generationTokenRate,
   tokenFields,
   type ChatStatistics,
-} from '../../chat/state/chat-metrics';
+} from '../model/chat-metrics';
 
 function Generation({ statistics }: { statistics: ChatStatistics }) {
   if (!statistics.generation || statistics.isError || statistics.scope !== 'step') return null;

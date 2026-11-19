@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { LiveConversationSurface } from '../../../../src/features/chat/timeline/LiveConversationSurface';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
 import * as operations from '../../../../src/features/sessions/actions/session-fork';
@@ -27,7 +28,9 @@ afterEach(() => {
 function mount() {
   render(
     <QueryClientProvider client={client}>
-      <MessageItem item={{ kind: 'fork-point', id: 'boundary', pointId: 'native-turn-1' }} />
+      <LiveConversationSurface>
+        <MessageItem item={{ kind: 'fork-point', id: 'boundary', pointId: 'native-turn-1' }} />
+      </LiveConversationSurface>
     </QueryClientProvider>,
   );
 }

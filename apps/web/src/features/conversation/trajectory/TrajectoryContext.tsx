@@ -1,6 +1,6 @@
 import { Layers } from 'lucide-react';
 import type { ContextUsage } from '@agentdeck/shared/conversation';
-import { UsageDetails, usageSummary } from '../../chat/models/ContextStatus';
+import { UsageDetails, usageSummary } from '../context/ContextPresentation';
 
 /** 原生仅报告用量时展示用量，不将配置或 token 数伪装成完整提示词。 */
 export function TrajectoryContext({ usage }: { usage?: ContextUsage | null }) {

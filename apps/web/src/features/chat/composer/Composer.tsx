@@ -122,7 +122,8 @@ export function Composer() {
   const dropDisabled = anyBlocked([busy, !connected]);
   const pickerDisabled = anyBlocked([dropDisabled, uploading]);
 
-  const submit = (e?: FormEvent) => {
+  const submit = (e?: FormEvent<HTMLFormElement>) => {
+    if (e && e.target !== e.currentTarget) return;
     e?.preventDefault();
     send(text.trim());
   };

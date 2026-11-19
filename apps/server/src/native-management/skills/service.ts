@@ -9,119 +9,80 @@ import type {
 } from '@agentdeck/shared/settings';
 import { NativeResourceError } from '../../agents/common/configuration/errors';
 import { resourcePathKey, type ResourceContext } from '../../agents/common/configuration/resources';
-import {
-  claudeSkillConfig,
-  changeClaudeSkill,
-  readClaudeInstalledSkills,
-} from '../../agents/claude/configuration/skills';
-import { antigravitySkillConfig, changeAntigravitySkill } from '../../agents/antigravity/configuration/skills';
-import { createCodexSkills } from '../../agents/codex/configuration/skills';
-import { discoverAntigravityCommands } from '../../agents/antigravity/commands/commands';
-import { createNativeResourcesService } from '../../settings/resources/native-resources';
-import { discoverResources } from '../../settings/resources/native-resources-discovery';
+import { describeResource, describeRoot, discoverResources } from '../../settings/resources/native-resources-discovery';
 import { resourcePlan } from '../../settings/resources/resource-plan';
 import { NativeManagementError, managementError } from '../errors';
-import { readNativeConfigSource } from '../config';
 import { deleteSkillTree, importSkillTree } from './skill-tree';
 import type { NativeManagementAccess, NativeManagementProject } from '../access';
-import type { NativeSkill } from './types';
-import type { NativeConfigSource } from '../config';
+import { skillAdapters } from './adapters';
+import { localSkillEntry, nativeSkillEntry, indexNativeSkillPaths } from './skill-entries';
+import { nativeSkillPathKey, type SkillAdapter, type SkillRecord } from './types';
 
 type Deps = {
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
   environment?: (agent: AgentKind) => Promise<NodeJS.ProcessEnv>;
-  nativeSkills?: (agent: AgentKind, context: ResourceContext) => Promise<NativeSkill[]>;
-  verifiedVersion?: (context: ResourceContext) => Promise<boolean>;
-  writeCodexSkill?: (context: ResourceContext, file: string, enabled: boolean) => Promise<void>;
+  adapters?: Record<AgentKind, SkillAdapter>;
   access?: NativeManagementAccess;
   onChanged?: (agent: AgentKind) => void | Promise<void>;
 };
-import { localSkillEntry, nativeSkillEntry, restrictAgyConflicts, type InternalSkill } from './skill-entries';
-import { verifiedSkillVersion } from '../version';
+async function readList<T>(read: () => Promise<T[]>): Promise<{ rows: T[]; available: boolean }> {
+  try {
+    return { rows: await read(), available: true };
+  } catch {
+    return { rows: [], available: false };
+  }
+}
 export function createNativeManagementService(deps: Deps = {}) {
   const homeDir = path.resolve(deps.homeDir ?? os.homedir());
   const env = deps.env ?? process.env;
+  const adapters = deps.adapters ?? skillAdapters;
   async function context(agent: AgentKind, project?: NativeManagementProject): Promise<ResourceContext> {
     if (!isAgentKind(agent)) throw new NativeResourceError('invalid_agent');
     return { agent, homeDir, env: deps.environment ? await deps.environment(agent) : env, project };
   }
-  async function native(context: ResourceContext): Promise<NativeSkill[]> {
-    if (deps.nativeSkills) return deps.nativeSkills(context.agent, context);
-    if (context.agent === 'codex') return createCodexSkills({ env: context.env }).read(context.project?.dir ?? homeDir);
-    if (context.agent === 'claude') return readClaudeInstalledSkills(context);
-    return (await discoverAntigravityCommands(context.project?.dir ?? homeDir, { env: context.env, homeDir }))
-      .filter((entry) => entry.kind === 'skill')
-      .map((entry) => ({
-        name: entry.name,
-        path: entry.invocation?.kind === 'skill' ? entry.invocation.path : undefined,
-        enabled: entry.available,
-        origin: entry.name.includes(':') ? ('plugin' as const) : undefined,
-      }));
-  }
-  async function config(context: ResourceContext) {
-    if (context.agent === 'claude') return claudeSkillConfig(context);
-    if (context.agent === 'antigravity') return antigravitySkillConfig(context);
-    return [
-      await readNativeConfigSource(
-        path.join(context.env.CODEX_HOME || path.join(homeDir, '.codex'), 'config.toml'),
-        'user',
-      ),
-      ...(context.project
-        ? [await readNativeConfigSource(path.join(context.project.dir, '.codex/config.toml'), 'project')]
-        : []),
-    ];
-  }
   async function inventory(current: ResourceContext) {
+    const adapter = adapters[current.agent];
     const plan = resourcePlan(current);
-    const resources = createNativeResourcesService({ homeDir, env: current.env });
-    const [catalog, discovered, nativeResult, configResult, versionVerified] = await Promise.all([
-      resources.list(current.agent, current.project),
+    const [discovered, native, config, verified] = await Promise.all([
       discoverResources(current, plan),
-      native(current)
-        .then((value) => ({ value }))
-        .catch(() => ({ value: [] as NativeSkill[], failed: true })),
-      config(current)
-        .then((value) => ({ value }))
-        .catch(() => ({ value: [] as NativeConfigSource[], failed: true })),
-      verifyVersion(current),
+      readList(() => adapter.readNative(current)),
+      readList(() => adapter.readConfig(current)),
+      adapter.verifyVersion(current),
     ]);
-    const warnings = [...catalog.warnings];
-    if ('failed' in nativeResult) warnings.push('原生状态暂时无法核实；仍可编辑已安全发现的本地文件。');
-    if ('failed' in configResult) warnings.push('技能配置无法解析；请先从原文入口修复配置。');
-    const sources = configResult.value;
-    const records: InternalSkill[] = [];
+    const warnings = discovered.warnings;
+    if (!native.available) warnings.push('原生状态暂时无法核实；仍可编辑已安全发现的本地文件。');
+    if (!config.available) warnings.push('技能配置无法解析；请先从原文入口修复配置。');
+    const records: SkillRecord[] = [];
     const foundPaths = new Set<string>();
-    for (const resource of catalog.entries.filter(
-      (entry) => entry.kind === 'skills' && /(?:^|\/)SKILL\.md$/.test(entry.displayPath),
+    const byPath = indexNativeSkillPaths(native.rows);
+    for (const target of discovered.targets.filter(
+      (item) => item.kind === 'skills' && path.basename(item.file) === 'SKILL.md',
     )) {
-      const target = discovered.targets.find((entry) => entry.id === resource.id)!;
-      const nativeSkill = nativeResult.value.find(
-        (skill) => skill.path && resourcePathKey(skill.path) === resourcePathKey(target.file),
-      );
+      const key = resourcePathKey(target.file);
       records.push(
-        await localSkillEntry({
-          context: current,
-          resource,
-          file: target.file,
-          nativeSkill,
-          sources,
-          nativeAvailable: !('failed' in nativeResult),
-        }),
+        await localSkillEntry(
+          adapter,
+          {
+            context: current,
+            resource: await describeResource(target),
+            file: target.file,
+            sources: config.rows,
+            nativeAvailable: native.available,
+          },
+          byPath.get(key) ?? [],
+        ),
       );
-      foundPaths.add(resourcePathKey(target.file));
+      foundPaths.add(key);
     }
-    for (const skill of nativeResult.value) {
-      if (skill.path && foundPaths.has(resourcePathKey(skill.path))) continue;
-      records.push(nativeSkillEntry(current, skill));
+    for (const skill of native.rows) {
+      const key = nativeSkillPathKey(skill.path);
+      if (key && foundPaths.has(key)) continue;
+      records.push(nativeSkillEntry(adapter, current, skill));
     }
-    if (current.agent === 'antigravity') restrictAgyConflicts(records);
-    applyVersion(records, versionVerified, warnings);
-    return { records, sources, catalog: { ...catalog, warnings } };
-  }
-  function verifyVersion(current: ResourceContext) {
-    if (deps.verifiedVersion) return deps.verifiedVersion(current);
-    return deps.nativeSkills ? Promise.resolve(true) : verifiedSkillVersion(current);
+    adapter.restrictConflicts?.(records);
+    applyVersion(records, verified, warnings);
+    return { records, sources: config.rows, roots: plan.roots.filter((root) => root.kind === 'skills'), warnings };
   }
   const read = <T>(agent: AgentKind, operation: () => Promise<T>) =>
     deps.access ? deps.access.read(agent, operation) : operation();
@@ -135,50 +96,11 @@ export function createNativeManagementService(deps: Deps = {}) {
     };
     return deps.access ? deps.access.write(agent, project, run) : run();
   };
-  async function remove(target: InternalSkill, input: NativeSkillChangeInput): Promise<NativeManagementResult> {
-    if (!target.entry.actions.delete || !target.directory) throw new NativeManagementError('unsupported_action');
+  async function remove(target: SkillRecord, input: NativeSkillChangeInput): Promise<NativeManagementResult> {
+    if (!target.entry.actions.delete || !target.file) throw new NativeManagementError('unsupported_action');
     if (input.confirmation !== target.entry.name) throw new NativeManagementError('confirmation_required');
-    await deleteSkillTree(target.directory, target.treeRevision!);
+    await deleteSkillTree(path.dirname(target.file), target.treeRevision!);
     return { status: 'deleted', nextTurn: true };
-  }
-  async function changeState(
-    current: ResourceContext,
-    target: InternalSkill,
-    input: NativeSkillChangeInput,
-    sources: NativeConfigSource[],
-  ) {
-    assertStateAction(target, input);
-    if (current.agent === 'claude') return changeClaudeSkill(target.entry.name, input, sources);
-    if (current.agent === 'antigravity') {
-      await changeAntigravitySkill(target.selector!, input, sources);
-      return verifyAntigravityState(current, target, input);
-    }
-    if (!target.nativePath) throw new NativeManagementError('unsupported_action');
-    if (deps.writeCodexSkill) return deps.writeCodexSkill(current, target.nativePath, input.value === 'enabled');
-    await createCodexSkills({ env: current.env }).write(
-      current.project?.dir ?? homeDir,
-      target.nativePath,
-      input.value === 'enabled',
-    );
-  }
-  async function verifyAntigravityState(
-    current: ResourceContext,
-    target: InternalSkill,
-    input: NativeSkillChangeInput,
-  ) {
-    try {
-      const file = path.join(target.directory!, 'SKILL.md');
-      const matches = (await native(current)).filter(
-        (skill) => skill.path && resourcePathKey(skill.path) === resourcePathKey(file),
-      );
-      const confirmed =
-        input.value === 'enabled'
-          ? matches.length === 1 && matches[0]?.enabled === true
-          : matches.every((skill) => skill.enabled === false);
-      if (!confirmed) throw new NativeManagementError('result_unconfirmed');
-    } catch {
-      throw new NativeManagementError('result_unconfirmed');
-    }
   }
   return {
     async readSkills(agent: AgentKind, project?: NativeManagementProject): Promise<NativeSkillsCatalog> {
@@ -188,8 +110,8 @@ export function createNativeManagementService(deps: Deps = {}) {
           agent,
           ...(project ? { projectId: project.id } : {}),
           entries: value.records.map((record) => record.entry),
-          roots: value.catalog.roots.filter((root) => root.kind === 'skills'),
-          warnings: value.catalog.warnings,
+          roots: await Promise.all(value.roots.map(describeRoot)),
+          warnings: value.warnings,
         };
       });
     },
@@ -205,8 +127,26 @@ export function createNativeManagementService(deps: Deps = {}) {
           const target = value.records.find((record) => record.entry.id === input.id);
           if (!target) throw new NativeResourceError('resource_missing');
           if (target.entry.revision !== input.revision) throw new NativeResourceError('revision_conflict');
-          if (input.action === 'delete') return remove(target, input);
-          await changeState(current, target, input, value.sources);
+          if (input.action === 'delete') return await remove(target, input);
+          if (
+            !target.file ||
+            !input.value ||
+            !target.entry.actions.states.includes(input.value) ||
+            !input.scope ||
+            !target.entry.actions.stateScopes.includes(input.scope)
+          )
+            throw new NativeManagementError('unsupported_action');
+          await adapters[agent].changeState(
+            current,
+            {
+              name: target.entry.name,
+              file: target.file,
+              nativeSkill: target.nativeSkill,
+              scope: input.scope,
+              value: input.value,
+            },
+            value.sources,
+          );
           return { status: 'saved', nextTurn: true };
         } catch (error) {
           throw managementError(error);
@@ -232,7 +172,7 @@ export function createNativeManagementService(deps: Deps = {}) {
     },
   };
 }
-function applyVersion(records: InternalSkill[], verified: boolean, warnings: string[]) {
+function applyVersion(records: SkillRecord[], verified: boolean, warnings: string[]) {
   if (verified) return;
   for (const { entry } of records) {
     entry.actions.states = [];
@@ -240,14 +180,5 @@ function applyVersion(records: InternalSkill[], verified: boolean, warnings: str
     entry.state = 'unknown';
   }
   warnings.push('当前 CLI 版本尚未核实技能状态写入；可继续编辑自有文件或使用原生入口。');
-}
-function assertStateAction(target: InternalSkill, input: NativeSkillChangeInput) {
-  if (
-    !input.value ||
-    !target.entry.actions.states.includes(input.value) ||
-    !input.scope ||
-    !target.entry.actions.stateScopes.includes(input.scope)
-  )
-    throw new NativeManagementError('unsupported_action');
 }
 export type NativeManagementService = ReturnType<typeof createNativeManagementService>;

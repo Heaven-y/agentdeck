@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { NativeCapabilityCatalog } from '../../../src/agents/capability-types';
-import { nativeFeaturesFor } from '@agentdeck/shared/conversation';
+import { nativeFeaturesFor, type AntigravityConnection } from '@agentdeck/shared/conversation';
 import { createCapabilitiesService } from '../../../src/chat/capabilities/capabilities';
 import * as files from '../../../src/platform/files/safe-file';
 import { createHash } from 'node:crypto';
@@ -179,6 +179,129 @@ it('刷新模型失败保留已有模型，错误和未登录状态不会代替�
   expect((await createCapabilitiesService({}, f.options).read(f.ws, 'claude')).models).toEqual(f.catalog.models);
 });
 
+it('AGY 切换连接只读各自的模型目录，失败回退和重启不会串用', async () => {
+  const f = await fixture();
+  let connection: AntigravityConnection | undefined = 'account';
+  const options = { ...f.options, antigravityConnection: async () => connection };
+  const service = createCapabilitiesService({ antigravity: f.provider }, options);
+  const official = { ...f.catalog, antigravityConnection: 'account' as const };
+  f.provider.mockResolvedValueOnce(official);
+  await service.refresh(f.ws, 'antigravity');
+
+  connection = 'gemini';
+  const unread = await service.read(f.ws, 'antigravity');
+  expect(unread.models).toEqual([]);
+  expect(unread).toMatchObject({ antigravityConnection: 'gemini', discovered: false });
+  expect(await service.prepare(f.ws, 'antigravity', { text: '/inspect' })).toMatchObject({
+    invocation: { kind: 'skill', name: 'inspect' },
+  });
+  expect(f.provider).toHaveBeenCalledTimes(1);
+  const gemini = {
+    ...f.catalog,
+    antigravityConnection: 'gemini' as const,
+    models: [{ id: 'gemini-only', label: 'Gemini 候选' }],
+    defaultModel: 'gemini-only',
+  };
+  const failedGemini = {
+    ...gemini,
+    models: [],
+    defaultModel: undefined,
+    defaultReasoningEffort: undefined,
+    modelWarning: '缺少 Key',
+  };
+  f.provider.mockResolvedValueOnce(failedGemini);
+  const failed = await service.refresh(f.ws, 'antigravity');
+  expect(failed).toMatchObject({ antigravityConnection: 'gemini', models: [], modelWarning: '缺少 Key' });
+  expect(failed.defaultModel).toBeUndefined();
+  expect(failed.defaultReasoningEffort).toBeUndefined();
+  f.provider.mockResolvedValueOnce(gemini);
+  await service.refresh(f.ws, 'antigravity');
+  f.provider.mockResolvedValueOnce(failedGemini);
+  expect(await service.refresh(f.ws, 'antigravity')).toMatchObject({
+    models: gemini.models,
+    defaultModel: gemini.defaultModel,
+    modelWarning: '缺少 Key',
+  });
+
+  const restarted = createCapabilitiesService({}, options);
+  expect(await restarted.read(f.ws, 'antigravity')).toMatchObject({
+    antigravityConnection: 'gemini',
+    models: gemini.models,
+    defaultModel: gemini.defaultModel,
+  });
+  connection = 'account';
+  for (const instance of [service, restarted]) {
+    expect(await instance.read(f.ws, 'antigravity')).toMatchObject({
+      antigravityConnection: 'account',
+      models: official.models,
+      defaultModel: official.defaultModel,
+    });
+  }
+  connection = undefined;
+  const unknown = await service.read(f.ws, 'antigravity');
+  expect(unknown).toMatchObject({ discovered: false, models: [] });
+  expect(unknown.antigravityConnection).toBeUndefined();
+
+  await service.invalidate('antigravity');
+  const afterSave = createCapabilitiesService({}, options);
+  for (const mode of ['account', 'gemini'] as const) {
+    connection = mode;
+    for (const instance of [service, afterSave]) {
+      expect(await instance.read(f.ws, 'antigravity')).toMatchObject({
+        antigravityConnection: mode,
+        discovered: false,
+        models: [],
+      });
+    }
+  }
+  expect(f.provider).toHaveBeenCalledTimes(4);
+});
+
+it('AGY 拒绝发现中切换连接或发现来源不匹配的目录', async () => {
+  const f = await fixture();
+  let connection: AntigravityConnection = 'account';
+  const options = { ...f.options, antigravityConnection: async () => connection };
+  const service = createCapabilitiesService({ antigravity: f.provider }, options);
+  const account = { ...f.catalog, antigravityConnection: 'account' as const };
+  f.provider.mockImplementationOnce(async () => {
+    connection = 'gemini';
+    return account;
+  });
+  await expect(service.refresh(f.ws, 'antigravity')).rejects.toMatchObject({ code: 'capabilities_refresh_superseded' });
+  f.provider.mockResolvedValueOnce(account);
+  await expect(service.refresh(f.ws, 'antigravity')).rejects.toMatchObject({ code: 'capabilities_refresh_superseded' });
+  expect(await service.read(f.ws, 'antigravity')).toMatchObject({ antigravityConnection: 'gemini', models: [] });
+  connection = 'account';
+  expect(await createCapabilitiesService({}, options).read(f.ws, 'antigravity')).toMatchObject({
+    antigravityConnection: 'account',
+    models: [],
+  });
+});
+
+it('AGY 落盘期间切换连接，恢复先前同模式的成功目录', async () => {
+  const f = await fixture();
+  let connection: AntigravityConnection = 'account';
+  const options = { ...f.options, antigravityConnection: async () => connection };
+  const service = createCapabilitiesService({ antigravity: f.provider }, options);
+  f.catalog.antigravityConnection = 'account';
+  await service.refresh(f.ws, 'antigravity');
+
+  const write = files.writeConfigFile;
+  vi.spyOn(files, 'writeConfigFile').mockImplementationOnce(async (...args) => {
+    connection = 'gemini';
+    await write(...args);
+  });
+  f.provider.mockResolvedValueOnce({ ...f.catalog, models: [{ id: 'obsolete', label: '迟到结果' }] });
+  await expect(service.refresh(f.ws, 'antigravity')).rejects.toMatchObject({ code: 'capabilities_refresh_superseded' });
+  const restarted = createCapabilitiesService({}, options);
+  expect(await restarted.read(f.ws, 'antigravity')).toMatchObject({ antigravityConnection: 'gemini', models: [] });
+  connection = 'account';
+  expect(await restarted.read(f.ws, 'antigravity')).toMatchObject({
+    antigravityConnection: 'account',
+    models: f.catalog.models,
+  });
+});
+
 it.each([1, 2])('读取旧 v%i 缓存并保留目录，刷新后写入去重格式', async (version) => {
   const f = await fixture();
   await createCapabilitiesService({ claude: f.provider }, f.options).refresh(f.ws, 'claude');
@@ -200,7 +323,7 @@ it.each([1, 2])('读取旧 v%i 缓存并保留目录，刷新后写入去重格�
   expect((await upgraded.read(other, 'claude')).models).toEqual(f.catalog.models);
 });
 
-it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityVersion: 2 }])(
+it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityVersion: 1 }])(
   'AGY 忽略身份未知的缓存 %j，显式刷新后才能跨进程复用',
   async ({ version, identityVersion }) => {
     const f = await fixture();
@@ -235,7 +358,9 @@ it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityV
     await writeFile(file, original);
     f.catalog.models = oldCatalog.models;
     f.catalog.defaultModel = 'selection-a';
-    const service = createCapabilitiesService({ antigravity: f.provider }, f.options);
+    f.catalog.antigravityConnection = 'account';
+    const options = { ...f.options, antigravityConnection: async () => 'account' as const };
+    const service = createCapabilitiesService({ antigravity: f.provider }, options);
 
     const unread = await service.read(f.ws, 'antigravity');
     expect(unread).toMatchObject({ discovered: false, models: [] });
@@ -247,8 +372,9 @@ it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityV
     expect((await service.refresh(f.ws, 'antigravity')).defaultModel).toBe('selection-a');
     expect(f.provider).toHaveBeenCalledTimes(1);
     const upgraded = JSON.parse(await readFile(file, 'utf8'));
-    expect(upgraded).toMatchObject({ version: 3, identityVersion: 1 });
-    const restarted = createCapabilitiesService({ antigravity: f.provider }, f.options);
+    expect(upgraded).toMatchObject({ version: 3, identityVersion: 2 });
+    expect(upgraded.directories).toHaveLength(1);
+    const restarted = createCapabilitiesService({ antigravity: f.provider }, options);
     expect(await restarted.read(f.ws, 'antigravity')).toMatchObject({
       discovered: true,
       models: f.catalog.models,
@@ -261,7 +387,7 @@ it.each([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 3, identityV
     const deduplicated = JSON.parse(await readFile(file, 'utf8'));
     expect(deduplicated.directories).toHaveLength(2);
     expect(deduplicated.catalogs).toHaveLength(1);
-    const secondRestart = createCapabilitiesService({}, f.options);
+    const secondRestart = createCapabilitiesService({}, options);
     expect((await secondRestart.read(f.ws, 'antigravity')).defaultModel).toBe('selection-a');
     expect((await secondRestart.read(other, 'antigravity')).defaultModel).toBe('selection-a');
   },

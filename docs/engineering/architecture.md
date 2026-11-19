@@ -56,7 +56,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 | `apps/server/src/http` | 访问控制与请求生命周期，对话和设置接口分别在 conversation 和 settings |
 | `apps/web/src/app` | DSH 外壳、导航、布局和跨功能组合 |
 | `apps/web/src/cli` | 通用模型身份与缓存，以及 Claude 上下文、Codex 参数、AGY 变体和设置策略 |
-| `apps/web/src/features` | chat 管实时会话，sessions 管列表与历史，conversation 提供共用时间线和轨迹。settings 按导航、模型、CLI 安装和原生资源等用途分组 |
+| `apps/web/src/features` | chat 管实时会话，sessions 管列表与历史，conversation 提供无实时状态的事件投影、时间线和轨迹。settings 按导航、模型、CLI 安装和原生资源等用途分组 |
 | `apps/web/src/builtin-plugins/ssh-console` | 内置页面注册、服务器档案界面与控制台 |
 | `apps/web/src/lib`、`ui` | HTTP、WebSocket、桌面桥、查询客户端与通用控件 |
 | `packages/shared/src/{conversation,projects,settings,plugins,ssh}` | 按领域导出的协议/schema；根入口保留兼容出口 |
@@ -66,9 +66,9 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 
 按功能划分模块，通用能力才进入公共目录；不额外增加控制器/仓储等重复层。旧同步、版本、本地镜像、Agent→SSH 桥和命令黑名单目录已删除；当前会话读取 MCP 属于独立只读能力。
 
-依赖方向由少量 ESLint 导入规则检查：platform 不导入应用/CLI/插件业务，agents 不导入应用服务，插件宿主不导入内置实现；前端 cli/lib/ui 不反向导入功能页面，shared 不依赖 apps。CLI 配置通过 `CliConfiguration` 静态注册，通用设置只负责 revision、文件保存、连接事务和失效通知。JSON/TOML 格式工具不识别具体 CLI，原生字段和作用域只在各适配目录声明。
+依赖方向由少量 ESLint 导入规则检查：platform 不导入应用/CLI/插件业务，agents 不导入应用服务，插件宿主不导入内置实现；前端 cli/lib/ui 不反向导入功能页面，conversation 不反向导入实时 chat，shared 不依赖 apps。CLI 配置通过 `CliConfiguration` 静态注册，通用设置只负责 revision、文件保存、连接事务和失效通知。JSON/TOML 格式工具不识别具体 CLI，原生字段和作用域只在各适配目录声明。
 
-会话目录的同步路径裁决与磁盘 realpath 核验保持不同函数。`legacySessionCapabilities` 明确用于缺少 capabilities 的旧数据，新列表以 provider 返回能力为准。前端继续只有一个 chat store，纯状态和模型策略另行提取，不复制三个对话产品。
+会话目录的同步路径裁决与磁盘 realpath 核验保持不同函数。列表优先使用 provider 声明的能力；缺少声明时，`legacySessionCapabilities` 仍为服务端列表及旧响应提供兼容值。前端继续只有一个 chat store，纯状态和模型策略另行提取，不复制三个对话产品。
 
 
 ## 4. 项目、会话与回合
@@ -77,7 +77,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与“�
 
 项目存储串行读写，保存时校验 schema 与唯一 id，将完整内容写入同目录临时文件后原子替换。新增或更换目录时校验路径存在；已有目录离线时仍可改名或移除。项目记录只有名称、本地目录和 id。
 
-`agents/common/session-ownership.ts` 只比较规范化路径，不访问磁盘。Windows 盘符/UNC 使用 Windows 语义，POSIX 路径保留大小写；Antigravity URI 只接受 `file://`，支持 JSON 数组、单值及换行/分号列表。归属顺序和无归属行为定义在需求 F2。
+`agents/common/history/session-ownership.ts` 只比较规范化路径，不访问磁盘。Windows 盘符/UNC 使用 Windows 语义，POSIX 路径保留大小写；Antigravity URI 只接受 `file://`，支持 JSON 数组、单值及换行/分号列表。归属顺序和无归属行为定义在需求 F2。
 
 日常列表使用 `GET /api/sessions/page`，按三 CLI 各读取一页，每页最多 50 条摘要；新增项目不增加来源请求数。Claude 使用 SDK limit/offset，Codex 使用 thread/list 游标，AGY 使用只读 SQL limit/offset；原生接口内部的文件扫描成本仍由 CLI 决定。共享层先核对项目归属及原生/工作台归档，再匹配标题、来源、会话 id、项目名称和目录。单次筛选最多扫描 8 个原生页；未找到足够匹配时返回继续游标，空页带游标不能解释为全部搜索结束。
 
@@ -121,7 +121,7 @@ Claude/Codex 的运行时按会话复用，空闲回收预算为 5 分钟。缓�
 
 能力发现前检查目录；既有会话在原生归属读取前先检查项目根，再按已核实的会话目录发现。失效目录返回专用错误码并连接更换目录操作。模型反馈与技能反馈分别输出，避免一个分支失败影响另一分支的界面状态。
 
-AGY 模型快照独立校验身份版本：旧 v1/v2 或缺少身份标记的 v3 不返回候选和默认值，也不因只读访问而启动发现或重写文件。用户下次打开模型入口时，沿用未发现状态的补取流程；成功重建后可跨进程复用。写入一个新目录不能把其他旧目录一并标成可信。
+AGY 模型快照除目录和 CLI 外，还按原生连接方式区分账号登录与 Gemini API。旧快照缺少连接身份，不返回候选和默认值；GET 只读原生设置和对应缓存，不启动发现或重写文件。刷新失败只保留同连接身份的候选；切换后迟到结果不能回填。用户下次打开模型入口时仍可发现，成功结果可跨进程复用。
 
 ### 4.4 历史与前端状态
 
@@ -131,13 +131,13 @@ zustand 持有当前项目、CLI、会话和回合状态，TanStack Query 管项
 
 左栏占满窗口高度，中央标题栏随对话或插件切换；右栏默认显示当前会话信息，选中执行步骤后改为详情，每次启动关闭。SSH Console 经左上导航首次打开后保持挂载，隐藏期间暂停观察。具体尺寸与窄窗互斥规则见[界面约定](../product/ui-layout.md)。
 
-实时视图复用 ChatView、Composer、审批和工具组件。既有时间线采用 react-virtuoso，读取工具白名单分组每段最多 40 项；审批、执行与错误独立成卡。原生只读历史与实时界面的验证不能互相替代。
+事件投影、时间线和轨迹由实时与历史共用，操作由宿主显式提供。实时使用 ChatView、Composer 和原生审批；历史时间线及其只读步骤详情不挂接实时应答或分叉，图片使用记录的项目、CLI、会话及子代理身份。时间线采用 react-virtuoso，读取工具白名单分组每段最多 40 项；审批、执行与错误独立成卡。只读与实时界面的验证不能互相替代。
 
 执行轨迹从同一 ChatItem 数组投影，按用户消息划分轮次并逐步骤虚拟化。工具、活动和步骤统计使用界面独立 key 保存原生 ID，回填只匹配当前用户轮次；同轮重复结束更新原条目，不累计重复结果。`activity` 保留非工具步骤的名称和状态，缺失结果在收尾时标为未完成。右栏只引用选中条目 ID，后续结果更新直接反映在详情中。
 
 `turn_end` 与 `step_usage` 分别携带对应范围的 token，`tool_result` 可附原生或本机观察耗时。前端只对范围匹配的输出量与有效耗时计算均速；明确整轮失败或取消时省略页脚速度。结果未确认时，仅可展示经可靠轨迹复核的已完成最终回复步骤统计，耗时不足则不计算速度。上下文使用独立 `context` 事件。统计数据仍只随本次原生读取和实时事件存在，不建立持久遥测副本。
 
-Antigravity 历史通过现有后台管理进程执行只读 RPC；完整读取受 32 MiB、50000 步、64 页及 30 秒总预算约束，继续分页时检查返回身份、数量和进度。适配已知文本、工具、压缩和活动字段，未知内部载荷不直接展开。仅最新完整生成元数据提供历史上下文估计；历史工具耗时不与模型用量混算速度，实时 headless 不生成缺失的上下文值。
+Antigravity 历史通过现有后台管理进程执行只读 RPC；显式只读回放单条轨迹时，原生首包与分页累计上限为 64 MiB，超过时报告历史大小而非提示配置有误；回合复核、会话管理和其他原生 RPC 仍按常规 32 MiB 上限，子代理目录、历史和媒体遍历的累计上限仍是 32 MiB。轨迹补齐限 50000 步、64 页及 30 秒分页预算，继续分页时检查返回身份、数量和进度。适配已知文本、工具、压缩和活动字段，未知内部载荷不直接展开。仅最新完整生成元数据提供历史上下文估计；历史工具耗时不与模型用量混算速度，实时 headless 不生成缺失的上下文值。
 
 partysocket 的连接退避为 1–15 秒，发送缓冲关闭。`ResumeHub` 用随机页签令牌与单调序号管理稳定 Socket，心跳每 15 秒检查半开连接；断开后保留 60 秒，完成回合保留 5 分钟。每身份最多 16 MiB、进程合计 64 MiB、最多 64 身份，大小按字符串内存估计并计入条目开销。超限停止对应回合；容量拒绝后停止自动重连，用户可显式重试。
 
@@ -249,7 +249,7 @@ Slurm 单一路径为 `LC_ALL=C squeue --noheader --user="$(id -un)" --format=..
 
 插件注册表与自身设置采用 revision 校验。外部静态包复制入工作台目录，安装不执行脚本；启用后只可通过声明权限访问自己的 JSON 设置、当前项目摘要和命令通知。页面校验入口摘要，sandbox 不给予同源、任意网络或 Node 权限；关闭页面与停用/卸载各有独立处理。详细配额和消息边界见[工作台插件接口](workbench-plugins.md)。
 
-SSH Console 只以服务器 alias 定位，不伪造 Workspace：服务器档案独立于项目，projects 里没有 `server`/`remoteDir`，也没有项目引用锁定。overview、processes、jobs 只对当前可见目标请求；只读文件使用 SFTP。作业页用 `console/slurm.ts` 查询当前登录账号的 `squeue`，与 overview/processes 共用 `console/command.ts` 的租约通道与 `console/cache.ts` 的代次缓存。后端 PTY registry 保存通道和有界输出，HTTP 读返回 base64 原始字节与 `nextSeq`，前端消费后才推进游标；读取被裁剪的旧区间时明确 reset。隐藏暂停浏览器读取但不结束 shell，重新打开先取终端列表；关闭单终端才释放其通道。
+SSH Console 只以服务器 alias 定位，不伪造 Workspace：服务器档案独立于项目，projects 里没有 `server`/`remoteDir`，也没有项目引用锁定。overview、processes、jobs 只对当前可见目标请求；只读文件使用 SFTP。作业页用 `console/jobs/slurm.ts` 查询当前登录账号的 `squeue`，与 overview/processes 共用 `console/command.ts` 的租约通道与 `console/monitoring/cache.ts` 的代次缓存。后端 PTY registry 保存通道和有界输出，HTTP 读返回 base64 原始字节与 `nextSeq`，前端消费后才推进游标；读取被裁剪的旧区间时明确 reset。隐藏暂停浏览器读取但不结束 shell，重新打开先取终端列表；关闭单终端才释放其通道。
 
 停用插件会结束控制台内终端并释放页面状态，重新启用从空列表开始；服务器档案、凭据密文、项目与共享连接保留。
 

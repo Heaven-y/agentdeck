@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { AgentModel } from '@agentdeck/shared/conversation';
+import type { AgentCapabilities, AgentModel } from '@agentdeck/shared/conversation';
 import { DEFAULT_APPEARANCE, DEFAULT_SPOTLIGHT } from '@agentdeck/shared/settings';
 import { ModelOptionsMenu } from '../../../../src/features/chat/models/ModelOptionsMenu';
 import { sessionActionKey, useChat } from '../../../../src/features/chat/state/chat-store';
@@ -33,12 +33,23 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () {
     this.open = false;
   };
+  vi.spyOn(chatApi, 'agentCapabilities').mockImplementation(
+    async (project, agent, _signal, sessionId) =>
+      client.getQueryData<AgentCapabilities>(chatKeys.agentCapabilities(project, agent, sessionId)) ?? {
+        agent,
+        discovered: false,
+        models: [],
+        entries: [],
+        warnings: [],
+      },
+  );
   vi.spyOn(settingsApi, 'readEnvironment').mockResolvedValue({ checkedAt: 1, tools: [] });
 });
 afterEach(() => {
   cleanup();
   client.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function mount() {
@@ -115,6 +126,129 @@ it('对话菜单应用显示范围且保留当前隐藏模型，不因筛选改�
   expect(useChat.getState().modelOverrides.claude).toBe('model-64');
 });
 
+it('AGY 官方面板不继承 API Key 或旧的共用筛选，换回 API Key 仍按自己的范围显示', async () => {
+  useChat.setState((state) => ({
+    agent: 'antigravity',
+    defaults: {
+      ...state.defaults,
+      modelVisibility: { antigravity: ['gemini-fixture-high'], 'antigravity-gemini': ['gemini-fixture-high'] },
+    },
+  }));
+  const key = chatKeys.agentCapabilities('project', 'antigravity');
+  const catalog = {
+    agent: 'antigravity',
+    discovered: true,
+    models: [
+      { id: 'gemini-fixture-high', label: 'Gemini Fixture (High)' },
+      { id: 'gemini-fixture-low', label: 'Gemini Fixture (Low)' },
+    ],
+    defaultModel: 'gemini-fixture-high',
+    entries: [],
+    warnings: [],
+  };
+  client.setQueryData(key, { ...catalog, antigravityConnection: 'account' });
+  mount();
+  const group = await screen.findByRole('group', { name: '可选模型' });
+  expect(within(group).getAllByRole('menuitemradio')).toHaveLength(2);
+  expect(screen.queryByText(/模型未显示/)).toBeNull();
+
+  client.setQueryData(key, { ...catalog, antigravityConnection: 'gemini' });
+  await waitFor(() => expect(within(group).getAllByRole('menuitemradio')).toHaveLength(1));
+  expect(screen.getByRole('status').textContent).toMatch(/还有 1 个模型未显示.*恢复全部模型.*保存配置/);
+  expect(useChat.getState().modelOverrides.antigravity).toBe('');
+});
+
+it('只有 AGY 官方连接可点选读取额度，不把 API Key 或回合 token 当作账号额度', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+    Response.json({
+      checkedAt: 1795050000000,
+      groups: [
+        {
+          name: '官方模型组',
+          buckets: [
+            { id: 'short', name: '短期额度', remainingFraction: 0 },
+            { id: 'long', name: '长期额度', remainingFraction: 0.0004 },
+          ],
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  useChat.setState({ agent: 'antigravity' });
+  const key = chatKeys.agentCapabilities('project', 'antigravity');
+  const catalog = { agent: 'antigravity', discovered: true, models: [], entries: [], warnings: [] };
+  client.setQueryData(key, { ...catalog, antigravityConnection: 'gemini' });
+  mount();
+  expect(screen.queryByRole('menuitem', { name: '查看官方额度' })).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
+
+  await waitFor(() => expect(client.isFetching({ queryKey: key })).toBe(0));
+  client.setQueryData(key, { ...catalog, antigravityConnection: 'account' });
+  const entry = await screen.findByRole('menuitem', { name: '查看官方额度' });
+  expect(fetcher).not.toHaveBeenCalled();
+  fireEvent.click(entry);
+  const dialog = await screen.findByRole('dialog', { name: 'Antigravity 官方额度' });
+  await within(dialog).findByText('0%');
+  expect(within(dialog).getByText('<0.1%')).toBeTruthy();
+  expect(within(dialog).getAllByText('重置时间未报告')).toHaveLength(2);
+  expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+    '/api/settings/models/antigravity/official-usage',
+    expect.objectContaining({ method: 'POST' }),
+  );
+});
+
+it.each([
+  ['account', 'gemini'],
+  [undefined, 'account'],
+] as const)('AGY 菜单重开本机复核 %s → %s，不重新发现', async (initial, next) => {
+  useChat.setState({ agent: 'antigravity' });
+  const catalog = { agent: 'antigravity', discovered: true, models: [], entries: [], warnings: [] } as const;
+  client.setQueryData(chatKeys.agentCapabilities('project', 'antigravity'), {
+    ...catalog,
+    antigravityConnection: initial,
+    models: [],
+  });
+  const refresh = vi.spyOn(chatApi, 'refreshAgentCapabilities');
+  mount();
+  const menu = await screen.findByRole('menu', { name: '模型选项菜单' });
+  expect(within(menu).queryByRole('menuitem', { name: '查看官方额度' }) !== null).toBe(initial === 'account');
+  const trigger = screen.getByRole('button', { name: '模型选项' });
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.queryByRole('menu', { name: '模型选项菜单' })).toBeNull());
+  vi.mocked(chatApi.agentCapabilities).mockResolvedValue({
+    ...catalog,
+    antigravityConnection: next,
+    models: [],
+    entries: [],
+    warnings: [],
+  });
+  fireEvent.click(trigger);
+  await screen.findByText(next === 'account' ? '模型 · 官方登录' : '模型 · Gemini API Key');
+  expect(screen.queryByRole('menuitem', { name: '查看官方额度' }) !== null).toBe(next === 'account');
+  expect(refresh).not.toHaveBeenCalled();
+});
+
+it('AGY 原生连接仍未知时，菜单重复打开只读本机状态，不重复触发发现', async () => {
+  useChat.setState({ agent: 'antigravity' });
+  const key = chatKeys.agentCapabilities('project', 'antigravity');
+  const unknown = { agent: 'antigravity' as const, discovered: false, models: [], entries: [], warnings: [] };
+  client.setQueryData(key, { ...unknown, discovered: true });
+  const read = vi.mocked(chatApi.agentCapabilities).mockResolvedValue(unknown);
+  const refresh = vi.spyOn(chatApi, 'refreshAgentCapabilities').mockResolvedValue({ ...unknown, discovered: true });
+  mount();
+  const trigger = screen.getByRole('button', { name: '模型选项' });
+  await screen.findByRole('menu', { name: '模型选项菜单' });
+  await waitFor(() => expect(client.isFetching({ queryKey: key })).toBe(0));
+  const count = read.mock.calls.length;
+  fireEvent.click(trigger);
+  await waitFor(() => expect(screen.queryByRole('menu', { name: '模型选项菜单' })).toBeNull());
+  fireEvent.click(trigger);
+  await waitFor(() => expect(read.mock.calls.length).toBe(count + 1));
+  await waitFor(() => expect(client.isFetching({ queryKey: key })).toBe(0));
+  expect(refresh).not.toHaveBeenCalled();
+  expect(screen.queryByRole('menuitem', { name: '查看官方额度' })).toBeNull();
+});
+
 it('成功目录被回收后允许重新发现，读取与手动刷新仍由各自缓存状态触发', async () => {
   const key = chatKeys.agentCapabilities('project', 'claude');
   client.removeQueries({ queryKey: key });
@@ -178,12 +312,13 @@ it.each(['单条原生条目', '同型号的多个配置入口', '单条配置�
     useChat.setState({
       defaults: {
         ...useChat.getState().defaults,
-        modelVisibility: { antigravity: [scenario === '单条配置入口' ? configured[0]!.id : native.id] },
+        modelVisibility: { 'antigravity-gemini': [scenario === '单条配置入口' ? configured[0]!.id : native.id] },
       },
     });
     client.setQueryData(chatKeys.agentCapabilities('project', 'antigravity'), {
       agent: 'antigravity',
       discovered: true,
+      antigravityConnection: 'gemini',
       defaultModel: native.label,
       models:
         scenario === '单条原生条目'
@@ -229,11 +364,12 @@ it('AGY 当前显示名与缓存型号合为一行，点选及重新打开均保
   }));
   useChat.getState().setAgent('antigravity');
   useChat.setState({
-    defaults: { ...useChat.getState().defaults, modelVisibility: { antigravity: [native.id, other.id] } },
+    defaults: { ...useChat.getState().defaults, modelVisibility: { 'antigravity-gemini': [native.id, other.id] } },
   });
   client.setQueryData(chatKeys.agentCapabilities('project', 'antigravity'), {
     agent: 'antigravity',
     discovered: true,
+    antigravityConnection: 'gemini',
     defaultModel: native.label,
     models: [native, { id: native.label, label: native.label }, ...overrides, other],
     entries: [],

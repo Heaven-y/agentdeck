@@ -63,9 +63,15 @@ it('等待授权的回合可查询自身实例；持久写被拒绝，新检查�
       state: 'authenticationRequired',
     });
     expect(withIdleAgent).not.toHaveBeenCalled();
+    const reload = vi.fn(async () => project);
     await expect(
-      service.operateMcp('codex', { id: entry.id, revision: entry.revision, action: 'disable' }, project),
+      service.operateMcp(
+        'codex',
+        { id: entry.id, revision: entry.revision, action: 'disable' },
+        { ...project, reload },
+      ),
     ).rejects.toMatchObject({ code: 'agent_busy' });
+    expect(reload).not.toHaveBeenCalled();
     await expect(native.exclusive('codex', () => controls.operate('codex', input, project))).rejects.toMatchObject({
       code: 'agent_busy',
     });

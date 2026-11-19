@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso';
 import { Tooltip, TooltipAnchor, TooltipProvider } from '@ariakit/react';
-import type { TimelineRow } from '../../conversation/timeline/timeline-model';
+import type { TimelineRow } from './timeline-model';
 
 type MessageLocation = { id: string; rowIndex: number; preview: string };
 function focusableIndex(range: ListRange, active: number, keyboard?: number) {

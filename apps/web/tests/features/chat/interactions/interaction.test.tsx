@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { UserInteraction } from '@agentdeck/shared/conversation';
 import { InteractionCard } from '../../../../src/features/chat/interactions/InteractionCard';
-import { reduceChat } from '../../../../src/features/chat/state/chat-reducer';
+import { reduceChat } from '../../../../src/features/conversation/model/conversation-events';
 afterEach(cleanup);
 it('浮点数表单允许原生支持的小数，不被浏览器默认整数步长阻止', () => {
   const respond = vi.fn(() => true);

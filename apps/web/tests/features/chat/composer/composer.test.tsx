@@ -847,7 +847,11 @@ it('模型菜单不显示技能错误；失效目录保留真实原因并能打�
   await screen.findByText('工作区目录不可用，请重新选择文件夹。');
   expect(screen.queryByText('模型列表加载失败，请刷新重试。')).toBeNull();
   fireEvent.click(screen.getByRole('menuitem', { name: '更换工作区目录' }));
-  expect(await screen.findByRole('dialog', { name: '更换项目目录' })).toBeTruthy();
+  const dialog = await screen.findByRole('dialog', { name: '更换项目目录' });
+  fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '不要在保存目录时发送这条草稿' } });
+  fireEvent.submit(dialog.querySelector('form')!);
+  expect(sent).toHaveLength(0);
+  expect(dialog.closest('.composer')).toBeNull();
 });
 
 it.each(['claude', 'codex'] as const)('输入区%s跟随配置时省略强度字段，并使用各自目录报告的档位', async (agent) => {

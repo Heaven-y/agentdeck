@@ -2,13 +2,13 @@ import { ArrowDown } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { buttonClass } from '../../../ui/styles';
-import type { ChatItem } from '../state/chat-reducer';
-import { TimelineRowView, projectTimeline } from '../../conversation/timeline';
+import type { ChatItem } from '../model/conversation-events';
+import { TimelineRowView, projectTimeline } from '.';
 import { UserMessageNavigation } from './UserMessageNavigation';
 import { useVisibleMessage } from './use-visible-message';
 
 /** 动态测量和跟随只交给Virtuoso；展开状态留在列表外，虚拟卸载不丢选择。 */
-export function ChatTimeline({ items, running }: { items: ChatItem[]; running: boolean }) {
+export function ConversationTimeline({ items, running }: { items: ChatItem[]; running: boolean }) {
   const rows = useMemo(
     () => projectTimeline(items.filter((item) => item.kind !== 'statistics' && item.kind !== 'turn-status')),
     [items],

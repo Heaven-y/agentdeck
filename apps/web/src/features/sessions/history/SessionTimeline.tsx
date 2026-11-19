@@ -2,11 +2,11 @@ import { CircleAlert, History, RefreshCw, ShieldQuestion } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { buttonClass } from '../../../ui/styles';
-import { historyItems } from '../../chat/state/chat-reducer';
+import { historyItems } from '../../conversation/model/conversation-events';
 import { TimelineRowView, projectTimeline } from '../../conversation/timeline';
-
-/** 历史读取的失败分类：由 use-sessions 从接口错误码推导，界面只负责各说各话。 */
-export type SessionHistoryFailure = { kind: 'not-replayable' | 'missing' | 'network' | 'failed'; message: string };
+import type { NativeMediaSource } from '../../conversation/media/native-media';
+import type { SessionHistoryFailure } from '../queries/use-sessions';
+import { RecordedConversationSurface } from './RecordedConversationSurface';
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-12 text-center">{children}</div>;
@@ -20,8 +20,7 @@ function NotReplayable() {
         <ShieldQuestion aria-hidden className="mx-auto size-7 text-muted-foreground" />
         <h2 className="text-sm font-medium">此会话的历史无法读取</h2>
         <p className="text-xs leading-5 text-muted-foreground">
-          Antigravity 把对话正文以私有轨迹格式保存在本机，没有公开格式，因此这里无法回放。标题、时间与归属来自它的
-          SQLite 元数据，仍然可信；正文不会被猜测，也不会显示成空会话。
+          当前原生接口未提供可回放的对话正文。可以继续查看会话摘要，缺失的内容不会被补造。
         </p>
       </div>
     </Centered>
@@ -118,16 +117,18 @@ function HistoryBody({
 
 /**
  * 只读历史时间线：事件流先按既有归并规则整理成 ChatItem，再投影成时间线行，
- * 与实时对话共用同一套 Markdown、工具卡片与读取分组。M1 没有输入框。
+ * 与实时对话共用同一套 Markdown、工具卡片与读取分组，不接管实时操作。
  */
 export function SessionTimeline({
   events,
+  source,
   notReplayable = false,
   error,
   loading = false,
   onRetry,
 }: {
   events: AgentEvent[];
+  source?: NativeMediaSource;
   notReplayable?: boolean;
   error?: SessionHistoryFailure;
   loading?: boolean;
@@ -152,19 +153,21 @@ export function SessionTimeline({
         role={list ? 'log' : undefined}
         aria-label={list ? '会话历史' : undefined}
       >
-        <HistoryBody
-          notReplayable={notReplayable}
-          error={error}
-          loading={loading}
-          rows={rows}
-          expanded={expanded}
-          setOpen={setOpen}
-          onRetry={onRetry}
-        />
+        <RecordedConversationSurface source={source}>
+          <HistoryBody
+            notReplayable={notReplayable}
+            error={error}
+            loading={loading}
+            rows={rows}
+            expanded={expanded}
+            setOpen={setOpen}
+            onRetry={onRetry}
+          />
+        </RecordedConversationSurface>
       </div>
       <footer className="flex shrink-0 items-center gap-2 border-t border-border/70 px-4 py-2 text-xs text-muted-foreground sm:px-6">
         <History aria-hidden className="size-3.5" />
-        只读浏览原生会话记录；M2 接入对话后可以在这里继续发送消息。
+        只读浏览原生会话记录。
       </footer>
     </div>
   );

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
-import { reduceChat, resolvePermission, type ChatItem } from '../../../../src/features/chat/state/chat-reducer';
+import {
+  reduceChat,
+  resolvePermission,
+  type ChatItem,
+} from '../../../../src/features/conversation/model/conversation-events';
 
 const run = (events: AgentEvent[], start: ChatItem[] = []) => events.reduce(reduceChat, start);
 

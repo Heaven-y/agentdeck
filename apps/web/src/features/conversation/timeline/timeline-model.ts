@@ -1,4 +1,4 @@
-import type { ChatItem } from '../../chat/state/chat-reducer';
+import type { ChatItem } from '../model/conversation-events';
 
 export type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
 export type TimelineRow =

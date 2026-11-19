@@ -1,7 +1,7 @@
 import type { AgentCapability, FollowupContent, FollowupSnapshot, ClientMessage } from '@agentdeck/shared/conversation';
 import type { DraftAttachment } from '../composer/attachment-actions';
 import type { ChatState, ConversationView } from '../state/chat-state';
-import type { ChatItem } from '../state/chat-reducer';
+import type { ChatItem } from '../../conversation/model/conversation-events';
 export type DraftBackup = {
   id: string;
   text: string;

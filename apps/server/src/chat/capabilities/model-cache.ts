@@ -25,9 +25,10 @@ const LegacyStored = z.strictObject({
 });
 type Catalogs = z.infer<typeof LegacyStored>['catalogs'];
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
+const AGY_IDENTITY_VERSION = 2;
 const Stored = z.strictObject({
   version: z.literal(3),
-  identityVersion: z.literal(1).optional(),
+  identityVersion: z.union([z.literal(1), z.literal(AGY_IDENTITY_VERSION)]).optional(),
   directories: z.array(z.strictObject({ key: Digest, catalog: Digest })).max(32),
   catalogs: z.array(ModelCatalog.extend({ id: Digest }).strict()).max(32),
 });
@@ -35,6 +36,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const EMPTY_CACHE = '{"version":3,"directories":[],"catalogs":[]}\n';
 export type ModelCatalogSnapshot = z.infer<typeof ModelCatalog>;
 export type CachedModelCatalog = { snapshot: ModelCatalogSnapshot; current: boolean };
+export type ModelCacheWriteGuard = { currentRequest: () => boolean; currentScope?: () => Promise<boolean> };
 
 /** 不合并目录作用域；仅对已解析的公开模型快照做内容去重。 */
 function encode(catalogs: Catalogs, agent: AgentKind): Buffer {
@@ -46,7 +48,7 @@ function encode(catalogs: Catalogs, agent: AgentKind): Buffer {
   });
   const content = {
     version: 3,
-    ...(agent === 'antigravity' ? { identityVersion: 1 } : {}),
+    ...(agent === 'antigravity' ? { identityVersion: AGY_IDENTITY_VERSION } : {}),
     directories,
     catalogs: [...unique].map(([id, catalog]) => ({ id, ...catalog })),
   };
@@ -69,7 +71,9 @@ function decode(content: string, agent: AgentKind): { catalogs: Catalogs; curren
     if (agent === 'antigravity') return { catalogs: [], current: false };
     return { catalogs: legacy.catalogs, current: legacy.version === 2 };
   }
-  if (agent === 'antigravity' && stored.data.identityVersion !== 1) return { catalogs: [], current: false };
+  // 旧 v3 即使有模型身份版本，也没有 AGY 连接身份，不能归给当前模式。
+  const modeAware = stored.data.identityVersion === AGY_IDENTITY_VERSION;
+  if (modeAware !== (agent === 'antigravity')) return { catalogs: [], current: false };
   const snapshots = new Map(stored.data.catalogs.map(({ id, ...catalog }) => [id, catalog]));
   return {
     current: true,
@@ -104,6 +108,21 @@ export function createModelCache(configDir: string) {
     }
     return { file, snapshot, catalogs, current };
   }
+  async function commit(
+    current: Awaited<ReturnType<typeof load>>,
+    bytes: Buffer,
+    { currentRequest, currentScope }: ModelCacheWriteGuard,
+  ) {
+    const parents = await inspectDirectory(directory, true);
+    if ((currentScope && !(await currentScope())) || !currentRequest()) return;
+    await writeConfigFile(current.file, bytes, current.snapshot, parents!);
+    // 写入期间连接可能已切换，请求也可能被取消或替代；同一队列内还原后再放行新写入。
+    if ((currentScope && !(await currentScope())) || !currentRequest()) {
+      const updated = await readConfigFile(current.file);
+      const previous = current.snapshot.content || EMPTY_CACHE;
+      await writeConfigFile(current.file, Buffer.from(previous), updated, parents!);
+    }
+  }
   return {
     read: (agent: AgentKind, key: string) =>
       serial(async () => {
@@ -111,10 +130,10 @@ export function createModelCache(configDir: string) {
         const catalog = stored.catalogs.find((entry) => entry.key === hash(key));
         return catalog ? { snapshot: ModelCatalog.parse(catalog), current: stored.current } : undefined;
       }),
-    write: (agent: AgentKind, key: string, catalog: ModelCatalogSnapshot, currentRequest: () => boolean) =>
+    write: (agent: AgentKind, key: string, catalog: ModelCatalogSnapshot, guard: ModelCacheWriteGuard) =>
       serial(async () => {
         const parsed = ModelCatalog.safeParse(catalog);
-        if (!parsed.success || !currentRequest()) return;
+        if (!parsed.success || !guard.currentRequest()) return;
         const current = await load(agent);
         const identity = hash(key);
         // v1 缺少模型身份与默认值，升级时只把本次新发现的目录标记为完整。
@@ -123,16 +142,7 @@ export function createModelCache(configDir: string) {
           : [];
         catalogs.push({ key: identity, ...parsed.data });
         const bytes = bounded(catalogs, agent);
-        if (!bytes) return;
-        const parents = await inspectDirectory(directory, true);
-        if (!currentRequest()) return;
-        await writeConfigFile(current.file, bytes, current.snapshot, parents!);
-        // 请求可能在磁盘写入期间被取消或替代；同一串行队列内还原后再放行新写入。
-        if (!currentRequest()) {
-          const updated = await readConfigFile(current.file);
-          const previous = current.snapshot.content || EMPTY_CACHE;
-          await writeConfigFile(current.file, Buffer.from(previous), updated, parents!);
-        }
+        if (bytes) await commit(current, bytes, guard);
       }),
     invalidate: (agent: AgentKind) =>
       serial(async () => {

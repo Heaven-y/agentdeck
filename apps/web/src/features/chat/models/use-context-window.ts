@@ -5,7 +5,7 @@ import { useChat } from '../state/chat-store';
 import type { ContextUsage } from '@agentdeck/shared/conversation';
 import type { NativeContextWindow } from '@agentdeck/shared/settings';
 
-export type DisplayContextUsage = Omit<ContextUsage, 'usedTokens'> & { usedTokens?: number };
+import type { DisplayContextUsage } from '../../conversation/context/ContextPresentation';
 
 function antigravityUsage(
   usage: ContextUsage | null | undefined,

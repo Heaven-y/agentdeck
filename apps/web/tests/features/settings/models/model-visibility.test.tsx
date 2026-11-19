@@ -24,6 +24,15 @@ function nativeDocument() {
   };
 }
 
+function antigravityDocument() {
+  const native = nativeDocument();
+  return {
+    ...native,
+    agent: 'antigravity' as const,
+    fields: [...native.fields, { key: 'modelProvider', label: '连接方式', value: '', group: 'connection' as const }],
+  };
+}
+
 function mount() {
   return render(<ModelSettingsPanel agent="claude" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
 }
@@ -112,8 +121,11 @@ it('显示范围的草稿与原生表单一起受未保存保护', async () => {
   expect(leave).toHaveBeenCalledOnce();
 });
 
-it('Antigravity 的原生别名只列一行，保存的仍是可发送的原生 id', async () => {
-  let product = { settings: ProductSettingsSchema.parse({}), revision: 'b'.repeat(64) };
+it('Antigravity 官方模型去重后按原生 ID 保存，保留独立的 API Key 范围', async () => {
+  let product = {
+    settings: ProductSettingsSchema.parse({ modelVisibility: { 'antigravity-gemini': ['service-model'] } }),
+    revision: 'b'.repeat(64),
+  };
   vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
   const save = vi.spyOn(settingsApi, 'saveProductSettings').mockImplementation(async (input) => {
     product = { settings: input.settings, revision: 'c'.repeat(64) };
@@ -124,8 +136,13 @@ it('Antigravity 的原生别名只列一行，保存的仍是可发送的原生 
     { id: 'agentdeck', label: 'Gemini 4 Argon (High)', modelId: 'Gemini 4 Argon (High)' },
     { id: 'gemini-4-argon-low', label: 'Gemini 4 Argon (Low)' },
   ];
-  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue({ ...nativeDocument(), agent: 'antigravity' });
-  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models: aliases, entries: [], warnings: [] } as never);
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue(antigravityDocument());
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({
+    antigravityConnection: 'account',
+    models: aliases,
+    entries: [],
+    warnings: [],
+  } as never);
   render(<ModelSettingsPanel agent="antigravity" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
 
   await rangeCheckbox('显示 gemini-4-argon-high');
@@ -133,7 +150,10 @@ it('Antigravity 的原生别名只列一行，保存的仍是可发送的原生 
   fireEvent.click(screen.getByRole('checkbox', { name: '显示 gemini-4-argon-low' }));
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ antigravity: ['gemini-4-argon-high'] });
+  expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({
+    'antigravity-account': ['gemini-4-argon-high'],
+    'antigravity-gemini': ['service-model'],
+  });
   expect(queryClient.getQueryData(settingsKeys.productSettings)).toEqual(product);
 });
 
@@ -144,7 +164,7 @@ it.each(['name', 'both'])('AGY 已保存的原生名称合并显示后仍可取�
   const catalog = [named, native, other];
   const saved = savedAs === 'both' ? [native.id, named.id, other.id] : [named.id, other.id];
   let product = {
-    settings: ProductSettingsSchema.parse({ modelVisibility: { antigravity: saved } }),
+    settings: ProductSettingsSchema.parse({ modelVisibility: { 'antigravity-account': saved } }),
     revision: 'b'.repeat(64),
   };
   vi.spyOn(settingsApi, 'readProductSettings').mockImplementation(async () => product);
@@ -152,8 +172,13 @@ it.each(['name', 'both'])('AGY 已保存的原生名称合并显示后仍可取�
     product = { settings: input.settings, revision: 'c'.repeat(64) };
     return product;
   });
-  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue({ ...nativeDocument(), agent: 'antigravity' });
-  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({ models: catalog, entries: [], warnings: [] } as never);
+  vi.spyOn(modelSettingsApi, 'read').mockResolvedValue(antigravityDocument());
+  vi.spyOn(modelSettingsApi, 'catalog').mockResolvedValue({
+    antigravityConnection: 'account',
+    models: catalog,
+    entries: [],
+    warnings: [],
+  } as never);
   render(<ModelSettingsPanel agent="antigravity" guardRef={{ current: (action) => action() }} onNative={vi.fn()} />);
 
   const checkbox = await rangeCheckbox(`显示 ${native.id}`);
@@ -162,8 +187,8 @@ it.each(['name', 'both'])('AGY 已保存的原生名称合并显示后仍可取�
   expect(checkbox.checked).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(product.settings.modelVisibility?.antigravity).toEqual([other.id]);
-  expect(modelCandidates(catalog, other.id, product.settings.modelVisibility?.antigravity, 'antigravity')).toEqual([
-    other,
-  ]);
+  expect(product.settings.modelVisibility?.['antigravity-account']).toEqual([other.id]);
+  expect(
+    modelCandidates(catalog, other.id, product.settings.modelVisibility?.['antigravity-account'], 'antigravity'),
+  ).toEqual([other]);
 });

@@ -8,7 +8,7 @@ Codex 自定义服务的“凭据获取方式”分别对应直接令牌、环�
 
 ## 配置入口
 
-“MCP”页的“会话引用”开关按当前 CLI 显式登记或移除固定 `agentdeck_sessions` MCP，聊天输入区识别到会话链接时也提供同一开关。Claude 使用原生 `mcp add-json/remove --scope user`；Codex 精确修改用户 `config.toml` 的同名 `mcp_servers` 项；Antigravity 修改 `~/.gemini/config/mcp_config.json`，将 `read_session` 标为 eager。其他 MCP、权限与批准项保留，同名非自有配置或版本冲突时拒绝覆盖。
+“MCP”页的“会话引用”开关按当前 CLI 显式登记或移除固定 `agentdeck_sessions` MCP，聊天输入区识别到会话链接时也提供同一开关。Claude 使用原生 `mcp add-json/remove --scope user`，会话引用的相对 `CLAUDE_CONFIG_DIR` 按用户目录（同命令 cwd）解析；Codex 精确修改用户 `config.toml` 的同名 `mcp_servers` 项；Antigravity 修改 `~/.gemini/config/mcp_config.json`，将 `read_session` 标为 eager。其他 MCP、权限与批准项保留，同名非自有配置或版本冲突时拒绝覆盖。
 
 MCP 目录仅将用户作用域中命令、参数、环境和工具声明完全匹配的配置标为 `managedBy: session-tools`，归入专用开关；普通 MCP 接口不再编辑或启停该项。项目、插件及经过用户定制的同名配置继续按原来源展示。两处入口共用注册状态，MCP 刷新会同步重读；保存失败也重新核实状态，以覆盖写入成功但重启失败的情况。
 
@@ -40,13 +40,13 @@ prepare 仅生成宿主 operationId 与来源、动作、作用域和影响预�
 
 ## Skills 与定制资源管理
 
-设置页按 Skills、MCP、原生插件与原生文件分类，共用“原生配置与扩展 · CLI”目录并保留全部原文入口；原生文件集中规则 / Hooks / 代理定义与完整配置。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；同名资源分别显示，客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
+设置页按 Skills、MCP、原生插件与原生文件分类，共用“原生配置与扩展 · CLI”目录并保留全部原文入口；原生文件集中规则 / Hooks / 代理定义与完整配置。Skills 列表以服务器枚举的来源身份、原生名称、作用域、目录与配置 revision 为准；不同路径的同名资源分别显示；同一路径对应多个原生来源时标记为未核实，禁用结构化编辑、删除和状态操作。客户端不能提交任意本机路径替换身份。列表不含技能正文，也不会调用模型或执行技能、Hooks、MCP 工具。
 
 | CLI | 技能状态与写入 | 保留边界 |
 |---|---|---|
-| Claude | skillOverrides 支持 on、name-only、user-invocable-only、off，另有“默认继承”删除所选层覆盖；用户、项目、个人项目设置分别选择 | 原生按技能名生效，同名来源共享设置；插件技能只读并转所属插件管理。同步与托管技能不直接删除；托管策略仍可覆盖本机设置 |
+| Claude | skillOverrides 支持 on、name-only、user-invocable-only、off，另有“默认继承”删除所选层覆盖；用户、项目、个人项目设置分别选择 | 原生按技能名生效，同名来源共享设置；插件技能只读并转所属插件管理。同步与托管技能不直接删除；托管策略仍可覆盖本机设置；写后复核所选层落盘，不宣称回合已采用 |
 | Codex | skills/list 原生路径身份，skills/config/write 仅写所选绝对 SKILL.md 路径；之后 forceReload 重读同 cwd 并核对 effectiveEnabled | 开关写入 Codex 原生用户配置，不伪造项目启停层；插件、管理员、内置及未验证外部来源只读。项目可信状态不因保存而改变 |
-| Antigravity | 普通用户 config/skills 与项目 .agents/skills 可使用各自 skills.json 顶层 exclude；选择器取真实目录名，展示名独立保留，写后重新读取原生目录确认 | 私有 antigravity-cli/skills 和 Shared skills 不受清单排除控制，提供自有文件编辑与确认删除。复杂 entries/inherits/路径过滤以及目录名冲突保留原文，避免把目录名称排除伪装为单一路径开关 |
+| Antigravity | 普通用户 config/skills 与项目 .agents/skills 可使用各自 skills.json 顶层 exclude；选择器取真实目录名，展示名独立保留，写后重新读取原生目录确认 | 私有 antigravity-cli/skills、Shared skills 和旧 .agent/skills 不套用此清单开关，提供自有文件编辑与确认删除。复杂 entries/inherits/路径过滤以及目录名冲突保留原文，避免把目录名称排除伪装为单一路径开关 |
 
 Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取发现，不刷新市场、不执行插件。原生插件根身份保留到技能来源；个人或项目 Skills 目录中的 `@skills-dir` 插件，其根 SKILL.md 与原文入口同样只读，不作为普通自有技能独立启停或删除。离线资源扫描也检查 `.claude-plugin/plugin.json` 标记，避免原生目录暂不可读时误开放写入。没有可靠离线来源的 Claude 内建技能不编造目录或开关，仍由原生 `/skills` 管理；这与完整管理自有本地技能的范围分开。未知版本或原生目录读取失败时显示“未核实”，不把失败当作未安装或完整支持。
 
@@ -116,7 +116,9 @@ Codex 的自动压缩计数口径 `model_auto_compact_token_limit_scope` 和较�
 | Codex | OPENAI_API_KEY、OPENAI_BASE_URL |
 | Antigravity | GEMINI_API_KEY、GOOGLE_GEMINI_BASE_URL、AGY_ADC_AUTH、GOOGLE_CLOUD_QUOTA_PROJECT、GOOGLE_CLOUD_LOCATION |
 
-Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使用 `AGY_ADC_AUTH=true`。不把 GOOGLE_API_KEY、.env 或 SDK 专用变量当作 CLI 的同等接口。
+Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使用 `AGY_ADC_AUTH=true`。官方账号使用原生登录，不需要填写 API Key；两个连接的模型目录和工作台显示范围互相隔离，切换原生连接不删除保存的服务地址或密钥。不把 GOOGLE_API_KEY、.env 或 SDK 专用变量当作 CLI 的同等接口。
+
+模型菜单的官方额度使用 `POST /api/settings/models/antigravity/official-usage`，仅在已保存的账号模式且本机 CLI 支持非交互 JSON 时运行隔离的 `agy -p /usage --output-format json`。不读写登录令牌、不使用 Gemini API Key，不返回原始命令输出。读取失败报告未知，不把错误或缺字段显示成零额度；不是第三方用量或账单接口。
 
 高级启动环境仍保留继承、设置和停用的原生语义，常用模型页面不要求用户操作这些状态。保存不修改全局进程环境或打断回合；新会话使用新的启动快照，已有会话可在空闲时通过高级入口重新启动 CLI。
 
@@ -132,13 +134,13 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 “MCP”分类页离线列出实际来源、作用域和持久启用状态。读取列表不运行 `claude mcp list/get`，不启动 MCP、不访问插件市场；Claude/Antigravity 使用只读已安装插件列表识别所属 MCP，插件资产只读。Codex 的原生命令列表可能访问市场，普通列表从配置和已核实安装缓存读取插件 .mcp.json，保留所属插件、实际 scope 和安装根身份；插件带入服务只读。
 
-Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
+Claude 用户与个人项目配置由原生 `mcp add-json/remove --scope` 维护，避免整体改写混合状态文件。相对配置根按原生命令的工作目录解析。编辑先验证重建参数，再按原生命令移除并新增；这两步不是原子操作，超时、读回不符或刷新失败须核对结果后再操作。该命令没有配置 stdin，含 URL、参数或秘密的写入保留原生高级入口；项目 `.mcp.json` 支持 stdio、HTTP、SSE 的完整表单。Codex 用户 `config.toml` 与项目 `.codex/config.toml` 分别编辑，支持 stdio、HTTP；TOML 定点更新保留未知字段、工具策略及注释。Antigravity 全局 `config/mcp_config.json` 与项目 `.agents/mcp_config.json` 使用安全 JSON 事务，支持 stdio、HTTP 和原生 `disabled`；避免把秘密放入 CLI 参数，也不把全局命令当项目命令。
 
 秘密仅写：URL 只显示 origin，参数不回填，环境变量和请求头只显示名称；保留、替换和清除分别提交。保存携带来源身份和 revision，冲突不覆盖外部更新，界面保留原草稿及原 revision。持久写使用 CLI 空闲维护锁并与安装、项目活动和文件事务互斥；成功或可能部分写入的失败均失效相关能力并回收空闲实例。
 
 运行状态与持久配置分开。选择活实例后，Claude 使用 SDK 状态、重连和运行启停，Codex 使用分页 `mcpServerStatus/list` 与实例级 `config/mcpServer/reload`；操作针对所选实例中有效的同名服务，重载不是单个服务器的持久开关。没有实例时，只有显式检查才创建有界临时原生进程并发现工具，不执行工具或模型回合。Codex 无线程查询可能返回工具目录但 `runtimeStatus=null`，此时显示“无法核实运行状态”，不宣称持续连接。Antigravity 1.5.3 没有可靠的独立运行状态接口，保持“已配置，未检查”，检查与 OAuth 转原生 MCP 面板。
 
-运行实例分别保存项目 ID、登记项目根与实际会话目录；项目子目录会话可被列出，项目换根后不显示或接受旧实例。选择实例后按其实际目录重新读取配置并显示该目录，实例视图只提供运行控制；持久修改须切回项目配置。检查、控制与 OAuth 均按实际目录核实配置身份，同名多来源无法确定对应关系时拒绝执行。控制与检查先取得项目普通活动租约再重读目录，授权操作保持租约至原生进程结束；项目换目录、删除与这些操作互斥，同时不阻塞等待用户答复的回合。插件 MCP 的内部来源身份包含原生作用域和规范化安装根，同插件同名服务跨来源不碰撞，安装路径不直接返回网页。
+运行实例分别保存项目 ID、登记项目根与实际会话目录；项目子目录会话可被列出，项目换根后不显示或接受旧实例。选择实例后按其实际目录重新读取配置并显示该目录，实例视图只提供运行控制；持久修改须切回项目配置；项目配置保存或启停在取得写租约后重新核对登记目录，目标变化则拒绝。检查、控制与 OAuth 均按实际目录核实配置身份，同名多来源无法确定对应关系时拒绝执行。未知传输不开放检测或持久启停，依赖原生作用域与信任的 Claude `headersHelper` 不注入独立 SDK 检查。控制与检查先取得项目普通活动租约再重读目录，授权操作保持租约至原生进程结束；项目换目录、删除与这些操作互斥，同时不阻塞等待用户答复的回合。插件 MCP 的内部来源身份包含原生作用域和规范化安装根，同插件同名服务跨来源不碰撞，安装路径不直接返回网页。
 
 Codex OAuth 由独立 app-server 承载，授权链接只在用户启动后出现；成功以同一 loginId 的完成通知为准。取消、超时或所绑定对话实例退出会关闭授权进程，迟到成功无效；关闭设置后再次打开可恢复未结束操作。该操作使用原生读取活动租约，不等待正在等待授权的回合空闲。Claude 2.1.317 的 `mcp login --no-browser` 实测仍要求交互终端，管道 stdin 不可用；此入口提供原生终端指引，对话内 SDK URL 请求继续通过问题卡片处理。真实第三方账号授权由用户操作，本轮仅验证本地合成服务。
 

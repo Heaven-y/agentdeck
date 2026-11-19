@@ -33,8 +33,12 @@ function mayDiscover(enabled: boolean, automatic: boolean, workspaceId: string |
 function isCurrentRefresh(scope: CapabilityScope, generation: number, previous?: CapabilityRefresh) {
   return previous?.generation === generation && sameTarget(scope, previous);
 }
-function wasDiscovered(data: AgentCapabilities | undefined, commands: boolean) {
-  return commands ? (data?.commandsDiscovered ?? data?.discovered) : data?.discovered;
+function discoveryStatus(data: AgentCapabilities | undefined, commands: boolean, checking: boolean) {
+  if (checking) return undefined;
+  if (commands) return data?.commandsDiscovered ?? data?.discovered;
+  // 未识别的 AGY 连接不自动运行模型发现；重开菜单只复核本机模式，仍可手动刷新。
+  if (data?.agent === 'antigravity' && !data.antigravityConnection) return undefined;
+  return data?.discovered;
 }
 
 /** 模型复用磁盘缓存；显式打开技能时补取本进程的命令目录，补全只读取已有结果。 */
@@ -80,7 +84,7 @@ export function useAgentCapabilities(enabled: boolean, discoverOnOpen = false, c
     retry: false,
   });
   const targetKey = JSON.stringify([key, generation, commands]);
-  const discovered = wasDiscovered(query.data, commands);
+  const discovered = discoveryStatus(query.data, commands, query.isFetching);
   const shouldDiscover = mayDiscover(enabled, discoverOnOpen, workspaceId, discovered);
   const mutate = refresh.mutate;
   useEffect(() => {
