@@ -6,7 +6,7 @@ import { AttachmentStore } from '../chat/attachments/attachments';
 import type { ResumeHub } from '../chat/resume-hub';
 import { registerChatAttachmentRoutes } from '../http/conversation/chat-attachments.routes';
 import { inputCapabilities } from '../chat/capabilities/input-capabilities';
-import type { AgentTurnInput } from '../agents/contracts';
+import type { AttachmentCapabilityInput } from '../agents/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { isAntigravityProxyVariable } from '@agentdeck/shared/settings';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
@@ -112,7 +112,7 @@ export function createCliServices({
   });
   // 官方登录与额度只需要代理覆盖，不解密已保存的 Gemini API Key。
   const antigravityNetworkEnvironment = () => launchEnvironment.resolve('antigravity', isAntigravityProxyVariable);
-  const inputFeatures = (agent: AgentKind, input: AgentTurnInput, signal: AbortSignal) =>
+  const inputFeatures = (agent: AgentKind, input: AttachmentCapabilityInput, signal: AbortSignal) =>
     nativeActivity.run(agent, async () =>
       inputCapabilities(agent, input, await launchEnvironment.resolve(agent), signal),
     );

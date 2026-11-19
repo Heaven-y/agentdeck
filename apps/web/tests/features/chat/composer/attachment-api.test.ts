@@ -8,6 +8,7 @@ const emptyConversationView = () => ({
   conversationId: 'draft',
   workspaceId: undefined as string | undefined,
   modelOverrides: { claude: '', codex: '', antigravity: '' },
+  reasoningEfforts: { claude: '', codex: '', antigravity: '' },
 });
 afterEach(() => vi.unstubAllGlobals());
 it('图片解码成功或失败都回收临时URL，失败不返回可发送状态', async () => {
@@ -42,6 +43,7 @@ it('二进制上传与预览使用身份header和取消signal，URL只保留会�
     sessionId: 'native',
     permission: { agent: 'claude' as const, mode: 'default' as const },
     modelOverrides: { claude: 'fixture', codex: '', antigravity: '' },
+    reasoningEfforts: { claude: 'high', codex: '', antigravity: '' },
   };
   const identity = { token: 'private-token', instanceId: 'private-instance' };
   const asset = {
@@ -62,7 +64,7 @@ it('二进制上传与预览使用身份header和取消signal，URL只保留会�
   vi.stubGlobal('fetch', fetcher);
   const signal = new AbortController().signal;
   const file = new File(['x'], 'notes.txt', { type: 'text/plain' });
-  await attachmentApi.features(view, identity);
+  await attachmentApi.features(view, identity, false);
   expect(await attachmentApi.upload(view, identity, file, signal)).toEqual(asset);
   await attachmentApi.preview(view, identity, asset, signal);
   await attachmentApi.remove(view, identity, asset);
@@ -79,6 +81,8 @@ it('二进制上传与预览使用身份header和取消signal，URL只保留会�
     headers: { 'x-agentdeck-owner': identity.token },
   });
   expect(fetcher.mock.calls[0]![0]).toContain('model=fixture');
+  expect(fetcher.mock.calls[0]![0]).toContain('reasoningEffort=high');
+  expect(fetcher.mock.calls[0]![0]).toContain('includeImages=0');
   expect(fetcher.mock.calls[2]![0]).toContain(`revision=${asset.revision}`);
   expect(fetcher.mock.calls[4]![0]).toContain('subagentId=child');
   for (const [url] of fetcher.mock.calls) expect(url).not.toContain('private-');
@@ -93,7 +97,7 @@ it('服务端错误保留可行动原因，原生媒体失败不会下载替代�
   const view = emptyConversationView();
   const identity = { token: 't', instanceId: 'i' };
   await expect(attachmentApi.upload(view, identity, new File(['x'], 'x'))).rejects.toThrow('附件过大');
-  await expect(attachmentApi.features(view, identity)).rejects.toThrow('附件操作失败');
+  await expect(attachmentApi.features(view, identity, true)).rejects.toThrow('附件操作失败');
   await expect(
     readNativeImage(
       { ...view, workspaceId: 'project', sessionId: 'native' },

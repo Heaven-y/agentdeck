@@ -7,6 +7,7 @@ import { buildApp } from '../../../src/http/app';
 import { SESSION_COOKIE } from '../../../src/http/security';
 import { registerChatAttachmentRoutes } from '../../../src/http/conversation/chat-attachments.routes';
 import { AttachmentStore } from '../../../src/chat/attachments/attachments';
+import { nativeFeaturesFor } from '@agentdeck/shared/conversation';
 import { SessionError } from '../../../src/agents/errors';
 it('上传与预览同时校验本机认证、页面恢复身份和原生会话，二进制不进入WS', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'agentdeck-attachment-http-'));
@@ -14,6 +15,7 @@ it('上传与预览同时校验本机认证、页面恢复身份和原生会话�
     instance = randomUUID(),
     owner = {};
   const release = vi.fn();
+  const inputFeatures = vi.fn(async () => nativeFeaturesFor('antigravity'));
   const app = await buildApp({
     token: 'fixture',
     port: 4317,
@@ -21,9 +23,11 @@ it('上传与预览同时校验本机认证、页面恢复身份和原生会话�
       registerChatAttachmentRoutes(app, {
         attachments: new AttachmentStore(root),
         getWorkspace: async (id) => (id === 'project' ? { id, name: 'fixture', dir: root } : undefined),
-        assertBelongs: async (_workspace, _agent, id) => {
+        assertBelongs: async (workspace, _agent, id) => {
           if (id !== 'native') throw new SessionError(404, 'session_missing', '会话不属于当前项目');
+          return { ...workspace, dir: path.join(root, 'native-cwd') };
         },
+        inputFeatures,
         acquireWorkspace: () => release,
         recovery: { identity: (t, i) => (t === token && i === instance ? (owner as never) : undefined) },
       }),
@@ -80,6 +84,24 @@ it('上传与预览同时校验本机认证、页面恢复身份和原生会话�
     expect(
       (await app.inject({ method: 'POST', url, headers, payload: Buffer.alloc(5 * 1024 * 1024 + 1) })).statusCode,
     ).toBe(413);
+    const capabilities = await app.inject({
+      method: 'POST',
+      url: '/api/workspaces/project/chat-input-capabilities?agent=antigravity&conversationId=draft&sessionId=native&model=gemini-4-neon-low&reasoningEffort=low&permissionMode=plan&includeImages=1',
+      headers,
+    });
+    expect(capabilities.statusCode).toBe(200);
+    expect(inputFeatures).toHaveBeenCalledWith(
+      'antigravity',
+      {
+        workspace: { id: 'project', name: 'fixture', dir: path.join(root, 'native-cwd') },
+        sessionId: 'native',
+        model: 'gemini-4-neon-low',
+        reasoningEffort: 'low',
+        permission: { agent: 'antigravity', mode: 'plan' },
+        includeImages: true,
+      },
+      expect.any(AbortSignal),
+    );
     expect(release).toHaveBeenCalled();
   } finally {
     await app.close();

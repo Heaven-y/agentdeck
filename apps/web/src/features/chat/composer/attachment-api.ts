@@ -7,7 +7,7 @@ import type { ChatIdentity } from '../../../lib/ws';
 import { ApiError } from '../../../lib/http';
 import type { ConversationView } from '../state/chat-state';
 type AttachmentScope = Pick<ConversationView, 'workspaceId' | 'agent' | 'conversationId' | 'sessionId'>;
-type InputView = AttachmentScope & Pick<ConversationView, 'modelOverrides' | 'permission'>;
+type InputView = AttachmentScope & Pick<ConversationView, 'modelOverrides' | 'reasoningEfforts' | 'permission'>;
 export function attachmentQuery(view: AttachmentScope): URLSearchParams {
   const query = new URLSearchParams({ agent: view.agent, conversationId: view.conversationId });
   if (view.sessionId) query.set('sessionId', view.sessionId);
@@ -39,10 +39,13 @@ export const attachmentApi = {
       URL.revokeObjectURL(url);
     }
   },
-  async features(view: InputView, identity: ChatIdentity): Promise<NativeInteractionFeatures> {
+  async features(view: InputView, identity: ChatIdentity, includeImages: boolean): Promise<NativeInteractionFeatures> {
     const query = attachmentQuery(view);
     const model = view.modelOverrides[view.agent];
     if (model) query.set('model', model);
+    const effort = view.reasoningEfforts[view.agent].trim();
+    if (effort) query.set('reasoningEffort', effort);
+    query.set('includeImages', includeImages ? '1' : '0');
     if (view.permission) query.set('permissionMode', view.permission.mode);
     return (await (
       await call(`${base(view)}/chat-input-capabilities?${query}`, identity, { method: 'POST' })

@@ -236,8 +236,12 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
       if (uploads.get(item.id) === controller) uploads.delete(item.id);
     }
   }
+  function mayBeImage(file: File): boolean {
+    return !file.type || file.type.startsWith('image/') || /\.(?:png|jpe?g|gif|webp)$/i.test(file.name);
+  }
   async function uploadDraft(view: ConversationView, owner: ChatIdentity, startedGeneration: number) {
-    const features = await attachmentApi.features(view, owner);
+    const includesImages = view.draftAttachments.some((item) => !item.asset && mayBeImage(item.file));
+    const features = await attachmentApi.features(view, owner, includesImages);
     for (const item of view.draftAttachments) {
       if (!currentUpload(owner, startedGeneration)) return;
       if (!item.asset) await uploadOne({ view, owner, features, startedGeneration }, item);

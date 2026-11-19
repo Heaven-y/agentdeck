@@ -12,7 +12,7 @@ import type { AttachmentStore } from '../../chat/attachments/attachments';
 import type { ResumeHub } from '../../chat/resume-hub';
 import { SessionError } from '../../agents/errors';
 import { PermissionSelectionSchema, type NativeInteractionFeatures } from '@agentdeck/shared/conversation';
-import type { AgentTurnInput } from '../../agents/contracts';
+import type { AttachmentCapabilityInput } from '../../agents/contracts';
 const Owner = z.object({ 'x-agentdeck-owner': z.uuid(), 'x-agentdeck-instance': z.uuid() });
 const Params = z.object({ workspaceId: z.string().min(1).max(200), id: z.uuid().optional() });
 const Query = AttachmentScopeSchema.omit({ workspaceId: true });
@@ -20,15 +20,21 @@ const Upload = Query.extend({ name: z.string().min(1).max(255), mimeType: z.stri
 const Read = Query.extend({ revision: AttachmentRefSchema.shape.revision });
 const FeatureQuery = Query.extend({
   model: z.string().min(1).max(256).optional(),
+  reasoningEffort: z.string().min(1).max(40).optional(),
+  includeImages: z.enum(['0', '1']).optional(),
   permissionMode: z.string().max(40).optional(),
 });
 type Deps = {
   attachments: AttachmentStore;
   recovery: Pick<ResumeHub, 'identity'>;
   getWorkspace(id: string): Promise<Workspace | undefined>;
-  assertBelongs(workspace: Workspace, agent: AgentKind, id: string): Promise<unknown>;
+  assertBelongs(workspace: Workspace, agent: AgentKind, id: string): Promise<Workspace | void>;
   acquireWorkspace(id: string): () => void;
-  inputFeatures?(agent: AgentKind, input: AgentTurnInput, signal: AbortSignal): Promise<NativeInteractionFeatures>;
+  inputFeatures?(
+    agent: AgentKind,
+    input: AttachmentCapabilityInput,
+    signal: AbortSignal,
+  ): Promise<NativeInteractionFeatures>;
 };
 async function respond(reply: FastifyReply, action: () => Promise<unknown>) {
   reply.header('Cache-Control', 'no-store');
@@ -59,14 +65,16 @@ export function registerChatAttachmentRoutes(app: FastifyInstance, deps: Deps): 
     try {
       const workspace = await deps.getWorkspace(params.workspaceId);
       if (!workspace) throw new SessionError(404, 'workspace_missing', '工作区不存在');
-      if (query.sessionId) await deps.assertBelongs(workspace, query.agent, query.sessionId);
+      const nativeWorkspace = query.sessionId
+        ? await deps.assertBelongs(workspace, query.agent, query.sessionId)
+        : undefined;
       const scope: AttachmentScope = {
         workspaceId: params.workspaceId,
         agent: query.agent,
         conversationId: query.conversationId,
         ...(query.sessionId ? { sessionId: query.sessionId } : {}),
       };
-      return { params, query, owner, scope, workspace, release };
+      return { params, query, owner, scope, workspace: nativeWorkspace ?? workspace, release };
     } catch (error) {
       release();
       throw error;
@@ -91,10 +99,9 @@ export function registerChatAttachmentRoutes(app: FastifyInstance, deps: Deps): 
               workspace: c.workspace,
               sessionId: c.scope.sessionId,
               model: c.query.model,
+              reasoningEffort: c.query.reasoningEffort,
               permission,
-              text: '',
-              emit: () => {},
-              requestPermission: () => Promise.resolve({ allow: false }),
+              includeImages: c.query.includeImages !== '0',
             },
             AbortSignal.timeout(30_000),
           );
