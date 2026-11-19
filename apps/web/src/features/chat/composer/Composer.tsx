@@ -1,8 +1,10 @@
 import { ArrowUp, Square } from 'lucide-react';
-import { useId, type FormEvent } from 'react';
+import { lazy, Suspense, useId, type FormEvent } from 'react';
 import { managementPending, useChat } from '../state/chat-store';
 import { selectionRestriction } from '../controls/capability-selection';
 import { ComposerInput } from './ComposerInput';
+import { useResumeSession } from './use-resume-session';
+import { resumeArgument } from './resume-command';
 import type { AgentCapability } from '@agentdeck/shared/conversation';
 import { AgentControls } from '../controls/AgentControls';
 import { ComposerStatus } from './ComposerStatus';
@@ -12,17 +14,37 @@ import { AttachmentDropzone, ComposerAttachmentPicker, ComposerAttachments } fro
 import { attachmentBlocked } from './attachment-actions';
 import { steerAvailable, pendingFollowups, viewQueue } from '../followups/followup-state';
 
-function SubmitActions({ disabled }: { disabled: boolean }) {
-  const running = useChat((s) => s.running);
+const ResumeSessionDialog = lazy(() => import('./ResumeSessionDialog'));
+
+function StopAction() {
   const stopping = useChat((s) => s.interruptRequested);
   const interrupt = useChat((s) => s.interrupt);
+  return (
+    <button
+      type="button"
+      aria-label={stopping ? '正在停止' : '停止'}
+      title={stopping ? '正在停止…' : '停止'}
+      className="composer-submit"
+      disabled={stopping}
+      onClick={interrupt}
+    >
+      <Square aria-hidden className="size-4" />
+      <span className="sr-only">{stopping ? '正在停止…' : '停止'}</span>
+    </button>
+  );
+}
+
+function SubmitActions({ disabled, resume }: { disabled: boolean; resume: boolean }) {
+  const running = useChat((s) => s.running);
   const canSteer = useChat(steerAvailable);
   const steer = useChat((state) => state.sendFollowup);
   const draft = useChat((state) => state.draft);
   const queued = useChat((state) => !viewQueue(state)?.invalid && pendingFollowups(viewQueue(state)).length > 0);
+  const label = submitLabel(resume, running || queued);
+  const useText = running || resume;
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {running && canSteer && (
+      {running && canSteer && !resume && (
         <button
           type="button"
           className="composer-followup"
@@ -32,39 +54,26 @@ function SubmitActions({ disabled }: { disabled: boolean }) {
           引导本轮
         </button>
       )}
-      {running && (
-        <button type="submit" aria-label="排队发送" title="排队发送" className="composer-followup" disabled={disabled}>
-          排队发送
-        </button>
-      )}
-      {running ? (
-        <button
-          type="button"
-          aria-label={stopping ? '正在停止' : '停止'}
-          title={stopping ? '正在停止…' : '停止'}
-          className="composer-submit"
-          disabled={stopping}
-          onClick={interrupt}
-        >
-          <Square aria-hidden className="size-4" />
-          <span className="sr-only">{stopping ? '正在停止…' : '停止'}</span>
-        </button>
-      ) : (
-        <button
-          type="submit"
-          aria-label={queued ? '排队发送' : '发送'}
-          title={queued ? '排队发送' : '发送'}
-          className="composer-submit"
-          disabled={disabled}
-        >
-          <ArrowUp aria-hidden className="size-5" />
-        </button>
-      )}
+      <button
+        type="submit"
+        aria-label={label}
+        title={label}
+        className={useText ? 'composer-followup' : 'composer-submit'}
+        disabled={!resume && disabled}
+      >
+        {useText ? label : <ArrowUp aria-hidden className="size-5" />}
+      </button>
+      {running && <StopAction />}
     </div>
   );
 }
 
-function ComposerActions({ disabled }: { disabled: boolean }) {
+function submitLabel(resume: boolean, queue: boolean) {
+  if (resume) return '继续会话';
+  return queue ? '排队发送' : '发送';
+}
+
+function ComposerActions({ disabled, resume }: { disabled: boolean; resume: boolean }) {
   const loading = useChat((s) => s.loadingHistory);
   const error = useChat((s) => s.historyError);
   const managing = useChat(managementPending);
@@ -77,12 +86,12 @@ function ComposerActions({ disabled }: { disabled: boolean }) {
         : undefined;
   return (
     <>
-      {hint && (
+      {hint && !resume && (
         <p role="status" className="max-w-36 text-xs leading-5 text-muted-foreground">
           {hint}
         </p>
       )}
-      <SubmitActions disabled={disabled} />
+      <SubmitActions disabled={disabled} resume={resume} />
     </>
   );
 }
@@ -96,6 +105,7 @@ const anyBlocked = (conditions: unknown[]) => conditions.some(Boolean);
 /** 运行中仍可编辑；Enter默认排队，引导需即时原生证据且独立点击。 */
 export function Composer() {
   const id = useId();
+  const resume = useResumeSession();
   const text = useChat((s) => s.draft);
   const attachments = useChat((s) => s.draftAttachments);
   const uploading = useChat((s) => s.attachmentsBusy);
@@ -104,11 +114,13 @@ export function Composer() {
   const loading = useChat((s) => s.loadingHistory);
   const historyError = useChat((s) => s.historyError || s.permissionError);
   const selection = useChat((s) => s.selectedCapability);
+  const agent = useChat((s) => s.agent);
   const permissionPending = useChat((s) => s.permissionLoading || s.permissionSaving);
   const sessionId = useChat((s) => s.sessionId);
   const managing = useChat(managementPending);
   const send = useChat((s) => s.send);
   const restriction = selectionRestriction(selection, sessionId, text);
+  const resumeSearch = selection ? undefined : resumeArgument(text, agent);
   const busy = anyBlocked([loading, managing, permissionPending]);
   const empty = emptyInput(text, selection) && !attachments.length;
   const blocked = anyBlocked([
@@ -125,10 +137,11 @@ export function Composer() {
   const submit = (e?: FormEvent<HTMLFormElement>) => {
     if (e && e.target !== e.currentTarget) return;
     e?.preventDefault();
+    if (resumeSearch !== undefined) return resume.open(resumeSearch);
     send(text.trim());
   };
 
-  return (
+  const form = (
     <form onSubmit={submit} className="composer">
       <AttachmentDropzone disabled={dropDisabled}>
         <ComposerSurface>
@@ -141,6 +154,7 @@ export function Composer() {
             text={text}
             onChange={setText}
             onSend={submit}
+            onResume={resume.open}
             busy={busy}
             placeholder={placeholder(connected, selection?.argumentHint)}
           />
@@ -149,12 +163,22 @@ export function Composer() {
           <div role="group" aria-label="消息选项" className="composer-toolbar">
             <AgentControls disabled={busy}>
               <ComposerAttachmentPicker disabled={pickerDisabled} />
-              <ComposerActions disabled={blocked} />
+              <ComposerActions disabled={blocked} resume={resumeSearch !== undefined} />
             </AgentControls>
           </div>
         </ComposerSurface>
       </AttachmentDropzone>
       <ComposerStatus />
     </form>
+  );
+  return (
+    <>
+      {form}
+      {resume.request && (
+        <Suspense fallback={null}>
+          <ResumeSessionDialog request={resume.request} choose={resume.choose} close={resume.close} />
+        </Suspense>
+      )}
+    </>
   );
 }

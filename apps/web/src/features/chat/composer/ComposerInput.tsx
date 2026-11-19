@@ -1,18 +1,42 @@
 import { Combobox, ComboboxItem, ComboboxPopover, useComboboxStore } from '@ariakit/react/combobox';
 import { useRef, useState } from 'react';
-import type { AgentCapability } from '@agentdeck/shared/conversation';
+import type { AgentCapabilities, AgentCapability, AgentKind } from '@agentdeck/shared/conversation';
 import { capabilityRestriction, isInvocableCapability } from '../controls/capability-selection';
 import { useChat } from '../state/chat-store';
 import { matchesCapability, slashCompletion } from './slash-completion';
 import { useAgentCapabilities } from '../controls/use-agent-capabilities';
 import { commandWarnings } from '../controls/capability-feedback';
+import { isResumeName, RESUME_ALIASES, resumeSuggestionMatches } from './resume-command';
 
 const MAX_SUGGESTIONS = 20;
+const itemClass =
+  'cursor-pointer rounded-xl px-3 py-2 text-[13px] outline-none data-active-item:bg-muted data-active-item:ring-1 data-active-item:ring-border-strong aria-disabled:cursor-not-allowed aria-disabled:opacity-60';
+
+function ResumeSuggestion({ choose, agent }: { choose(): void; agent: AgentKind }) {
+  const aliases = RESUME_ALIASES[agent];
+  return (
+    <ComboboxItem
+      value="workbench:resume"
+      setValueOnClick={false}
+      selectValueOnClick={false}
+      onClick={choose}
+      className={itemClass}
+    >
+      <span className="font-medium">/resume</span>
+      <span className="ml-2 text-xs text-muted-foreground">工作台命令</span>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        打开当前项目、当前 CLI 的已有会话。
+        {aliases.length > 0 && `别名：${aliases.map((name) => `/${name}`).join('、')}。`}
+      </p>
+    </ComboboxItem>
+  );
+}
 type InputProps = {
   id: string;
   text: string;
   onChange(text: string): void;
   onSend(): void;
+  onResume(argument: string): void;
   placeholder: string;
   busy: boolean;
 };
@@ -27,7 +51,7 @@ function Suggestion({ entry, select }: { entry: AgentCapability; select(): void 
       setValueOnClick={false}
       selectValueOnClick={false}
       onClick={select}
-      className="cursor-pointer rounded-xl px-3 py-2 text-[13px] outline-none data-active-item:bg-muted data-active-item:ring-1 data-active-item:ring-border-strong aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+      className={itemClass}
     >
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className="break-all font-medium">/{entry.name}</span>
@@ -48,21 +72,28 @@ function SuggestionsFooter({ count, catalog }: { count: number; catalog: ReturnT
   ) : null;
 }
 
-/** 使用成熟 combobox 保持输入焦点；菜单只负责选择，发送继续经过原有 store 和后端复验。 */
-function ScopedInput({ id, text, onChange, onSend, placeholder, busy }: InputProps) {
+function nativeSuggestions(catalog: AgentCapabilities | undefined, query: string, agent: AgentKind) {
+  return (catalog?.entries ?? []).filter(
+    (entry) => !isResumeName(entry.name, agent) && isInvocableCapability(entry) && matchesCapability(entry, query),
+  );
+}
+
+/** 选择工作台导航或原生能力；发送原生能力仍经过原有 store 和后端复验。 */
+function ScopedInput({ id, text, onChange, onSend, onResume, placeholder, busy }: InputProps) {
   const input = useRef<HTMLTextAreaElement>(null);
   const [range, setRange] = useState({ start: text.length, end: text.length });
   const [requested, setRequested] = useState(false);
   const [composing, setComposing] = useState(false);
   const selection = useChat((state) => state.selectedCapability);
+  const agent = useChat((state) => state.agent);
   const select = useChat((state) => state.selectCapability);
   const completion = slashCompletion(text, range.start, range.end);
   const eligible = !busy && !selection && !!completion && !composing;
   const open = requested && eligible;
   const catalog = useAgentCapabilities(open);
-  const matches = (catalog.data?.entries ?? []).filter(
-    (entry) => isInvocableCapability(entry) && matchesCapability(entry, completion?.query ?? ''),
-  );
+  const query = completion?.query ?? '';
+  const showResume = resumeSuggestionMatches(query, agent);
+  const matches = nativeSuggestions(catalog.data, query, agent);
   const store = useComboboxStore({
     inputValue: text,
     setInputValue: onChange,
@@ -136,7 +167,7 @@ function ScopedInput({ id, text, onChange, onSend, placeholder, busy }: InputPro
         portal
         gutter={12}
         sameWidth
-        aria-label="原生命令补全"
+        aria-label="命令补全"
         className="z-50 max-h-[min(360px,var(--popover-available-height))] overflow-y-auto rounded-2xl border border-border bg-card p-1.5 text-foreground shadow-lg"
       >
         <p role="status" className="px-3 py-2 text-xs leading-5 text-muted-foreground">
@@ -152,10 +183,20 @@ function ScopedInput({ id, text, onChange, onSend, placeholder, busy }: InputPro
             {warning}
           </p>
         ))}
-        {matches.slice(0, MAX_SUGGESTIONS).map((entry) => (
+        {showResume && (
+          <ResumeSuggestion
+            agent={agent}
+            choose={() => {
+              if (!completion) return;
+              store.hide();
+              onResume(completion.remainder);
+            }}
+          />
+        )}
+        {matches.slice(0, MAX_SUGGESTIONS - Number(showResume)).map((entry) => (
           <Suggestion key={entry.id} entry={entry} select={() => choose(entry)} />
         ))}
-        <SuggestionsFooter count={matches.length} catalog={catalog} />
+        <SuggestionsFooter count={matches.length + Number(showResume)} catalog={catalog} />
       </ComboboxPopover>
     </>
   );

@@ -45,6 +45,32 @@ function useSource(agent: AgentKind, options: Options) {
   }, [client, encodedKey, query.error]);
   return query;
 }
+/** 续聊只读一个已选 CLI；防止输入更新时仍能选择上一次搜索的行。 */
+export function useAgentSessionPages(agent: AgentKind, projectId: string, value: string) {
+  const search = useSessionSearch(value.trim());
+  const query = useSource(agent, { scope: 'active', projectId, search });
+  const pending = search !== value.trim();
+  const sessions = new Map<string, SessionSummary>();
+  if (!pending)
+    for (const page of query.data?.pages ?? [])
+      for (const row of page.items) sessions.set(`${row.agent}:${row.projectId}:${row.sessionId}`, row);
+  return {
+    sessions: [...sessions.values()],
+    loading: pending || query.isPending,
+    hasMore: !pending && query.hasNextPage,
+    loadingMore: query.isFetchingNextPage,
+    error: pending ? undefined : query.error?.message,
+    more: () => {
+      if (!pending && query.hasNextPage && !query.isFetching) void query.fetchNextPage();
+    },
+    retry: () => {
+      if (!query.isError || query.isFetching) return;
+      if (query.isFetchNextPageError) void query.fetchNextPage();
+      else void query.refetch();
+    },
+  };
+}
+
 /** 固定三来源，项目增加不会再增加原生列表请求；正文始终按会话另读。 */
 export function useSessionPages(options: Options = {}) {
   const search = useSessionSearch(options.search);

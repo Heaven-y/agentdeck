@@ -7,7 +7,7 @@ import { sessionsApi, sessionsKeys } from '../../../../src/features/sessions/api
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { AgentCapabilities, ClientMessage, ServerMessage } from '@agentdeck/shared/conversation';
+import type { AgentCapabilities, ClientMessage, ServerMessage, SessionSummary } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { ChatView } from '../../../../src/features/chat/ChatView';
 import { TopBar } from '../../../../src/app/layout/TopBar';
@@ -83,6 +83,7 @@ afterEach(() => {
   cleanup();
   client.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 function showChat() {
   render(
@@ -109,6 +110,111 @@ async function menuChoose(menu: string, name: string | RegExp) {
   fireEvent.click(await screen.findByRole('menuitemradio', { name }));
 }
 
+function stubResumeList() {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  const target: SessionSummary = {
+    agent: 'antigravity',
+    sessionId: 'agy-existing',
+    projectId: workspace.id,
+    title: '原有分析会话',
+    updatedAt: '2026-11-19T01:00:00Z',
+    running: false,
+  };
+  const pages = vi.spyOn(sessionsApi, 'page').mockResolvedValueOnce({ items: [], nextCursor: 'older' });
+  pages.mockResolvedValue({
+    items: [
+      target,
+      { ...target, agent: 'codex', title: '另一 CLI' },
+      { ...target, projectId: 'elsewhere', title: '另一项目' },
+    ],
+  });
+  const history = vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue({
+    session: { agent: target.agent, sessionId: target.sessionId, summary: target.title, lastModified: 1 },
+    events: [{ type: 'user_message', text: '原有会话上下文' }],
+    page: { start: 0 },
+  });
+  return { pages, history, target };
+}
+
+it('/resume 用标题或 ID 搜索当前项目和 CLI，可读更早摘要，选择后才按原生 ID 正常续聊', async () => {
+  const { pages, history, target } = stubResumeList();
+  useChat.getState().newSession('antigravity');
+  useChat.getState().setDraft('/resume agy-existing');
+  showComposer();
+  fireEvent.keyDown(screen.getByLabelText('输入消息'), { key: 'Enter' });
+  const dialog = await screen.findByRole('dialog', { name: '继续会话' });
+  const search = within(dialog).getByRole<HTMLInputElement>('combobox', { name: '搜索会话标题或 ID' });
+  expect(search.value).toBe('agy-existing');
+  expect(document.activeElement).toBe(search);
+  expect(sent).toEqual([]);
+  expect(history).not.toHaveBeenCalled();
+  fireEvent.click(await within(dialog).findByRole('button', { name: '加载更多会话' }));
+  const row = await within(dialog).findByRole('option', { name: /原有分析会话/ });
+  expect(within(dialog).getAllByRole('option')).toEqual([row]);
+  expect(pages.mock.calls.map(([query]) => query)).toEqual([
+    expect.objectContaining({
+      agent: 'antigravity',
+      scope: 'active',
+      projectId: workspace.id,
+      search: target.sessionId,
+    }),
+    expect.objectContaining({
+      agent: 'antigravity',
+      scope: 'active',
+      projectId: workspace.id,
+      search: target.sessionId,
+      cursor: 'older',
+    }),
+  ]);
+  fireEvent.click(row);
+  await waitFor(() => expect(useChat.getState().historyReplayable).toBe(true));
+  expect(history).toHaveBeenCalledExactlyOnceWith(
+    workspace.id,
+    target.sessionId,
+    'antigravity',
+    expect.any(AbortSignal),
+  );
+  expect(useChat.getState().items).toMatchObject([{ kind: 'user', text: '原有会话上下文' }]);
+  expect(sent).toEqual([]);
+  const input = screen.getByLabelText('输入消息');
+  fireEvent.change(input, { target: { value: '接着分析' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(sent).toEqual([
+    expect.objectContaining({ type: 'chat.send', agent: 'antigravity', sessionId: target.sessionId, text: '接着分析' }),
+  ]);
+});
+
+it('运行中使用 AGY 的 /resume 补全与 /conversation 别名都不入队；取消保留草稿，切换会话后不沿用旧选择器', async () => {
+  const { history } = stubResumeList();
+  useChat.getState().newSession('antigravity');
+  useChat.setState({ sessionId: 'agy-running', running: true, turnId: 'running-turn' });
+  client.setQueryData(chatKeys.agentCapabilities(workspace.id, 'antigravity', 'agy-running'), {
+    ...catalog,
+    agent: 'antigravity',
+  });
+  showComposer();
+  fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '/con' } });
+  fireEvent.click(await screen.findByRole('option', { name: /\/resume/ }));
+  const dialog = await screen.findByRole('dialog', { name: '继续会话' });
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭继续会话' }));
+  expect(useChat.getState()).toMatchObject({ draft: '/con', running: true });
+  fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '/conversation' } });
+  fireEvent.click(screen.getByRole('button', { name: '继续会话' }));
+  expect(await screen.findByRole('dialog', { name: '继续会话' })).toBeTruthy();
+  act(() => useChat.getState().newSession('codex'));
+  expect(screen.queryByRole('dialog', { name: '继续会话' })).toBeNull();
+  expect(history).not.toHaveBeenCalled();
+  expect(sent).toEqual([]);
+});
+
 it('模型已有缓存时直接显示；技能和斜杠只读缓存，点击刷新重新发现能力', async () => {
   const refresh = vi.spyOn(chatApi, 'refreshAgentCapabilities').mockResolvedValue({
     ...catalog,
@@ -120,7 +226,7 @@ it('模型已有缓存时直接显示；技能和斜杠只读缓存，点击刷�
   await screen.findByRole('menuitemradio', { name: /native-model/ });
   fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '/' } });
-  await screen.findByRole('listbox', { name: '原生命令补全' });
+  await screen.findByRole('listbox', { name: '命令补全' });
   fireEvent.keyDown(screen.getByLabelText('输入消息'), { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '技能与命令' }));
   const dialog = screen.getByRole('dialog', { name: '技能与命令' });
@@ -704,7 +810,7 @@ it('斜杠补全与选择器共用可执行筛选，不默认铺开不可执行�
   const input = screen.getByLabelText('输入消息');
   fireEvent.focus(input);
   fireEvent.change(input, { target: { value: '/' } });
-  const completion = await screen.findByRole('listbox', { name: '原生命令补全' });
+  const completion = await screen.findByRole('listbox', { name: '命令补全' });
   expect(within(completion).getByRole('option', { name: /demo/ })).toBeTruthy();
   expect(within(completion).queryByRole('option', { name: /not-connected/ })).toBeNull();
   fireEvent.click(within(completion).getByRole('option', { name: /demo/ }));
@@ -725,7 +831,7 @@ it('原生目录部分读取失败显示警告，不把失败呈现为无技能'
   expect(screen.queryByText('暂无技能或命令。')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '关闭技能与命令' }));
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '/' } });
-  const completion = await screen.findByRole('listbox', { name: '原生命令补全' });
+  const completion = await screen.findByRole('listbox', { name: '命令补全' });
   expect(within(completion).getByText('Claude 技能与命令读取失败，请刷新重试')).toBeTruthy();
   expect(within(completion).queryByText('没有匹配的技能或命令。')).toBeNull();
 });

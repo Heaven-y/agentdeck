@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentCapability } from '@agentdeck/shared/conversation';
+import { resumeArgument, resumeSuggestionMatches } from '../../../../src/features/chat/composer/resume-command';
 import { matchesCapability, slashCompletion } from '../../../../src/features/chat/composer/slash-completion';
 
 describe('原生命令补全', () => {
@@ -32,4 +33,16 @@ describe('原生命令补全', () => {
     for (const phrase of ['', 'ANA', 'check', '数据', '工作区']) expect(matchesCapability(entry, phrase)).toBe(true);
     expect(matchesCapability(entry, 'missing')).toBe(false);
   });
+});
+
+it('续聊只拦截当前 CLI 的完整命令词，别名的前缀只参与补全', () => {
+  expect(resumeArgument('/resume', 'codex')).toBe('');
+  expect(resumeArgument('/switch 分析记录', 'antigravity')?.trim()).toBe('分析记录');
+  expect(resumeArgument('/conversation', 'claude')).toBeUndefined();
+  expect(resumeArgument('/continue', 'claude')).toBe('');
+  expect(resumeArgument('/continue', 'codex')).toBeUndefined();
+  expect(resumeSuggestionMatches('con', 'antigravity')).toBe(true);
+  expect(resumeArgument('/con', 'antigravity')).toBeUndefined();
+  for (const text of ['请解释 /resume', '/resume/log', '/resume-notes'])
+    expect(resumeArgument(text, 'antigravity')).toBeUndefined();
 });
