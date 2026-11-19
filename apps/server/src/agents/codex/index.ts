@@ -7,6 +7,7 @@ export {
   pageCodexSessions,
   mutateCodexSession,
   readCodexSession,
+  readCodexHistoryPage,
   readCodexMedia,
 } from './history/sessions';
 export type { CodexRuntimeOptions } from './run/types';

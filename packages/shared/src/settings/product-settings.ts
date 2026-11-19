@@ -28,7 +28,7 @@ export const conversationWidth = (width: AppearanceSettings['width']): number =>
   width.preset === 'custom' ? width.custom : CONVERSATION_WIDTHS[width.preset];
 
 // 旧的 antigravity 键仍能读回，但不能推断属于哪一种连接。
-const ModelVisibilityKeySchema = z.enum([...AGENT_KINDS, 'antigravity-account', 'antigravity-gemini']);
+const ModelVisibilityKeySchema = z.enum([...AGENT_KINDS, 'codex-account', 'antigravity-account', 'antigravity-gemini']);
 export type ModelVisibilityKey = z.infer<typeof ModelVisibilityKeySchema>;
 
 export const ProductSettingsSchema = z.strictObject({

@@ -56,7 +56,7 @@ function catalogWarning(data?: AgentCapabilities) {
 }
 function useModelVisibility(catalog?: AgentCapabilities) {
   return useChat((state) => {
-    const key = modelVisibilityKey(state.agent, catalog?.antigravityConnection);
+    const key = modelVisibilityKey(state.agent, catalog?.antigravityConnection, catalog?.codexAccount);
     return key ? state.defaults.modelVisibility?.[key] : undefined;
   });
 }
@@ -399,11 +399,26 @@ function modelChoicesDisabled(disabled: boolean, catalog: CatalogProps['catalog'
   return disabled || (hasAntigravitySnapshot(catalog) && catalog.isRefetching);
 }
 
+function codexUsagePath(workspace: string, sessionId?: string) {
+  const path = `/api/workspaces/${encodeURIComponent(workspace)}/codex/official-usage`;
+  return sessionId ? `${path}?${new URLSearchParams({ sessionId })}` : path;
+}
+function officialUsageTarget(agent: AgentKind, catalog?: AgentCapabilities, workspace?: string, sessionId?: string) {
+  if (agent === 'codex' && catalog?.codexAccount && workspace)
+    return { kind: agent, endpoint: codexUsagePath(workspace, sessionId) };
+  if (agent === 'antigravity' && catalog?.antigravityConnection === 'account')
+    return { kind: agent, endpoint: '/api/settings/models/antigravity/official-usage' };
+}
 function useMenuOfficialUsage(agent: AgentKind, catalog?: AgentCapabilities) {
   const workspace = useChat((state) => state.workspaceId);
-  const available = agent === 'antigravity' && catalog?.antigravityConnection === 'account';
-  const scope = available ? JSON.stringify([workspace, nativeCapabilitiesGeneration(agent)]) : undefined;
-  return { available, ...useOfficialUsage(scope) };
+  const sessionId = useChat((state) => state.sessionId);
+  const target = officialUsageTarget(agent, catalog, workspace, sessionId);
+  const scope = target && JSON.stringify([target.kind, workspace, sessionId, nativeCapabilitiesGeneration(agent)]);
+  return { kind: target?.kind, ...useOfficialUsage(scope, target?.endpoint) };
+}
+function MenuOfficialUsageDialog({ usage }: { usage: ReturnType<typeof useMenuOfficialUsage> }) {
+  if (!usage.kind || !usage.view) return null;
+  return <OfficialUsageDialog agent={usage.kind} view={usage.view} read={usage.read} close={usage.close} />;
 }
 
 export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
@@ -460,7 +475,7 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
       />
       <Menu store={modelMenu} portal unmountOnHide gutter={8} aria-label="模型选项菜单" className={menuClass}>
         <AgentChoices disabled={disabled} />
-        {usage.available && (
+        {usage.kind && (
           <MenuItem className={itemClass} disabled={modelChoicesDisabled(disabled, catalog)} onClick={usage.read}>
             <Gauge aria-hidden className="size-3.5" />
             查看官方额度
@@ -483,7 +498,7 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
           }}
         />
       </Menu>
-      {usage.view && <OfficialUsageDialog view={usage.view} read={usage.read} close={usage.close} />}
+      <MenuOfficialUsageDialog usage={usage} />
       {manual && (
         <ManualModelDialog
           model={model}

@@ -4,6 +4,7 @@ import type {
   SessionHistory,
   SessionHistoryPage,
   SessionRecord,
+  SessionRef,
   SessionActionInput,
   SessionForkInput,
   SessionPageQuery,
@@ -66,16 +67,16 @@ export const sessionsApi = {
     ),
   sessionEvents: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) => {
     const path = sessionPath(workspaceId, sessionId, agent);
-    return request<SessionHistoryPage>(agent === 'antigravity' ? `${path}/history-page` : path, {
+    return request<SessionHistoryPage>(agent === 'claude' ? path : `${path}/history-page`, {
       signal,
       cache: 'no-store',
     });
   },
   fullSessionEvents: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) =>
     request<SessionHistory>(sessionPath(workspaceId, sessionId, agent), { signal, cache: 'no-store' }),
-  olderSessionEvents: (workspaceId: string, sessionId: string, before: string, signal?: AbortSignal) =>
+  olderSessionEvents: (workspaceId: string, session: SessionRef, before: string, signal?: AbortSignal) =>
     request<SessionHistoryPage>(
-      `${sessionPath(workspaceId, sessionId, 'antigravity')}/history-page?${new URLSearchParams({ before })}`,
+      `${sessionPath(workspaceId, session.sessionId, session.agent)}/history-page?${new URLSearchParams({ before })}`,
       { signal, cache: 'no-store' },
     ),
   subagents: (

@@ -20,6 +20,7 @@ import { invalidateAntigravityModelCatalog } from '../agents/antigravity/models/
 import { discoverAntigravityCapabilities } from '../agents/antigravity/capabilities';
 import { readAntigravityConnection } from '../agents/antigravity/models/model-catalog';
 import { readAntigravityOfficialUsage } from '../agents/antigravity/usage/official-usage';
+import { readCodexOfficialUsage } from '../agents/codex/account';
 import { createAntigravitySessionManagement } from '../agents/antigravity/management/management';
 import { createAntigravitySessions } from '../agents/antigravity/history/sessions';
 import { createClaudeRunner } from '../agents/claude/adapter';
@@ -34,6 +35,7 @@ import {
   pageCodexSessions,
   mutateCodexSession,
   readCodexSession,
+  readCodexHistoryPage,
   readCodexMedia,
   readCodexSubagents,
 } from '../agents/codex';
@@ -46,6 +48,7 @@ import { registerCapabilityRoutes } from '../http/conversation/capabilities.rout
 import { registerLaunchEnvironmentRoutes } from '../http/settings/launch-environment.routes';
 import { registerModelCatalogRoutes } from '../http/settings/model-catalog.routes';
 import { registerAntigravityUsageRoute } from '../http/settings/antigravity-usage.routes';
+import { registerCodexUsageRoute } from '../http/settings/codex-usage.routes';
 import { registerModelSettingsRoutes } from '../http/settings/model-settings.routes';
 import { registerNativeResourceRoutes } from '../http/settings/native-resources.routes';
 import { registerSessionRoutes } from '../http/conversation/sessions.routes';
@@ -178,6 +181,7 @@ export function createCliServices({
           list: (dir, signal, archived) => listCodexSessions(dir, { signal, archived }),
           page: (dir, input, signal, archived) => pageCodexSessions(dir, input, { signal, archived }),
           read: (id, dir, signal) => readCodexSession(id, dir, { signal }),
+          readHistoryPage: (id, dir, before, signal) => readCodexHistoryPage(id, dir, before, { signal }),
           media: (id, dir, locator, signal) => readCodexMedia(id, dir, locator, { signal }),
           subagents: (id, dir, query, signal) => readCodexSubagents(id, dir, query, { signal }),
           assertBelongs: (id, dir, signal) => assertCodexSession(id, dir, { signal }),
@@ -297,6 +301,11 @@ export function createCliServices({
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });
       registerCapabilityRoutes(a, { store, capabilities, sessions });
+      registerCodexUsageRoute(a, { store, sessions }, (dir, signal) =>
+        nativeActivity.run('codex', async () =>
+          readCodexOfficialUsage(dir, { signal, env: await launchEnvironment.resolve('codex') }),
+        ),
+      );
       registerModelCatalogRoutes(a, { store, capabilities });
       registerAntigravityUsageRoute(a, (signal) =>
         nativeActivity.run('antigravity', () => readAntigravityOfficialUsage({ signal })),

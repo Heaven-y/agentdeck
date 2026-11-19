@@ -18,6 +18,7 @@ export type ChatItem =
       id: string;
       question: AsyncQuestion;
       status: AsyncQuestionState['status'];
+      historyAnswerMarker?: string;
       responding?: boolean;
       error?: string;
       dismissed?: boolean;
@@ -156,13 +157,20 @@ function asyncQuestion(items: ChatItem[], event: Extract<AgentEvent, { type: 'as
         ? {
             ...existing,
             question: event.question,
+            ...(event.historyAnswerMarker ? { historyAnswerMarker: event.historyAnswerMarker } : {}),
             ...(event.answered ? { status: 'accepted' as const, responding: false } : {}),
           }
         : item,
     );
   return [
     ...items,
-    { kind: 'async-question', id, question: event.question, status: event.answered ? 'accepted' : 'open' },
+    {
+      kind: 'async-question',
+      id,
+      question: event.question,
+      status: event.answered ? 'accepted' : 'open',
+      ...(event.historyAnswerMarker ? { historyAnswerMarker: event.historyAnswerMarker } : {}),
+    },
   ];
 }
 

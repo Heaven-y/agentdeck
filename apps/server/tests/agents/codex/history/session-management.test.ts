@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionActionInput } from '@agentdeck/shared/conversation';
+import { readCodexHistoryPage } from '../../../../src/agents/codex/history/sessions';
 import {
   forkCodexSession,
   listCodexSessions,
@@ -130,8 +131,11 @@ describe('Codex thread/fork', () => {
         .map(({ method, params }) => ({ method, params })),
     ).toEqual([
       { method: 'thread/read', params: { threadId: 'native-thread', includeTurns: false } },
-      { method: 'thread/read', params: { threadId: 'native-thread', includeTurns: true } },
-      { method: 'thread/fork', params: { threadId: 'native-thread', lastTurnId: 'old-turn' } },
+      {
+        method: 'thread/turns/list',
+        params: { threadId: 'native-thread', limit: 100, itemsView: 'notLoaded', sortDirection: 'desc' },
+      },
+      { method: 'thread/fork', params: { threadId: 'native-thread', lastTurnId: 'old-turn', excludeTurns: true } },
     ]);
   });
 
@@ -140,6 +144,7 @@ describe('Codex thread/fork', () => {
     expect((await forkCodexSession('native-thread', dir, {}, options)).session.sessionId).toBe('forked-thread');
     expect((await messages()).find((value) => value.method === 'thread/fork')?.params).toEqual({
       threadId: 'native-thread',
+      excludeTurns: true,
     });
   });
 
@@ -192,7 +197,7 @@ describe('Codex thread/fork', () => {
     });
     expect(
       (await messages()).filter((value) => value.method?.startsWith('thread/')).map((value) => value.method),
-    ).toEqual(['thread/read', 'thread/read', 'thread/fork']);
+    ).toEqual(['thread/read', 'thread/turns/list', 'thread/fork']);
   });
 
   it('历史每个已结束原生轮次输出对应分叉点', async () => {
@@ -239,4 +244,20 @@ describe('Codex thread/fork', () => {
     // 这条用例要真起两个子进程并在其间 abort，全量并行跑时 5 秒默认超时不够；
     // 放宽的是外层等待预算，被测行为（abort 后仍等原生完成）不变。
   }, 30_000);
+});
+
+it('首屏 RPC 超限后重启只读客户端、重新核对线程，再改取单轮，不回退全量或续接', async () => {
+  const { dir, options, messages } = await setup('paging-overflow');
+  const page = await readCodexHistoryPage('native-thread', dir, undefined, options);
+  expect(page).toMatchObject({
+    page: { start: 0 },
+    events: expect.arrayContaining([{ type: 'user_message', text: '历史问题' }]),
+  });
+  const reads = (await messages()).filter((entry) => entry.method?.startsWith('thread/'));
+  expect(reads.map((entry) => [entry.method, entry.params?.includeTurns ?? entry.params?.limit])).toEqual([
+    ['thread/read', false],
+    ['thread/turns/list', 3],
+    ['thread/read', false],
+    ['thread/turns/list', 1],
+  ]);
 });

@@ -70,11 +70,15 @@ export function asyncAnswerId(question: Pick<AsyncQuestion, 'sessionId' | 'messa
 export function asyncAnswerMarker(question: Pick<AsyncQuestion, 'sessionId' | 'messageId'>): string {
   return `对原生提问的回答（${asyncAnswerId(question)}）：`;
 }
-export function markAnsweredQuestions(events: AgentEvent[]) {
+export function markAnsweredQuestions(events: AgentEvent[], paged = false): AgentEvent[] {
   const answers = events.filter((event) => event.type === 'user_message').map((event) => event.text);
-  return events.map((event) =>
-    event.type === 'async_question' && answers.some((text) => text.startsWith(asyncAnswerMarker(event.question)))
-      ? { ...event, answered: true }
-      : event,
-  );
+  return events.map((event) => {
+    if (event.type !== 'async_question') return event;
+    const marker = asyncAnswerMarker(event.question);
+    return {
+      ...event,
+      ...(answers.some((text) => text.startsWith(marker)) ? { answered: true } : {}),
+      ...(paged ? { historyAnswerMarker: marker } : {}),
+    };
+  });
 }

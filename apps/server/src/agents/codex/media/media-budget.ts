@@ -11,6 +11,7 @@ export function mediaHistory(method: string, params: RecordValue): boolean {
   return (
     (method === 'thread/read' && params.includeTurns === true) ||
     (method === 'thread/turns/list' && params.itemsView === 'full') ||
+    method === 'thread/items/list' ||
     (method === 'thread/resume' && params.excludeTurns !== true)
   );
 }
@@ -20,10 +21,15 @@ export function mediaNotification(message: RecordValue): boolean {
 }
 export function mediaResponse(message: RecordValue): boolean {
   const result = record(message.result);
-  const turns = [...list(record(result.thread).turns), ...list(result.data)];
-  return turns.some((turn) => list(record(turn).items).some((item) => mediaItem(record(item))));
+  const data = list(result.data);
+  const turns = [...list(record(result.thread).turns), ...data];
+  return (
+    data.some((entry) => mediaItem(record(record(entry).item))) ||
+    turns.some((turn) => list(record(turn).items).some((item) => mediaItem(record(item))))
+  );
 }
 function mediaItem(item: RecordValue): boolean {
+  if (item.type === 'imageView') return true;
   const content =
     item.type === 'userMessage'
       ? item.content

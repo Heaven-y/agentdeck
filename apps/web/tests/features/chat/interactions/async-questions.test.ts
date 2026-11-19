@@ -68,7 +68,7 @@ it('idle问题未获回执后身份失效保留答案，显式核题确认未答
   expect(useChat.getState().items[0]).toMatchObject({ responding: false, answer, recovery: expect.any(Object) });
   expect(useChat.getState().respondAsyncQuestion(question, answer)).toBe(false);
   const count = sent.length;
-  vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue({
+  vi.spyOn(sessionsApi, 'fullSessionEvents').mockResolvedValue({
     session: { agent: 'codex', sessionId: 'session', summary: '合成', lastModified: 0 },
     events: [{ type: 'async_question', question }],
   });
@@ -82,8 +82,8 @@ it('失效答复核题已答只收敛卡片，迟到旧核题不能解锁新失�
   useChat.setState({ items: reduceChat([], { type: 'async_question', question }) });
   useChat.getState().respondAsyncQuestion(question, { action: 'submit', values: { q: '答案' } });
   recovery({ type: 'connection.rejected', code: 'owner_missing', message: '已失效' });
-  let resolve!: (value: Awaited<ReturnType<typeof sessionsApi.sessionEvents>>) => void;
-  const history = vi.spyOn(sessionsApi, 'sessionEvents').mockImplementationOnce(
+  let resolve!: (value: Awaited<ReturnType<typeof sessionsApi.fullSessionEvents>>) => void;
+  const history = vi.spyOn(sessionsApi, 'fullSessionEvents').mockImplementationOnce(
     () =>
       new Promise((r) => {
         resolve = r;
@@ -170,5 +170,31 @@ it('快照跟踪已排队题目，历史已答题不允许再发，取消仅关�
   useChat.setState({ items: reduceChat([], { type: 'async_question', question, answered: true }) });
   expect(useChat.getState().respondAsyncQuestion(question, { action: 'submit', values: { q: '重复' } })).toBe(false);
   useChat.getState().dismissAsyncQuestion(question);
+  expect(sent).toEqual([]);
+});
+
+it('Codex 历史跨页补到原生问题时，匹配已经加载的答复，不补发消息', async () => {
+  const target = { agent: 'codex' as const, sessionId: question.sessionId };
+  const session = { ...target, summary: '原生会话', lastModified: 1 };
+  const marker = '对原生提问的回答（示例标记）：';
+  vi.spyOn(sessionsApi, 'sessionPermission').mockResolvedValue({ permission: null });
+  vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue({
+    session,
+    page: { start: 0, before: 'older' },
+    events: [{ type: 'user_message', text: `${marker}\n原生答复` }],
+  });
+  const older = vi.spyOn(sessionsApi, 'olderSessionEvents').mockResolvedValue({
+    session,
+    page: { start: -1 },
+    events: [{ type: 'async_question', question, historyAnswerMarker: marker }],
+  });
+  await useChat.getState().openSession(target, { preserveDraft: true });
+  const answer = useChat.getState().items[0];
+  await useChat.getState().loadOlderHistory();
+  expect(older.mock.calls[0]?.slice(0, 3)).toEqual(['project', target, 'older']);
+  const { items, historyPage } = useChat.getState();
+  expect(historyPage).toEqual({ start: -1 });
+  expect(items[0]).toMatchObject({ kind: 'async-question', status: 'accepted' });
+  expect(items[1]).toBe(answer);
   expect(sent).toEqual([]);
 });

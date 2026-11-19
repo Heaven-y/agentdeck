@@ -63,6 +63,7 @@ export function registerSessionRoutes(app: FastifyInstance, deps: Deps): void {
         index: z.coerce.number().int().min(0).max(1000),
         kind: z.enum(['user', 'tool']),
         subagentId: z.string().min(1).max(200).optional(),
+        turnId: NativeSessionIdSchema.optional(),
       })
       .safeParse(req.query);
     if (!params.success || !query.success) return reply.code(400).send({ message: '原生图片定位格式不正确。' });

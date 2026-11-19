@@ -14,6 +14,7 @@ export async function readNativeImage(source: NativeMediaSource, locator: Native
     kind: locator.kind,
   });
   if (source.subagentId) query.set('subagentId', source.subagentId);
+  if (source.agent === 'codex' && !source.subagentId && locator.turnId) query.set('turnId', locator.turnId);
   const url = `/api/workspaces/${encodeURIComponent(source.workspaceId)}/sessions/${encodeURIComponent(source.sessionId)}/media?${query}`;
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(unavailableImage);

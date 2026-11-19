@@ -82,7 +82,7 @@ function RecoveredHistory() {
           disabled={busy}
           onClick={() => void openSession({ agent, sessionId }, { preserveDraft: true })}
         >
-          {agent === 'antigravity' ? '重新读取最近记录' : '重新读取完整历史'}
+          {agent === 'claude' ? '重新读取完整历史' : '重新读取最近记录'}
         </button>
       )}
     </div>

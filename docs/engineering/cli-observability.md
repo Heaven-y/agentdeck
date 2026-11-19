@@ -58,7 +58,7 @@ Turn 提供 durationMs 和起止时间；ThreadItem 有可选 startedAtMs/comple
 
 新线程从零建立用量基线，恢复线程先观察可靠累计快照。缺报告、重置、压缩、失败、中断和迟到通知均使不可靠增量失效；不能从 last 或旧回合中途快照补造整轮统计。
 
-当前 Thread/Turn 历史结构没有 tokenUsage，不能靠 thread/read 重建旧轮次速度。account/usage/read 依赖账单路由可用，不是通用离线历史来源；Internal-only 的原始响应通知不能当稳定公开接口使用。历史分页接入也需与现有全量读取区分。
+当前 Thread/Turn 历史结构没有 tokenUsage，不能靠 thread/read 重建旧轮次速度。account/usage/read 依赖账单路由可用，不是通用离线历史来源；Internal-only 的原始响应通知不能当稳定公开接口使用。主界面用 `thread/turns/list` 和必要时的 `thread/items/list` 按页读取，但同样不能还原缺失的历史用量或生成速度。ChatGPT 模式的 `account/rateLimits/read` 仅按用户操作读取官方额度窗口，与回合用量和账单分开。
 
 ## Antigravity 的接入点与限制
 

@@ -123,6 +123,8 @@ Claude/Codex 的运行时按会话复用，空闲回收预算为 5 分钟。缓�
 
 AGY 模型快照除目录和 CLI 外，还按原生连接方式区分账号登录与 Gemini API。旧快照缺少连接身份，不返回候选和默认值；GET 只读原生设置和对应缓存，不启动发现或重写文件。刷新失败只保留同连接身份的候选；切换后迟到结果不能回填。用户下次打开模型入口时仍可发现，成功结果可跨进程复用。
 
+Codex 能力发现只在原生 OpenAI 服务且无自定义地址或启动 Key 覆盖时读取账号状态。只有已核实的 ChatGPT 模式使用独立的显示范围，其模型目录不覆盖原有磁盘目录；API Key 和自定义服务保留原行为。额度为显式只读请求，服务端重新核对当前生效配置和账号。
+
 ### 4.4 历史与前端状态
 
 zustand 持有当前项目、CLI、会话和回合状态，TanStack Query 管项目、历史、设置等服务数据。选择变化取消旧请求，并用会话身份/代次防止迟到结果串线；历史失败禁止在未知上下文上续聊。前端兼容旧适配器的 501 能力限制响应，当前 Antigravity 提供原生历史读取。
@@ -137,9 +139,11 @@ zustand 持有当前项目、CLI、会话和回合状态，TanStack Query 管项
 
 `turn_end` 与 `step_usage` 分别携带对应范围的 token，`tool_result` 可附原生或本机观察耗时。前端只对范围匹配的输出量与有效耗时计算均速；明确整轮失败或取消时省略页脚速度。结果未确认时，仅可展示经可靠轨迹复核的已完成最终回复步骤统计，耗时不足则不计算速度。上下文使用独立 `context` 事件。统计数据仍只随本次原生读取和实时事件存在，不建立持久遥测副本。
 
+Codex 主对话与执行轨迹使用同一历史分页入口。原生 `thread/read(includeTurns:false)` 校验身份和目录；`thread/turns/list` 倒序请求最多 3 轮，展示时按时间正序。8 MiB 普通 JSON-RPC 单条传输超限时重连只读客户端并降到 1 轮；仍超限则读取轮头，并用 `thread/items/list` 以 16、4、1 项逐级缩窗。确认含支持的媒体类型时单条上限为 32 MiB，这不是会话总量上限。单项仍超限或旧版不支持步骤分页时标记未读部分，仍可访问更早的轮次。新的媒体定位用原生轮次与条目 ID，不以全量历史查找。取消或失败不会覆盖已显示的页；分叉操作先核验原生轮头及空闲状态，并要求原生只返回新会话元数据。仅旧版明确不支持轮次分页时，首屏回退原有有界全读。
+
 Antigravity 主对话与执行轨迹使用 `/api/projects/:id/sessions/:agent/:sessionId/history-page`，不把全量历史读入工作台后再裁切。现有后台管理进程先通过空步骤窗口取得范围与轮次，再读取原生更新流的首帧并关闭；首屏和向上翻页均优先取最多 3 轮、最多 96 个原生步骤。游标核对会话、轨迹与步骤范围；每次读取核对项目目录及返回的绝对索引，切走时取消在途请求。原生历史首帧预算为 8 MiB；超限先用原生紧凑格式，再缩短范围，单步仍超限则在原位置标明跳过。历史图片另按绝对原生索引读取单步，首帧预算为 32 MiB；明确不支持窗口时回退旧回放。长回合分段后只在补齐、能核实结尾时结算及显示分叉点；分叉前重新核对绝对步骤，不使用裁剪后的首包长度。可选的生成元数据单独限 4 MiB，只补充能核对归属的生成耗时；仅最新页提供历史上下文估计，旧页不会覆盖它。历史工具耗时不与模型用量混算速度，实时 headless 不生成缺失的上下文值。
 
-原有全量历史接口保留，只有原生明确不支持分页时首屏才退回它；显式全量读取仍受原生首包与分页累计 64 MiB、50000 步、64 页及 30 秒分页预算限制，超限不误报配置错误。回合复核、常规管理 RPC 及子代理图仍使用原有 32 MiB 边界；全量或分页读取都只映射已知文本、工具、压缩和活动字段，不直接展开未知载荷。
+对 AGY，原有全量历史接口保留，只有原生明确不支持分页时首屏才退回它；显式全量读取仍受原生首包与分页累计 64 MiB、50000 步、64 页及 30 秒分页预算限制，超限不误报配置错误。回合复核、常规管理 RPC 及子代理图仍使用原有 32 MiB 边界；全量或分页读取都只映射已知文本、工具、压缩和活动字段，不直接展开未知载荷。
 
 partysocket 的连接退避为 1–15 秒，发送缓冲关闭。`ResumeHub` 用随机页签令牌与单调序号管理稳定 Socket，心跳每 15 秒检查半开连接；断开后保留 60 秒，完成回合保留 5 分钟。每身份最多 16 MiB、进程合计 64 MiB、最多 64 身份，大小按字符串内存估计并计入条目开销。超限停止对应回合；容量拒绝后停止自动重连，用户可显式重试。
 
@@ -196,11 +200,12 @@ API 和 WebSocket 继续校验会话及来源；主应用禁止被 iframe 嵌入
 |---|---|
 | 项目 | `/api/projects` 与 `/:id`，列表/新增/修改/移除 |
 | 会话 | `/api/projects/:id/sessions` 与 `/:agent/:sessionId`，原生读取；`/api/sessions?agent=...` 发现无归属摘要 |
-| 主会话历史页 | `/api/projects/:id/sessions/:agent/:sessionId/history-page`，当前仅 AGY，使用可选 `before` 读取更早步骤 |
+| 主会话历史页 | `/api/projects/:id/sessions/:agent/:sessionId/history-page`，适用于 Codex 和 AGY，使用可选 `before` 继续读取更早的原生记录 |
 | 原生管理 | `/api/projects/:id/sessions/:agent/:sessionId/actions`、`/fork`，来源及项目均在路径中 |
 | 探测与能力 | `/api/agents/probes`；项目下 `agent-capabilities` 缓存与显式刷新 |
 | 设置 | `/api/settings/product`、`/environment`、`/launch-environment/:agent`，原生文件由 `/api/native-resources/:agent` 提供 |
 | 模型设置 | `/api/settings/models/:agent` 读取与保存表单；`/catalog` 的 GET 只读缓存，POST 原生获取，工作目录由可选 projectId 解析；`/context-window` 只读 AGY 当前模型窗口，可选 model 使用启动选择器相同的身份 |
+| 官方额度 | AGY：`POST /api/settings/models/antigravity/official-usage`；Codex：`POST /api/workspaces/:id/codex/official-usage`，有会话时可传 `sessionId` 校验归属并使用原生目录。均为用户显式查询，不写入缓存 |
 | 插件 | `/api/plugins/*`，安装注册、启停、静态页面与权限内的设置存储 |
 | 对话 | `/ws`，恢复握手/有序补收、发送、停止、审批答复及回合事件 |
 | CLI 维护 | `/api/settings/cli-installation/:agent` 读取本机状态，`/check` 查新，`/operations` 安装、更新或修复。详见[程序版本管理](native-configuration.md#cli-程序版本管理) |

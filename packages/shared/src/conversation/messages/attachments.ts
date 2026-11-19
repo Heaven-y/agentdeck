@@ -29,6 +29,8 @@ export type AttachmentScope = z.infer<typeof AttachmentScopeSchema>;
 export type NativeMediaLocator = {
   sessionId: string;
   subagentId?: string;
+  /** Codex 主会话分页回放中已绑定的原生轮次。 */
+  turnId?: string;
   messageId: string;
   index: number;
   kind: 'user' | 'tool';

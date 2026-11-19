@@ -68,11 +68,11 @@ export const SessionHistoryPageQuerySchema = z.strictObject({
   before: z
     .string()
     .min(1)
-    .max(800)
+    .max(2048)
     .regex(/^[A-Za-z0-9_-]+$/)
     .optional(),
 });
-/** start 是原生步骤索引；无游标表示已经到达会话起点，旧原生接口无分页元数据。 */
+/** start 按从旧到新递增：AGY 是原生步骤索引，Codex 是相对首屏的页位置。无游标表示已到开头。 */
 export type SessionHistoryPageInfo = {
   start: number;
   before?: string;

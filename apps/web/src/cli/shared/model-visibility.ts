@@ -5,7 +5,9 @@ import type { ModelVisibilityKey } from '@agentdeck/shared/settings';
 export function modelVisibilityKey(
   agent: AgentKind,
   connection?: AntigravityConnection,
+  codexAccount?: true,
 ): ModelVisibilityKey | undefined {
+  if (agent === 'codex' && codexAccount) return 'codex-account';
   if (agent !== 'antigravity') return agent;
   return connection ? `antigravity-${connection}` : undefined;
 }

@@ -4,6 +4,7 @@ import { MEDIA_RPC_BYTES, mediaInput, mediaHistory, mediaNotification, mediaResp
 import {
   cancelled,
   CodexError,
+  CodexRpcLimit,
   record,
   text,
   type CodexRuntimeOptions,
@@ -19,8 +20,11 @@ type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; 
 type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 
 function requestFailure(error: unknown): CodexError {
-  if (record(error).code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
-  const message = text(record(error).message);
+  const native = record(error);
+  if (native.code === -32600 && record(native.data).type === 'modelProviderMismatch')
+    return new CodexError('该 Codex 会话仍可查看历史。继续发送须使用它原本的原生服务商。', true);
+  if (native.code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
+  const message = text(native.message);
   // 只识别权限字段并返回固定说明，不把服务端错误中的配置值或路径透给网页。
   if (/approvals?[ _]?(reviewer|policy)|auto_review|guardian_subagent|sandbox|permission.?profile/i.test(message))
     return new CodexError('Codex 未接受所选权限模式，请检查当前版本和原生权限策略。', true);
@@ -155,7 +159,7 @@ export class CodexClient {
   }
 
   private oversize(): void {
-    this.terminate(new CodexError('Codex 返回内容超过 8 MiB，无法完整读取。'));
+    this.terminate(new CodexRpcLimit());
   }
   private parse(line: Buffer): void {
     try {

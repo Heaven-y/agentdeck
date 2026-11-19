@@ -258,13 +258,15 @@ function visibleCatalog(
   switching: boolean,
 ) {
   const catalog = state.modelCatalog;
-  if (agent === 'antigravity' && (switching || catalog?.antigravityConnection !== connection)) return undefined;
+  if (switching || (agent === 'antigravity' && catalog?.antigravityConnection !== connection)) return undefined;
   return catalog;
 }
 
-function connectionInfo(state: State) {
-  const provider = state.document?.fields.find((field) => field.key === 'modelProvider');
-  const connection = antigravityConnectionField(provider?.value);
+function connectionInfo(state: State, agent: AgentKind) {
+  const provider = state.document?.fields.find(
+    (field) => field.key === (agent === 'codex' ? 'provider' : 'modelProvider'),
+  );
+  const connection = agent === 'antigravity' ? antigravityConnectionField(provider?.value) : undefined;
   const switching = !!provider && modelSettingValue(provider, state.draft) !== provider.value;
   return { connection, switching };
 }
@@ -287,13 +289,16 @@ function VisibilitySection({
       </p>
     );
   }
-  const scope = modelVisibilityKey(agent, info.connection);
+  const codexAccount = state.modelCatalog?.codexAccount;
+  const scope = modelVisibilityKey(agent, info.connection, codexAccount);
   return (
     <ModelVisibilityPanel
       key={scope}
       agent={agent}
       models={state.modelCatalog?.models ?? []}
-      connectionLabel={info.connection ? ANTIGRAVITY_CONNECTION_LABELS[info.connection] : undefined}
+      connectionLabel={
+        info.connection ? ANTIGRAVITY_CONNECTION_LABELS[info.connection] : codexAccount ? 'ChatGPT 账号' : undefined
+      }
       draft={visibility.range(scope)}
     />
   );
@@ -323,7 +328,7 @@ export function ModelSettingsPanel({
   const visibility = useVisibilityDraft(agent);
   // 显示范围草稿也属于这张表单：未保存时同样阻止离开。
   const native = useModelSettings(agent, visibility.dirty);
-  const info = connectionInfo(native);
+  const info = connectionInfo(native, agent);
   const state = connectedSettings(native, agent, visibility.saving, info);
   const fields = state.document ? visibleFields(modelSettingsFields(state.document, state.draft), state) : [];
   const dirty = state.dirty;

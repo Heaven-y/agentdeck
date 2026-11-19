@@ -120,6 +120,8 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 模型菜单的官方额度使用 `POST /api/settings/models/antigravity/official-usage`，仅在已保存的账号模式且本机 CLI 支持非交互 JSON 时运行隔离的 `agy -p /usage --output-format json`。不读写登录令牌、不使用 Gemini API Key，不返回原始命令输出。读取失败报告未知，不把错误或缺字段显示成零额度；不是第三方用量或账单接口。
 
+Codex 原有的原生 OpenAI/API Key 与自定义服务设置不改。发现能力时，仅在当前原生服务为 OpenAI 且没有自定义地址或 Key 启动覆盖时，通过 `account/read`（`refreshToken: false`）确认是否为 ChatGPT 模式。该模式与原有 API Key／自定义服务的模型显示范围独立；切换外部原生配置后可用“刷新模型列表”核对。已核实为 ChatGPT 时，模型菜单可显式发出 `POST /api/workspaces/:id/codex/official-usage`，如果传 `sessionId` 则使用经会话归属校验的原生目录。后端再次核实当前模式，再调用 `account/rateLimits/read`，仅返回原生报告的额度窗口、剩余比例和重置时间；不缓存，不提供登录、退出、切换账号、账单或 API Key 用量功能。
+
 高级启动环境仍保留继承、设置和停用的原生语义，常用模型页面不要求用户操作这些状态。保存不修改全局进程环境或打断回合；新会话使用新的启动快照，已有会话可在空闲时通过高级入口重新启动 CLI。
 
 这些变量只传给工作台新启动的进程。用户在另一个终端直接执行 CLI 时，仍使用那个终端的环境；工作台不会修改系统环境变量。设置页会标明已有工作台覆盖，避免把原生文件中的值误当作最终有效值。

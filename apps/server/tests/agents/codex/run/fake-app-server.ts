@@ -69,6 +69,9 @@ const readThread = (message: Message) => {
     mode === 'wrong-session-id' ? 'another-thread' : id,
     id === 'foreign' ? path.dirname(process.cwd()) : process.cwd(),
   );
+  reply(message, { thread: { ...result, turns: message.params?.includeTurns ? historyTurns() : [] } });
+};
+function historyTurns() {
   const turns = [
     {
       id: 'old-turn',
@@ -91,8 +94,26 @@ const readThread = (message: Message) => {
         { id: 'later-assistant', type: 'agentMessage', text: '后续回复' },
       ],
     });
-  reply(message, { thread: { ...result, turns: message.params?.includeTurns ? turns : [] } });
-};
+  return turns;
+}
+function listHistoryTurns(message: Message) {
+  if (mode === 'partial-history') {
+    write({ id: message.id, error: { code: -32601, message: 'old fixture' } });
+    return;
+  }
+  const limit = Number(message.params?.limit ?? 3);
+  if (mode === 'paging-overflow' && limit > 1) {
+    reply(message, {
+      data: [{ ...historyTurns()[0], items: [{ type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) }] }],
+    });
+    return;
+  }
+  const data = historyTurns()
+    .reverse()
+    .slice(0, limit)
+    .map((turn) => (message.params?.itemsView === 'notLoaded' ? { ...turn, itemsView: 'notLoaded', items: [] } : turn));
+  reply(message, { data, nextCursor: null });
+}
 function historyStatus(): string {
   return mode === 'fork-in-progress' ? 'inProgress' : mode === 'fork-unknown-status' ? 'unknown' : 'completed';
 }
@@ -292,6 +313,7 @@ const handlers: Record<string, (message: Message) => void> = {
   'thread/resume': (message) =>
     reply(message, { thread: thread(String(message.params?.threadId)), model: 'native-model' }),
   'thread/read': readThread,
+  'thread/turns/list': listHistoryTurns,
   'thread/goal/get': (message) =>
     reply(message, {
       goal: mode === 'active-goal' ? { threadId, status: 'active', objective: 'fixture' } : null,

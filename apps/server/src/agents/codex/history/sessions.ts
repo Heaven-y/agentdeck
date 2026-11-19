@@ -14,9 +14,23 @@ import type { NativeMediaLocator } from '@agentdeck/shared/conversation';
 import { codexToolImage } from '../media/media';
 import { readCodexSubagentMedia } from './subagents';
 import { CodexClient } from '../run/client';
+import {
+  checkCodexForkTurns,
+  readCodexHistoryItem,
+  readCodexHistoryWindow,
+  type CodexHistoryRpc,
+} from './history-window';
 import { CodexEventMapper, codexForkPoint } from '../run/mapper';
 import { markAnsweredQuestions } from '../interaction/async-questions';
-import { cancelled, CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from '../run/types';
+import {
+  cancelled,
+  CodexError,
+  CodexRpcLimit,
+  record,
+  text,
+  type CodexRuntimeOptions,
+  type RecordValue,
+} from '../run/types';
 
 const MAX_SESSIONS = 100_000;
 function completeTurns(thread: RecordValue): RecordValue[] {
@@ -102,6 +116,68 @@ export async function readCodexSession(
     };
   });
 }
+/** 每次重新启动读取客户端都再校验原生归属；超限关闭的是只读实例，不改变正在运行的会话。 */
+async function withPagedClient<T>(
+  id: string,
+  dir: string,
+  options: CodexRuntimeOptions,
+  action: (read: CodexHistoryRpc, thread: RecordValue) => Promise<T>,
+) {
+  let client: CodexClient | undefined;
+  const connect = async () => {
+    const active = await CodexClient.start({ ...options, cwd: dir, timeoutMs: 9_000 });
+    client = active;
+    await active.initialize();
+    const thread = await checkedThread(active, id, dir);
+    if (internalSubagent(thread)) throw new SessionError(404, 'session_missing', 'Codex 在当前项目中没有此主会话。');
+    return { active, thread };
+  };
+  const read: CodexHistoryRpc = async (method, params) => {
+    const current = client ?? (await connect()).active;
+    try {
+      return await current.request(method, params);
+    } catch (error) {
+      if (error instanceof CodexRpcLimit) {
+        client = undefined;
+        await current.close();
+      }
+      throw error;
+    }
+  };
+  try {
+    const { thread } = await connect();
+    const result = await action(read, thread);
+    options.signal?.throwIfAborted();
+    return result;
+  } finally {
+    await client?.close();
+  }
+}
+
+export async function readCodexHistoryPage(
+  id: string,
+  dir: string,
+  before?: string,
+  options: CodexRuntimeOptions = {},
+) {
+  const deadline = AbortSignal.timeout(24_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  try {
+    return await withPagedClient(id, dir, { ...options, signal }, async (read, thread) => ({
+      session: summary(thread),
+      cwd: text(thread.cwd),
+      ...(await readCodexHistoryWindow(read, id, before)),
+    }));
+  } catch (error) {
+    if (error instanceof CodexError && error.methodNotFound) {
+      if (!before) return readCodexSession(id, dir, { ...options, signal });
+      throw new SessionError(409, 'session_history_changed', '当前 Codex 版本已不支持该游标，请重新读取最近记录。');
+    }
+    if (error instanceof SessionError) throw error;
+    throw new SessionError(503, 'session_history_page_incomplete', 'Codex 原生历史页读取失败，请重试。');
+  }
+}
+
 export async function readCodexMedia(
   id: string,
   dir: string,
@@ -109,17 +185,37 @@ export async function readCodexMedia(
   options: CodexRuntimeOptions = {},
 ) {
   if (locator.subagentId) return readCodexSubagentMedia(id, dir, locator, options);
+  if (locator.turnId) {
+    try {
+      const turnId = locator.turnId;
+      return await withPagedClient(id, dir, options, async (read) =>
+        imageForItem(await readCodexHistoryItem(read, id, turnId, locator.messageId), locator),
+      );
+    } catch (error) {
+      if (error instanceof CodexRpcLimit)
+        throw new SessionError(
+          503,
+          'session_history_page_incomplete',
+          'Codex 原生图片所在条目或其相邻条目超出读取预算。',
+        );
+      if (!(error instanceof CodexError && error.methodNotFound)) throw error;
+    }
+  }
   return withClient(dir, options, async (client) => {
     const thread = await checkedThread(client, id, dir, true);
     const item = completeTurns(thread)
       .flatMap((turn) => (Array.isArray(turn.items) ? turn.items.map(record) : []))
       .find((item) => item.id === locator.messageId);
     if (!item) throw mediaMissing();
-    if (locator.kind === 'user' && item.type === 'userMessage')
-      return imageSource(Array.isArray(item.content) ? item.content[locator.index] : undefined);
-    if (locator.kind === 'tool') return codexToolImage(item, locator.index);
-    throw mediaMissing();
+    return imageForItem(item, locator);
   });
+}
+
+function imageForItem(item: RecordValue, locator: NativeMediaLocator) {
+  if (locator.kind === 'user' && item.type === 'userMessage')
+    return imageSource(Array.isArray(item.content) ? item.content[locator.index] : undefined);
+  if (locator.kind === 'tool') return codexToolImage(item, locator.index);
+  throw mediaMissing();
 }
 
 function matchingSummaries(data: unknown[]): NativeSessionRow[] {
@@ -234,6 +330,21 @@ async function forkedThread(thread: RecordValue, sourceId: string, dir: string):
   return { session: summary(thread), cwd: text(thread.cwd) };
 }
 
+async function verifyForkPoint(
+  client: CodexClient,
+  { id, dir, point, signal }: { id: string; dir: string; point?: string; signal?: AbortSignal },
+) {
+  try {
+    return await checkCodexForkTurns(client.request.bind(client), id, point, signal);
+  } catch (error) {
+    if (!(error instanceof CodexError && error.methodNotFound)) throw error;
+    const turns = completeTurns(await mutableThread(client, id, dir, true));
+    if (turns.some((turn) => turn.status === 'inProgress'))
+      throw new SessionError(409, 'session_busy', 'Codex 会话尚有未结束的轮次，请结束后再分叉');
+    return point === undefined || turns.some((turn) => codexForkPoint(turn) === point);
+  }
+}
+
 /** 原生 inclusive 分叉不改源会话；请求发出后不因 HTTP/调用方断开而提前释放。 */
 export async function forkCodexSession(
   id: string,
@@ -245,14 +356,12 @@ export async function forkCodexSession(
   return withClient(dir, { ...options, signal: undefined }, async (client) => {
     // 先核验元数据，避免读取跨目录或内部子代理的完整历史。
     await mutableThread(client, id, dir);
-    const turns = completeTurns(await mutableThread(client, id, dir, true));
-    if (turns.some((turn) => turn.status === 'inProgress'))
-      throw new SessionError(409, 'session_busy', 'Codex 会话尚有未结束的轮次，请结束后再分叉');
-    if (input.pointId !== undefined && !turns.some((turn) => codexForkPoint(turn) === input.pointId))
+    if (!(await verifyForkPoint(client, { id, dir, point: input.pointId, signal: options.signal })))
       throw new SessionError(400, 'invalid_fork_point', '分叉点不属于当前会话或尚未结束，请刷新历史后重试');
     if (options.signal?.aborted) throw cancelled();
     const response = await client.request('thread/fork', {
       threadId: id,
+      excludeTurns: true,
       ...(input.pointId ? { lastTurnId: input.pointId } : {}),
     });
     return forkedThread(record(response.thread), id, dir);

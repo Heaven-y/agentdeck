@@ -9,7 +9,7 @@ import type { AsyncQuestion } from './followups';
 export type GenerationTiming = { durationMs: number; firstTokenMs?: number };
 
 export type AgentEvent =
-  | { type: 'async_question'; question: AsyncQuestion; answered?: boolean }
+  | { type: 'async_question'; question: AsyncQuestion; answered?: boolean; historyAnswerMarker?: string }
   | { type: 'input_attachments'; attachments: ChatAttachment[] }
   | InteractionEvent
   | { type: 'context'; usage: ContextUsage | null }

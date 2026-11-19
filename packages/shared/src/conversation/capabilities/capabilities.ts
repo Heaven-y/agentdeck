@@ -31,8 +31,8 @@ export type AgentModel = {
 export const AntigravityConnectionSchema = z.enum(['account', 'gemini']);
 export type AntigravityConnection = z.infer<typeof AntigravityConnectionSchema>;
 
-/** 账号额度不是回合 token；数据来自 AGY 原生 /usage 命令。 */
-export type AntigravityOfficialUsage = {
+/** 只展示原生官方额度窗口，不含回合 token 或服务商账单。 */
+export type OfficialUsage = {
   checkedAt: number;
   groups: Array<{
     name: string;
@@ -40,10 +40,14 @@ export type AntigravityOfficialUsage = {
   }>;
 };
 
+export type AntigravityOfficialUsage = OfficialUsage;
+
 export type AgentCapabilities = {
   agent: AgentKind;
   /** Antigravity 原生目录的连接身份，缺失时不套用任一模式的偏好。 */
   antigravityConnection?: AntigravityConnection;
+  /** 仅本次发现确认原生 ChatGPT 登录时提供；未确认或自定义服务保持缺失。 */
+  codexAccount?: true;
   /** 原生配置的默认选择；未知时省略，不以候选第一项代替。 */
   defaultModel?: string;
   defaultReasoningEffort?: string;

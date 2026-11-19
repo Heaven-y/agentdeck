@@ -83,7 +83,7 @@ function recordVerificationFailure(
 }
 
 async function readNativeQuestion(question: AsyncQuestion, workspaceId: string) {
-  const history = await sessionsApi.sessionEvents(
+  const history = await sessionsApi.fullSessionEvents(
     workspaceId,
     question.sessionId,
     'codex',

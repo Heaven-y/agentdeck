@@ -2,6 +2,19 @@ import type { HistoryTurnFragment, SessionHistoryPageInfo } from '@agentdeck/sha
 import { reduceChat, type ChatItem } from '../../conversation/model/conversation-events';
 import type { ChatState } from './chat-state';
 
+/** 回答仍来自已加载的原生输入；未看到匹配正文时不猜测状态，也不改变发送前的原生核验。 */
+export function reconcileCodexHistoryQuestions(items: ChatItem[]) {
+  const answers = new Set(items.flatMap((item) => (item.kind === 'user' ? [item.text.split('\n', 1)[0]] : [])));
+  return items.map((item) =>
+    item.kind === 'async-question' &&
+    item.status === 'open' &&
+    item.historyAnswerMarker &&
+    answers.has(item.historyAnswerMarker)
+      ? { ...item, status: 'accepted' as const }
+      : item,
+  );
+}
+
 function joinFragments(older: HistoryTurnFragment, newer: HistoryTurnFragment): HistoryTurnFragment {
   return {
     failed: older.failed || newer.failed,

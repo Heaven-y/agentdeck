@@ -16,6 +16,7 @@ export type NativeCapabilityCatalog = {
   entries: Array<AgentCapability & { invocation?: NativeInvocation }>;
   models: AgentModel[];
   antigravityConnection?: AntigravityConnection;
+  codexAccount?: true;
   defaultModel?: string;
   defaultReasoningEffort?: string;
   warnings: string[];

@@ -5,7 +5,7 @@ import { sessionsApi } from '../../sessions/api';
 import { reduceChat } from '../../conversation/model/conversation-events';
 import { retainConversation } from './conversations';
 import { openedTab } from '../tabs/conversation-tabs';
-import { prependHistoryPage } from './chat-history-pages';
+import { prependHistoryPage, reconcileCodexHistoryQuestions } from './chat-history-pages';
 import { permissionReadState } from './chat-permission';
 import {
   emptyConversation,
@@ -128,12 +128,16 @@ export function createChatHistory(get: () => ChatState, set: SetState) {
     olderRequest = controller;
     set({ loadingOlderHistory: true, olderHistoryError: undefined });
     try {
-      const page = await sessionsApi.olderSessionEvents(workspaceId, session.sessionId, before, controller.signal);
+      const page = await sessionsApi.olderSessionEvents(workspaceId, session, before, controller.signal);
       if (!current()) return;
       assertHistoryTarget(page, session);
-      const info = assertOlderPage(page, start, before);
+      const info = assertOlderPage(page, start, before, session.agent);
       const items = historyItems(page);
-      set((current) => prependHistoryPage(current, items, info));
+      set((current) =>
+        session.agent === 'codex'
+          ? { items: reconcileCodexHistoryQuestions([...items, ...current.items]), historyPage: info }
+          : prependHistoryPage(current, items, info),
+      );
     } catch (error) {
       if (current()) set({ olderHistoryError: olderFailure(error) });
     } finally {
@@ -152,11 +156,12 @@ function assertHistoryTarget(history: SessionHistoryPage, session: SessionRef) {
 }
 function olderTarget(state: ChatState) {
   const { workspaceId, agent, sessionId, historyPage, loadingHistory } = state;
-  if (agent !== 'antigravity' || !workspaceId || !sessionId || !historyPage?.before || loadingHistory) return;
+  if (agent === 'claude' || !workspaceId || !sessionId || !historyPage?.before || loadingHistory) return;
   return { workspaceId, session: { agent, sessionId }, ...historyPage, before: historyPage.before };
 }
-function assertOlderPage({ page }: SessionHistoryPage, start: number, before: string) {
-  if (!page || !Number.isSafeInteger(page.start) || page.start < 0 || page.start >= start || page.before === before)
+function assertOlderPage({ page }: SessionHistoryPage, start: number, before: string, agent: SessionRef['agent']) {
+  const inRange = (value: number) => (agent === 'codex' ? value === start - 1 : value >= 0 && value < start);
+  if (!page || !Number.isSafeInteger(page.start) || !inRange(page.start) || page.before === before)
     throw new Error('历史返回的分页范围不匹配，未加载此页。');
   return page;
 }
@@ -170,7 +175,9 @@ function historyItems(history: SessionHistoryPage) {
   const items = [...history.events, { type: 'turn_end', isError: false } as const].reduce(reduceChat, []);
   const page = history.page;
   // 每页独立结算条目；为位置生成的 ID 加页前缀，绝对原生事件 ID 与媒体/分叉定位不改。
-  return page ? items.map((item) => ({ ...item, id: `history-${page.start}:${item.id}` })) : items;
+  return page
+    ? items.map((item) => (item.kind === 'async-question' ? item : { ...item, id: `history-${page.start}:${item.id}` }))
+    : items;
 }
 
 function attachmentDraft(current: ChatState, same: boolean) {

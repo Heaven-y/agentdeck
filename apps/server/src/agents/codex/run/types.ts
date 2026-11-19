@@ -26,6 +26,12 @@ export class CodexError extends Error {
     this.name = 'CodexError';
   }
 }
+/** 传输预算失效会结束当前客户端；只读历史可重建客户端并改读更小窗口。 */
+export class CodexRpcLimit extends CodexError {
+  constructor() {
+    super('Codex 返回内容超过 8 MiB，无法完整读取。');
+  }
+}
 export function safeError(error: unknown): string {
   return error instanceof CodexError ? error.message : 'Codex 运行失败，请检查本机运行时与配置。';
 }

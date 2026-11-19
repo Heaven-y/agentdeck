@@ -196,17 +196,20 @@ export function createCapabilitiesService(
     catalog: NativeCapabilityCatalog,
     guard: ModelCacheWriteGuard,
   ) {
-    if (catalog.modelWarning) {
-      const pending = loadSaved(key, agent, catalog.antigravityConnection);
-      if (pending) await pending;
-      const previous = cachedCatalog(key, agent, catalog.antigravityConnection);
-      catalog.models = retainModels(catalog.models, previous.models);
-      catalog.defaultModel ??= previous.defaultModel;
-      if (catalog.defaultModel === previous.defaultModel)
-        catalog.defaultReasoningEffort ??= previous.defaultReasoningEffort;
-    } else if (catalog.models.length || !catalog.warnings.length || catalog.modelWarning === '') {
+    // ChatGPT 目录不覆盖原先 API Key／自定义服务的磁盘目录。认证信息只保留在当次发现的内存结果。
+    if (catalog.codexAccount) return;
+    if (catalog.modelWarning) return retainPreviousModels(agent, key, catalog);
+    if (catalog.models.length || !catalog.warnings.length || catalog.modelWarning === '')
       await disk?.write(agent, key, catalog, guard);
-    }
+  }
+  async function retainPreviousModels(agent: AgentKind, key: string, catalog: NativeCapabilityCatalog) {
+    await loadSaved(key, agent, catalog.antigravityConnection);
+    const previous = cachedCatalog(key, agent, catalog.antigravityConnection);
+    if (previous.codexAccount) return;
+    catalog.models = retainModels(catalog.models, previous.models);
+    catalog.defaultModel ??= previous.defaultModel;
+    if (catalog.defaultModel === previous.defaultModel)
+      catalog.defaultReasoningEffort ??= previous.defaultReasoningEffort;
   }
   function retainCatalog(agent: AgentKind, key: string, catalog: NativeCapabilityCatalog, reusable: boolean) {
     // 未知连接的模型只在本次返回；保留不依赖模型来源的命令供显式调用。

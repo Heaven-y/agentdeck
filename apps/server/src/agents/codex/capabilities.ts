@@ -3,6 +3,7 @@ import { nativeFeaturesFor, type AgentModel } from '@agentdeck/shared/conversati
 import { capabilityId, type NativeCapabilityCatalog, type NativeInvocation } from '../capability-types';
 import { sameSessionDirectory } from '../common/history/session-scope';
 import { CodexClient } from './run/client';
+import { readCodexAccountScope } from './account';
 import { cancelled, CodexError, list, record, text, type CodexRuntimeOptions, type RecordValue } from './run/types';
 
 type Entry = NativeCapabilityCatalog['entries'][number];
@@ -162,17 +163,23 @@ async function modelsCatalog(client: CodexClient): Promise<{ models: AgentModel[
   return { models: [...models.values()], defaultModel: defaults.size === 1 ? [...defaults][0] : undefined };
 }
 
-type ModelDefaults = Pick<NativeCapabilityCatalog, 'defaultModel' | 'defaultReasoningEffort'>;
-async function configuredModel(client: CodexClient, dir: string): Promise<ModelDefaults> {
+type ModelDefaults = Pick<NativeCapabilityCatalog, 'defaultModel' | 'defaultReasoningEffort' | 'codexAccount'>;
+async function configuredModel(client: CodexClient, dir: string, env?: NodeJS.ProcessEnv): Promise<ModelDefaults> {
   const response = await client.request('config/read', { cwd: dir, includeLayers: false });
   const config = record(response.config);
+  const codexAccount =
+    response.config && typeof response.config === 'object' && !Array.isArray(response.config)
+      ? await readCodexAccountScope(client, config, { ...process.env, ...env })
+      : undefined;
   return {
+    codexAccount,
     defaultModel: text(config.model) || undefined,
     defaultReasoningEffort: text(config.model_reasoning_effort) || undefined,
   };
 }
 
 function applyModelDefaults(catalog: NativeCapabilityCatalog, configured: ModelDefaults, nativeDefault?: string) {
+  catalog.codexAccount = configured.codexAccount;
   catalog.defaultModel = configured.defaultModel ?? nativeDefault;
   const selected = catalog.models.find((model) => model.id === catalog.defaultModel);
   catalog.defaultReasoningEffort = configured.defaultReasoningEffort ?? selected?.defaultReasoningEffort;
@@ -198,7 +205,7 @@ export async function discoverCodexCapabilities(
     const [skills, models, configured, modes] = await Promise.allSettled([
       skillsCatalog(client, dir),
       modelsCatalog(client),
-      configuredModel(client, dir),
+      configuredModel(client, dir, options.env),
       client.request('collaborationMode/list', {}),
     ]);
     if (options.signal?.aborted) throw cancelled();

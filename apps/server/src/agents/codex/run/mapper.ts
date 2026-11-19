@@ -102,10 +102,11 @@ export class CodexEventMapper {
   }
 
   history(turn: RecordValue): AgentEvent[] {
-    return [
-      ...list(turn.items).flatMap((item) => this.mapItem(record(item), true, true, turn.status === 'completed')),
-      turnEnd(turn),
-    ];
+    return [...this.historyItems(turn), turnEnd(turn)];
+  }
+
+  historyItems(turn: RecordValue): AgentEvent[] {
+    return list(turn.items).flatMap((item) => this.mapItem(record(item), true, true, turn.status === 'completed'));
   }
 
   finishItems(turn: RecordValue): AgentEvent[] {
