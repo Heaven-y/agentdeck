@@ -3,8 +3,7 @@
 开发本仓库时 Agent（Codex、Claude Code）必须遵守的规则。
 
 - 回复、文档、注释和提交信息使用中文。
-- 开始任务前阅读 `.agents/skills/using-superpowers/SKILL.md`；本项目未安装启动钩子。
-- skill 中 `${CLAUDE_PLUGIN_ROOT}/.claude/skills/<名称>/...` 改用仓库根目录下的 `.agents/skills/<名称>/...`。
+- 本仓库的默认开发流程是 [Matt Pocock Skills](docs/guides/dev-environment.md#21-任务流程)。根据任务范围选步骤；以本文件为准，技能模板不另行授权提交、发布或扩大测试范围。
 - 仓库公开：不写入真实服务器地址、端口、用户名、密钥或会话正文，示例使用 `my-server`、`~/projects/demo`。
 - 优先成熟组件，方案保持简单；技术栈沿用 Node.js + TypeScript + Fastify、React 与 Electron。服务器脚本只用已有环境，缺依赖不自动安装。
 - 主线是各 CLI 原生会话与能力。先完成对话，再补原生配置，之后实现工作台插件；具体状态看路线图。
@@ -19,6 +18,11 @@
 - 同一症状复发，或修改跨原生调用、配置与界面时，先按[反复修复排查流程](docs/guides/dev-environment.md#51-同一问题反复修复)对照[Antigravity 两例复盘](docs/engineering/incidents/antigravity-repeated-regressions.md)：定位首次改变语义的环节，写清当前轮、真失败、未知等验收反例；取不到原生证据时不宣告运行生效。
 - 行为、配置、接口或交付状态变化时，提交前执行[文档事实审查](docs/guides/dev-environment.md#18-文档事实审查)。委派审查时明确包含未修改的关联说明，并要求报告核对范围与遗漏。
 - 日常修改不自动递增版本号或重打安装包；拟升版本、制作新版本安装包或发布前，先说明本轮范围并取得用户确认。Git 提交与推送授权不等于版本发布授权。
+
+## 开发技能入口
+
+- 工单：[本地 Markdown 工单](docs/agents/issue-tracker.md)；按[分流标签](docs/agents/triage-labels.md)记录处理状态。
+- 术语与决策：按[领域文档入口](docs/agents/domain.md)读取和维护。
 
 ## 文档入口
 

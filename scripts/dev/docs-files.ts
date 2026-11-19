@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /** 开发技能和会话过程记录不属于产品文档，意外跟踪时也不参与检查。 */
-const LOCAL_DIRECTORIES = ['.agents/', '.claude/', '.superpowers/', '.pi/'];
+const LOCAL_DIRECTORIES = ['.agents/', '.claude/', '.scratch/', '.superpowers/', '.pi/'];
 
 /** 枚举当前工作树中的正式 Markdown，包含尚未暂存的新文件。 */
 export function markdownFiles(root = process.cwd()): string[] {
