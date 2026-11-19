@@ -128,7 +128,7 @@ it('Antigravity 沿用原生登录，未设置 API key 不等于缺少凭据', a
   });
   const result = await probes.probe('antigravity');
   expect(result).toMatchObject({ status: 'available' });
-  expect(result.version).toBeUndefined();
+  expect(result.version).toBe('1.4.12');
   expect(result.message).toBeUndefined();
 });
 
@@ -239,7 +239,7 @@ it('真实夹具可执行文件：三个 CLI 均可用，Codex schema 落在临�
   expect(results.map(({ agent, status, version }) => ({ agent, status, version }))).toEqual([
     { agent: 'claude', status: 'available', version: '2.1.317' },
     { agent: 'codex', status: 'available', version: '0.166.0' },
-    { agent: 'antigravity', status: 'available', version: undefined },
+    { agent: 'antigravity', status: 'available', version: '1.4.12' },
   ]);
   expect(JSON.stringify(results)).not.toContain('fixture-key');
 }, 30_000);
@@ -306,12 +306,16 @@ it('显式指定的 Claude 可执行文件不存在时报 missing，而不是回
   expect(result.message).toContain('claude');
 });
 
-it('Antigravity 只运行已公布的帮助入口，不猜测版本命令或账号', async () => {
+it('Antigravity 没有可读取的版本时仍按帮助判断可用，不查询账号', async () => {
   const calls: string[][] = [];
   const run: ProcessRunner = async (command, args) => {
     calls.push([command, ...args]);
+    if (args[0] === '--version') return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), exitCode: 2 };
     return { stdout: Buffer.from(AGY_HELP), stderr: Buffer.alloc(0), exitCode: 0 };
   };
   expect(await createAgentProbes({ run }).probe('antigravity')).toEqual({ agent: 'antigravity', status: 'available' });
-  expect(calls).toEqual([['agy', '--help']]);
+  expect(calls).toEqual([
+    ['agy', '--version'],
+    ['agy', '--help'],
+  ]);
 });

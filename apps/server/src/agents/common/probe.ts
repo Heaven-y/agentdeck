@@ -17,7 +17,8 @@ const SCHEMA_OUTPUT_CAP = 1024 * 1024;
 type AgentSpec = {
   agent: AgentKind;
   executable: string;
-  version?: RegExp;
+  version: RegExp;
+  versionOptional?: boolean;
   /** --help 里必须出现的选项或子命令；缺一项即视为接口变化。 */
   requiredHelp: string[];
   /** Codex 用 app-server generate-json-schema 验证 RPC 协议，必须生成有效 JSON。 */
@@ -35,6 +36,10 @@ const SPECS: Record<AgentKind, Omit<AgentSpec, 'agent' | 'executable'>> = {
     schema: true,
   },
   antigravity: {
+    version:
+      /^(?:(?:agy(?: version)?|Antigravity(?: CLI)?) +)?v?(\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?(?:\+[a-z0-9.-]+)?)[ \t\r]*$/im,
+    // 旧版或无法解析版本时，继续用 --help 判定 CLI 接口是否可用。
+    versionOptional: true,
     requiredHelp: ['--print', '--input-format', '--output-format', '--conversation'],
   },
 };
@@ -93,17 +98,16 @@ async function attempt(run: ProcessRunner, options: AttemptOptions): Promise<Out
 }
 
 async function readVersion(spec: AgentSpec, run: ProcessRunner): Promise<VersionStep> {
-  // agy 未公开版本入口；仅核对已公布的 --help，不把版本缺失等同协议变化。
-  if (!spec.version) return { kind: 'ok' };
   const step = await attempt(run, {
     command: spec.executable,
     args: ['--version'],
     outputCap: VERSION_OUTPUT_CAP,
     capability: '--version',
   });
-  if (step.kind !== 'ok') return step;
+  if (step.kind !== 'ok') return spec.versionOptional ? { kind: 'ok' } : step;
   const version = `${step.stdout}\n${step.stderr}`.match(spec.version)?.[1];
-  if (!version) return { kind: 'changed', missing: ['--version'], detail: '无法从 --version 的输出解析版本号' };
+  if (!version && !spec.versionOptional)
+    return { kind: 'changed', missing: ['--version'], detail: '无法从 --version 的输出解析版本号' };
   return { kind: 'ok', version };
 }
 

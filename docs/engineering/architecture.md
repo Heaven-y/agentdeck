@@ -99,7 +99,7 @@ Claude SDK 的 lastModified 为文件 mtime，工作台对当前页读取 JSONL 
 | Codex | app-server 原生会话、工具与审批 | 省略未选择的参数，按需加载能力，回合和管理均绑定原生身份 |
 | Antigravity | SQLite 摘要、时间和 `workspace_uris`；原生服务读取历史步骤 | 支持的Gemini会话使用ACP；自定义模型等选择保留headless，发送前选定路径；原生服务提供历史和管理 |
 
-探测运行本地版本/帮助命令，Codex 另检查生成的协议 schema；每个 CLI 单次探测超时为 5 秒，输出有独立上限。stdout 与 stderr 一起核对，四态结果不意味着登录成功或真实模型请求已通过。
+探测运行本地版本/帮助命令，Codex 另检查生成的协议 schema；每条命令超时为 5 秒，输出有独立上限。stdout 与 stderr 一起核对。AGY 的版本从 `agy --version` 读取，与登录方式无关；无法读取版本时仍按 `--help` 判断接口可用性。四态结果不意味着登录成功或真实模型请求已通过。
 
 `runProcess` 用 `shell: false` 和隐藏窗口启动，支持 stdin、独立环境、AbortSignal、输出上限和超时。长期对话管道由各适配器管理，prompt 不写进命令行参数。
 

@@ -10,8 +10,8 @@ export async function inputCapabilities(
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
 ): Promise<NativeInteractionFeatures> {
+  if (agent === 'antigravity') return antigravityInputFeatures(input, env, signal);
   const cliVersion = await nativeVersion(agent, env, input.workspace.dir, signal);
-  if (agent === 'antigravity') return antigravityInputFeatures(input, env, cliVersion, signal);
   const catalog =
     agent === 'claude'
       ? await discoverClaudeCapabilities(input.workspace.dir, {

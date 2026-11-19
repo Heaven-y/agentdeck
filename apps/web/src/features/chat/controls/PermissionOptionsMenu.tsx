@@ -5,27 +5,30 @@ import { MenuChoice, modelMenuItemClass } from '../../../ui/fields/MenuChoice';
 import { buttonClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
 
+const nativeDefault = { label: '跟随 CLI', description: '由 CLI 决定权限；手动选择只影响当前会话' };
+
 export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   const agent = useChat((state) => state.agent);
   const selected = useChat((state) => state.permission);
   const choose = useChat((state) => state.setPermission);
   const pending = useChat((state) => state.permissionLoading || state.permissionSaving);
+  const permissionError = useChat((state) => state.permissionError);
   const running = useChat((state) => state.running || !!state.pendingClientTurnId);
   disabled ||= pending || running;
   const choices = permissionChoices[agent];
   const current = choices.find((entry) => entry.selection.mode === selected?.mode);
-  const label = current?.label ?? (pending ? '权限' : '原生默认');
+  const display = current ?? (pending || permissionError ? { label: '权限', description: undefined } : nativeDefault);
   return (
     <MenuProvider placement="top-end">
       <MenuButton
         disabled={disabled}
         aria-label="权限模式"
         aria-busy={pending}
-        title={label}
+        title={display.description}
         className={`${buttonClass('ghost')} min-h-7 gap-1 rounded-lg px-2 text-[13px]`}
       >
         <ShieldCheck aria-hidden className="size-3.5" />
-        <span>{label}</span>
+        <span>{display.label}</span>
         <ChevronDown aria-hidden className="size-3" />
       </MenuButton>
       <Menu

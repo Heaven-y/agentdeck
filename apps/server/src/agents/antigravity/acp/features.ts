@@ -5,25 +5,31 @@ import { AntigravityAcpClient } from './client';
 import { needsHeadless, configureSession } from './selection';
 import { object, list } from './types';
 import { createAgentProbes, createLocalRunner } from '../../common/probe';
+import { nativeVersion } from '../../common/native-version';
 export async function antigravityInputFeatures(
   input: AgentTurnInput,
   env: NodeJS.ProcessEnv,
-  cliVersion: string | undefined,
   signal: AbortSignal,
 ): Promise<NativeInteractionFeatures> {
   const settings = await readAntigravityModelSettings({ env });
   if (needsHeadless(input, settings, env)) {
-    signal.throwIfAborted();
-    const probe = await createAgentProbes({ run: createLocalRunner(() => env) }).probe('antigravity');
+    const run = createLocalRunner(() => env);
+    const probe = await createAgentProbes({
+      run: (command, args, options) => {
+        signal.throwIfAborted();
+        return run(command, args, { ...options, cwd: input.workspace.dir, signal });
+      },
+    }).probe('antigravity');
     signal.throwIfAborted();
     return nativeFeaturesFor('antigravity', {
       runtime: 'antigravity-headless',
       handshake: probe.status === 'available' ? 'confirmed' : 'failed',
-      cliVersion,
+      cliVersion: probe.version,
       verifiedFeatures: ['documents'],
       implemented: ['documents'],
     });
   }
+  const cliVersion = await nativeVersion('antigravity', env, input.workspace.dir, signal);
   const client = await AntigravityAcpClient.start({
     cwd: input.workspace.dir,
     env,

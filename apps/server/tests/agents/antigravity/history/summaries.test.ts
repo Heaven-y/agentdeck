@@ -203,20 +203,15 @@ describe('Antigravity 会话提供方', () => {
     ]);
   });
 
-  it('原生标题为空时保持空串，占位文案交给界面而不是服务端编造', async () => {
-    const provider = createAntigravitySessions({
-      readSummaries: () => [
-        {
-          conversationId: 'c1',
-          title: '   ',
-          workspaceUris: '',
-          lastModified: '2026-11-03 12:00:00',
-          preview: '',
-        },
-      ],
-    });
-    const [item] = await provider.list(dir);
-    expect(item?.summary).toBe('');
+  it('重新分页读取原生库时，首条消息预览仅在没有标题时补位', async () => {
+    const row = { ...sampleRow, uris: pathToFileURL(dir).href };
+    const dbPath = await makeFixtureDb([
+      { ...row, id: 'a', title: ' ', preview: ` ${'首条'.repeat(32)} ` },
+      { ...row, id: 'b', title: '手动标题' },
+      { ...row, id: 'c', title: null, preview: null },
+    ]);
+    const { items } = await createAntigravitySessions({ dbPath }).page!(dir, { limit: 3 });
+    expect(items.map(({ summary }) => summary)).toEqual(['首条'.repeat(30), '手动标题', '']);
   });
 
   it('时间无法解析时回退为 0 而不是抛错', async () => {

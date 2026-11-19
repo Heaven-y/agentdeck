@@ -45,8 +45,8 @@ function epochMs(value: string): number {
 function nativeSummary(row: SummaryRow): NativeSessionSummary {
   return {
     sessionId: row.conversationId,
-    // 原生尚未写入标题时保持为空：占位文案由界面决定，服务端不编造内容。
-    summary: row.title.trim(),
+    // AGY 会单独保存首条用户消息的预览。用它补齐标题，无需加载轨迹或写回原生库。
+    summary: row.title.trim() || row.preview.trim().slice(0, 60),
     lastModified: epochMs(row.lastModified),
     // 原样带出，归属裁决由上层按 workspace_uris 决定，这里不做猜测。
     workspaceUris: row.workspaceUris,
