@@ -2,6 +2,7 @@ import type {
   AgentKind,
   SessionSummary,
   SessionHistory,
+  SessionHistoryPage,
   SessionRecord,
   SessionActionInput,
   SessionForkInput,
@@ -12,6 +13,9 @@ import type {
   PermissionSelection,
 } from '@agentdeck/shared/conversation';
 import { request } from '../../lib/http';
+
+const sessionPath = (workspaceId: string, sessionId: string, agent: AgentKind) =>
+  `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}`;
 
 export const sessionsApi = {
   sessionPermission: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) =>
@@ -60,9 +64,18 @@ export const sessionsApi = {
       `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}/fork`,
       { method: 'POST', body: JSON.stringify(input), cache: 'no-store' },
     ),
-  sessionEvents: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) =>
-    request<SessionHistory>(
-      `/api/projects/${encodeURIComponent(workspaceId)}/sessions/${agent}/${encodeURIComponent(sessionId)}`,
+  sessionEvents: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) => {
+    const path = sessionPath(workspaceId, sessionId, agent);
+    return request<SessionHistoryPage>(agent === 'antigravity' ? `${path}/history-page` : path, {
+      signal,
+      cache: 'no-store',
+    });
+  },
+  fullSessionEvents: (workspaceId: string, sessionId: string, agent: AgentKind, signal?: AbortSignal) =>
+    request<SessionHistory>(sessionPath(workspaceId, sessionId, agent), { signal, cache: 'no-store' }),
+  olderSessionEvents: (workspaceId: string, sessionId: string, before: string, signal?: AbortSignal) =>
+    request<SessionHistoryPage>(
+      `${sessionPath(workspaceId, sessionId, 'antigravity')}/history-page?${new URLSearchParams({ before })}`,
       { signal, cache: 'no-store' },
     ),
   subagents: (

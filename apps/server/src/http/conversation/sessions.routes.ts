@@ -6,6 +6,7 @@ import {
   NativeSessionIdSchema,
   SessionActionSchema,
   SessionForkSchema,
+  SessionHistoryPageQuerySchema,
   SessionPageQuerySchema,
   SessionPermissionInputSchema,
   SubagentQuerySchema,
@@ -46,6 +47,7 @@ function watchAbort(reply: FastifyReply) {
     if (!reply.raw.writableEnded) controller.abort();
   };
   reply.raw.once('close', closed);
+  if (reply.raw.destroyed) closed();
   return { signal: controller.signal, dispose: () => reply.raw.removeListener('close', closed) };
 }
 
@@ -157,6 +159,22 @@ export function registerSessionRoutes(app: FastifyInstance, deps: Deps): void {
 
   app.get('/api/projects/:id/sessions', routeOptions, list);
   app.get('/api/projects/:id/sessions/:agent/:sessionId', routeOptions, read);
+  app.get('/api/projects/:id/sessions/:agent/:sessionId/history-page', routeOptions, async (req, reply) => {
+    const params = ProjectHistoryParams.safeParse(req.params);
+    const query = SessionHistoryPageQuerySchema.safeParse(req.query);
+    if (!params.success || !query.success) return reply.code(400).send({ message: '历史分页请求格式不正确' });
+    const watch = watchAbort(reply);
+    try {
+      const ws = await deps.store.get(params.data.id);
+      if (watch.signal.aborted) return reply;
+      if (!ws) return reply.code(404).send({ message: '项目不存在' });
+      return await deps.sessions.readHistoryPage(ws, params.data, query.data.before, watch.signal);
+    } catch (error) {
+      return sendFailure(reply, error, '原生历史页读取失败');
+    } finally {
+      watch.dispose();
+    }
+  });
   app.get('/api/projects/:id/sessions/:agent/:sessionId/permission', routeOptions, async (req, reply) => {
     const params = ProjectHistoryParams.safeParse(req.params);
     if (!params.success || !EmptyQuery.safeParse(req.query).success)

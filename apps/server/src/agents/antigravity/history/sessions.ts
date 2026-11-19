@@ -3,9 +3,10 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeSessionDirectory, resolveProjectId } from '../../common/history/session-ownership';
 import { sameSessionDirectory } from '../../common/history/session-scope';
-import type { NativeSessionSummary, SessionProvider, NativeSessionPageInput } from '../../contracts';
+import type { NativeSessionRead, NativeSessionSummary, SessionProvider, NativeSessionPageInput } from '../../contracts';
+import { NativeHistoryPagingUnavailable } from '../management/history-stream';
 import { SessionError } from '../../errors';
-import { antigravityHistory } from './history';
+import { antigravityHistory, projectAntigravityHistory } from './history';
 import { imageSource, mediaMissing } from '../../common/media/native-media';
 import { record, list } from '../../common/interaction/user-interaction-fields';
 import type { AntigravitySessionManagement } from './session-management-types';
@@ -80,6 +81,48 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
     throw new SessionError(404, 'session_missing', 'Antigravity 在当前工作区中没有此会话');
   }
 
+  async function source(id: string, dir: string) {
+    const row = belongs(id, dir);
+    const cwd = nativeSessionDirectory({ workspaceUris: row.workspaceUris });
+    if (!cwd || !(await sameSessionDirectory(cwd, dir)))
+      throw new SessionError(404, 'session_missing', 'Antigravity 会话的目录不匹配');
+    return { row, cwd };
+  }
+  async function readHistory(id: string, dir: string, signal?: AbortSignal): Promise<NativeSessionRead> {
+    signal?.throwIfAborted();
+    const { row, cwd } = await source(id, dir);
+    if (!api.management?.readTrajectory)
+      throw new SessionError(503, 'session_runtime_failed', 'Antigravity 历史读取服务尚未就绪。');
+    let trajectory: ManagementRecord;
+    try {
+      ({ trajectory } = await api.management.readTrajectory(id, cwd, signal));
+    } catch (error) {
+      // 原生摘要里会留下没有轨迹的空会话（只读探测、失败回合），打开时按空历史处理。
+      if (error instanceof NativeTrajectoryMissing) return { session: nativeSummary(row), cwd, events: [] };
+      throw error;
+    }
+    signal?.throwIfAborted();
+    if (trajectory.cascadeId !== id) throw new SessionError(404, 'session_missing', 'Antigravity 返回的会话身份不匹配');
+    return {
+      session: nativeSummary(row),
+      cwd,
+      events: antigravityHistory(trajectory, { preserveToolContent: api.preserveToolContent }),
+    };
+  }
+
+  async function mainMediaStep(id: string, cwd: string, index: number, signal?: AbortSignal) {
+    try {
+      if (api.management?.readHistoryStep) return await api.management.readHistoryStep(id, cwd, index, signal);
+    } catch (error) {
+      if (error instanceof NativeTrajectoryMissing) throw mediaMissing();
+      if (!(error instanceof NativeHistoryPagingUnavailable)) throw error;
+    }
+    if (!api.management?.readTrajectory) throw mediaMissing();
+    const { trajectory } = await api.management.readTrajectory(id, cwd, signal);
+    if (trajectory.cascadeId !== id) throw mediaMissing();
+    return list(trajectory.steps)[index];
+  }
+
   return {
     ...(readChildren
       ? {
@@ -95,12 +138,12 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
         if (!readChildren) throw mediaMissing();
         return createAntigravitySubagentMedia(readChildren)(id, dir, locator, signal);
       }
-      if (locator.kind !== 'user' || !api.management?.readTrajectory) throw mediaMissing();
+      const index = Number(locator.messageId);
+      if (locator.kind !== 'user' || !/^\d+$/.test(locator.messageId) || !Number.isSafeInteger(index))
+        throw mediaMissing();
       const cwd = nativeSessionDirectory({ workspaceUris: found.workspaceUris });
       if (!cwd || !(await sameSessionDirectory(cwd, dir))) throw mediaMissing();
-      const { trajectory } = await api.management.readTrajectory(id, cwd, signal);
-      if (trajectory.cascadeId !== id) throw mediaMissing();
-      const step = record(list(trajectory.steps)[Number(locator.messageId)]);
+      const step = record(await mainMediaStep(id, cwd, index, signal));
       if (step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') throw mediaMissing();
       return imageSource(list(record(step.userInput).media)[locator.index]);
     },
@@ -122,30 +165,36 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
         nextCursor: entries.length === page.limit ? String(Number(page.cursor ?? 0) + page.limit) : undefined,
       });
     },
-    async read(id, dir, signal) {
+    read: readHistory,
+    async readHistoryPage(id, dir, before, signal) {
       signal?.throwIfAborted();
-      const found = belongs(id, dir);
-      if (!api.management?.readTrajectory)
-        throw new SessionError(503, 'session_runtime_failed', 'Antigravity 历史读取服务尚未就绪。');
-      const cwd = nativeSessionDirectory({ workspaceUris: found.workspaceUris });
-      if (!cwd || !(await sameSessionDirectory(cwd, dir)))
-        throw new SessionError(404, 'session_missing', 'Antigravity 会话的目录不匹配');
-      let trajectory: ManagementRecord;
+      const { row, cwd } = await source(id, dir);
       try {
-        ({ trajectory } = await api.management.readTrajectory(id, cwd, signal));
+        if (!api.management?.readHistoryWindow) throw new NativeHistoryPagingUnavailable();
+        const { trajectory, page, partialStart, partialEnd, compact } = await api.management.readHistoryWindow(
+          id,
+          cwd,
+          before,
+          signal,
+        );
+        signal?.throwIfAborted();
+        if (trajectory.cascadeId !== id)
+          throw new SessionError(404, 'session_missing', 'Antigravity 返回的会话身份不匹配');
+        const { events, fragments } = projectAntigravityHistory(trajectory, {
+          offset: page.start,
+          partialStart,
+          partialEnd,
+          compact,
+          includeContext: !before,
+        });
+        return { session: nativeSummary(row), cwd, page: { ...page, ...fragments }, events };
       } catch (error) {
-        // 原生摘要里会留下没有轨迹的空会话（只读探测、失败回合），打开时按空历史处理。
-        if (error instanceof NativeTrajectoryMissing) return { session: nativeSummary(found), cwd, events: [] };
+        // 只有明确不支持新接口时，才在首屏退回旧的有界全读；连接、校验与页错误不能被吞掉。
+        if (before) throw error;
+        if (error instanceof NativeHistoryPagingUnavailable) return readHistory(id, dir, signal);
+        if (error instanceof NativeTrajectoryMissing) return { session: nativeSummary(row), cwd, events: [] };
         throw error;
       }
-      signal?.throwIfAborted();
-      if (trajectory.cascadeId !== id)
-        throw new SessionError(404, 'session_missing', 'Antigravity 返回的会话身份不匹配');
-      return {
-        session: nativeSummary(found),
-        cwd,
-        events: antigravityHistory(trajectory, { preserveToolContent: api.preserveToolContent }),
-      };
     },
     assertBelongs(id, dir, signal) {
       signal?.throwIfAborted();

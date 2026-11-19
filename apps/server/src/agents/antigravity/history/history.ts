@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@agentdeck/shared/conversation';
+import type { SessionHistoryPageInfo, AgentEvent } from '@agentdeck/shared/conversation';
 import { mediaReference } from '../../common/media/native-media';
 import {
   managementObject as object,
@@ -7,6 +7,7 @@ import {
 } from '../management/management-rpc';
 import { contextEvent, historyResponseTiming, historyTiming, stepUsage } from '../run/metrics';
 import { historyGeneration } from '../run/generation-timing';
+import { OMITTED_HISTORY_STEP } from '../management/history-window';
 
 const DONE = 'CORTEX_STEP_STATUS_DONE';
 const FAILED = new Set(['CORTEX_STEP_STATUS_ERROR', 'CORTEX_STEP_STATUS_INVALID']);
@@ -166,11 +167,10 @@ function responseContent(step: ManagementRecord): string {
 }
 
 /** 后续完整答复可恢复步骤取消；明确失败另行保留。 */
-function pendingCancellation(step: ManagementRecord, previous: boolean): boolean {
+function recordedCancellation(step: ManagementRecord): boolean | undefined {
   if (CANCELLED.has(text(step.status))) return true;
-  return step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.status === DONE && !!responseContent(step).trim()
-    ? false
-    : previous;
+  if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.status === DONE && responseContent(step).trim())
+    return false;
 }
 
 function response(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
@@ -196,6 +196,10 @@ function toolOrActivity(step: ManagementRecord, index: number, preserve: boolean
     : activity(step, index);
 }
 
+function failedStep(step: ManagementRecord) {
+  return FAILED.has(text(step.status)) || !!errorMessage(step);
+}
+
 function errorMessage(step: ManagementRecord): string {
   const error = object(step.errorMessage);
   return error.shouldShowUser === true ? text(object(error.error).userErrorMessage) : '';
@@ -208,6 +212,8 @@ function stepEvents(
   trajectory: ManagementRecord,
 ): AgentEvent[] {
   switch (step.type) {
+    case OMITTED_HISTORY_STEP:
+      return [{ type: 'activity', id: `agy-step-${index}`, name: '原生步骤内容过大，已省略', status: 'unknown' }];
     case 'CORTEX_STEP_TYPE_USER_INPUT':
       return userInputEvents(step, index, trajectory);
     case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE':
@@ -223,37 +229,76 @@ function stepEvents(
   }
 }
 
-/** 轮次边界来自原生用户输入；工具调用后的助手片段不能冒充整轮结束。 */
-export function antigravityHistory(
-  trajectory: ManagementRecord,
-  options: { preserveToolContent?: boolean } = {},
-): AgentEvent[] {
-  const events: AgentEvent[] = [];
+type ReplayOptions = {
+  preserveToolContent?: boolean;
+  offset?: number;
+  partialStart?: boolean;
+  partialEnd?: boolean;
+  compact?: boolean;
+  includeContext?: boolean;
+};
+
+function pageNotice(options: ReplayOptions): AgentEvent[] {
+  const first = options.offset ?? 0;
+  const notices = [];
+  if (options.partialStart || options.partialEnd) notices.push('此页含长回合的部分步骤');
+  if (options.compact) notices.push('此页含较大的原生内容，工具详情已精简');
+  return notices.length
+    ? [{ type: 'activity', id: `agy-page-${first}`, name: notices.join('；'), status: 'unknown' }]
+    : [];
+}
+
+export function antigravityHistory(trajectory: ManagementRecord, options: ReplayOptions = {}): AgentEvent[] {
+  return projectAntigravityHistory(trajectory, options).events;
+}
+
+/** 跨页片段仅保存用来核对整轮的事实；读到真实轮头才结算，不制造实时“结果待核实”。 */
+export function projectAntigravityHistory(trajectory: ManagementRecord, options: ReplayOptions) {
+  const events: AgentEvent[] = pageNotice(options);
+  const fragments: Pick<SessionHistoryPageInfo, 'leading' | 'trailing' | 'sameFragment'> = {};
   let forkPoint: string | undefined;
   let failed = false;
-  let cancelled = false;
+  let omitted = false;
+  let cancelled: boolean | undefined;
   let started = false;
-  list(trajectory.steps).forEach((value, index) => {
+  let leading = !!options.partialStart;
+  const finish = (trailing: boolean) => {
+    const fragment = { failed, cancelled, omitted, forkPoint: trailing ? undefined : forkPoint };
+    if (leading) fragments.leading = fragment;
+    if (trailing) {
+      fragments.trailing = fragment;
+      if (leading) fragments.sameFragment = true;
+    }
+    if (!leading && !trailing && !omitted)
+      events.push({ type: 'turn_end', isError: failed || !!cancelled, ...(forkPoint ? { forkPoint } : {}) });
+  };
+  list(trajectory.steps).forEach((value, position) => {
+    const index = (options.offset ?? 0) + position;
     const step = object(value);
     if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && started) {
-      events.push({ type: 'turn_end', isError: failed || cancelled, ...(forkPoint ? { forkPoint } : {}) });
+      finish(false);
       forkPoint = undefined;
       failed = false;
-      cancelled = false;
+      omitted = false;
+      cancelled = undefined;
+      leading = false;
     }
     started = true;
+    omitted ||= step.type === OMITTED_HISTORY_STEP;
     const status = text(step.status);
     if (status === DONE && step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') forkPoint = String(index);
     else forkPoint = undefined;
-    cancelled = pendingCancellation(step, cancelled);
-    failed ||= FAILED.has(status) || !!errorMessage(step);
+    cancelled = recordedCancellation(step) ?? cancelled;
+    failed ||= failedStep(step);
     events.push(...stepEvents(step, index, options.preserveToolContent ?? false, trajectory));
   });
-  if (started) events.push({ type: 'turn_end', isError: failed || cancelled, ...(forkPoint ? { forkPoint } : {}) });
-  const last = object(list(trajectory.generatorMetadata).at(-1));
-  const context = object(object(last.chatModel).chatStartMetadata).contextWindowMetadata;
-  events.push(...contextEvent(context));
-  return events;
+  if (started) finish(!!options.partialEnd);
+  if (options.includeContext !== false) {
+    const last = object(list(trajectory.generatorMetadata).at(-1));
+    const context = object(object(last.chatModel).chatStartMetadata).contextWindowMetadata;
+    events.push(...contextEvent(context));
+  }
+  return { events, fragments };
 }
 
 function userInputEvents(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {

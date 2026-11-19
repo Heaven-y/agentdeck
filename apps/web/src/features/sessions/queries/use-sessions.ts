@@ -46,13 +46,10 @@ export function useSessionHistory(
 
 function readHistory(projectId: string | undefined, session: SessionRef | undefined, signal: AbortSignal) {
   if (!projectId || !session) throw new Error('尚未选择会话');
-  return sessionsApi.sessionEvents(projectId, session.sessionId, session.agent, signal);
+  return sessionsApi.fullSessionEvents(projectId, session.sessionId, session.agent, signal);
 }
 
-/**
- * 错误码是唯一可靠的分流依据：Antigravity 的 read() 固定返回 501 + session_not_replayable，
- * 不能把这条能力边界降级成普通的「加载失败」。
- */
+/** 只有适配器明确返回 session_not_replayable 才标记为不可回放，普通读取出错仍可重试。 */
 export function sessionHistoryFailure(error: unknown): SessionHistoryFailure {
   if (error instanceof ApiError) {
     if (error.code === 'session_not_replayable') return { kind: 'not-replayable', message: error.message };

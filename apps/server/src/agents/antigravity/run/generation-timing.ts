@@ -11,6 +11,12 @@ function milliseconds(value: unknown): number | undefined {
 const sameUsage = (value: unknown, expected: TokenUsage) =>
   JSON.stringify(stepUsage(value)) === JSON.stringify(expected);
 
+function generatorAt(trajectory: ManagementRecord, index: number) {
+  const entries: unknown[] = Array.isArray(trajectory.generatorMetadata) ? trajectory.generatorMetadata : [];
+  const offset = typeof trajectory.generatorMetadataOffset === 'number' ? trajectory.generatorMetadataOffset : 0;
+  return object(entries[index - offset]);
+}
+
 function matchedModel(
   trajectory: ManagementRecord,
   step: ManagementRecord,
@@ -18,14 +24,13 @@ function matchedModel(
 ): ManagementRecord | undefined {
   const metadata = object(step.metadata);
   const source = object(metadata.sourceTrajectoryStepInfo);
-  const entries = Array.isArray(trajectory.generatorMetadata) ? trajectory.generatorMetadata : [];
   if (
     !Number.isSafeInteger(source.metadataIndex) ||
     source.stepIndex !== index ||
     source.cascadeId !== trajectory.cascadeId
   )
     return;
-  const generator = object(entries[Number(source.metadataIndex)]);
+  const generator = generatorAt(trajectory, Number(source.metadataIndex));
   if (!metadata.executionId || generator.executionId !== metadata.executionId) return;
   if (!Array.isArray(generator.stepIndices) || generator.stepIndices.length !== 1 || generator.stepIndices[0] !== index)
     return;

@@ -7,6 +7,7 @@ import type {
   CompactionState,
   SessionActionInput,
   SessionRef,
+  SessionHistoryPageInfo,
 } from '@agentdeck/shared/conversation';
 import type { ProductSettings } from '@agentdeck/shared/settings';
 import type { ConnectionStatus } from '../../../lib/ws';
@@ -98,6 +99,10 @@ export type ChatState = {
   pendingClientTurnId?: string;
   interruptRequested: boolean;
   loadingHistory: boolean;
+  historyPage?: SessionHistoryPageInfo;
+  olderHistoryError?: { message: string; restart: boolean };
+  loadingOlderHistory: boolean;
+  loadOlderHistory(): Promise<void>;
   historyReloadNeeded: boolean;
   historyReplayable: boolean;
   historyError?: string;
@@ -155,6 +160,8 @@ export type ConversationView = Pick<
   | 'pendingClientTurnId'
   | 'interruptRequested'
   | 'loadingHistory'
+  | 'historyPage'
+  | 'olderHistoryError'
   | 'historyReloadNeeded'
   | 'historyReplayable'
   | 'historyError'

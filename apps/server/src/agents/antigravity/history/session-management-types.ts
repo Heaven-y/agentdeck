@@ -1,4 +1,5 @@
 import type { SessionForkInput } from '@agentdeck/shared/conversation';
+import type { HistoryWindow } from '../management/history-window';
 export type SubagentTrajectoryIdentity = { id: string; parentId: string; rootId: string; depth: number };
 
 /** 通过 Antigravity 自身服务管理会话，提供方仍负责归属和返回身份复核。 */
@@ -16,6 +17,8 @@ export type AntigravitySessionManagement = {
     dir: string,
     signal?: AbortSignal,
   ): Promise<{ trajectory: Record<string, unknown>; status?: string }>;
+  readHistoryWindow?(id: string, dir: string, before?: string, signal?: AbortSignal): Promise<HistoryWindow>;
+  readHistoryStep?(id: string, dir: string, index: number, signal?: AbortSignal): Promise<unknown>;
   /** 回合判定需要已核对完整性和空闲状态的轨迹；不可用时保留结果未确认。 */
   readTurnTrajectory?: AntigravitySessionManagement['readTrajectory'];
   rename?(id: string, dir: string, title: string): Promise<void>;

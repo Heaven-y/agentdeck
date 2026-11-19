@@ -9,10 +9,18 @@ import { useChat } from '../state/chat-store';
 type StatisticsItem = Extract<ChatItem, { kind: 'statistics' }>;
 
 /** 底部只代表最新用户轮次；正在运行或本轮无报告时不借用上一轮速度。 */
-export function latestComposerStatistics(items: ChatItem[], running: boolean): StatisticsItem | undefined {
+export function latestComposerStatistics(
+  items: ChatItem[],
+  running: boolean,
+  leadingFragment = false,
+): StatisticsItem | undefined {
   if (running) return;
   const start = items.findLastIndex((item) => item.kind === 'user');
-  const current = items.slice(start + 1);
+  if (leadingFragment && start < 0) return;
+  return statisticsForTurn(items.slice(start + 1));
+}
+
+function statisticsForTurn(current: ChatItem[]): StatisticsItem | undefined {
   const statistics = current.filter((item): item is StatisticsItem => item.kind === 'statistics');
   const failed = statistics.some((item) => item.turnFailed || (item.scope === 'turn' && item.isError));
   const status = current.findLast((item) => item.kind === 'turn-status');
@@ -90,7 +98,8 @@ export function ComposerStatus() {
   const items = useChat((state) => state.items);
   const running = useChat((state) => state.running || !!state.pendingClientTurnId);
   const inspect = useChat((state) => state.inspectItem);
-  const latest = latestComposerStatistics(items, running);
+  const leadingFragment = useChat((state) => !!state.historyPage?.leading);
+  const latest = latestComposerStatistics(items, running, leadingFragment);
   const start = items.findLastIndex((item) => item.kind === 'user');
   const status = !running && items.slice(start + 1).findLast((item) => item.kind === 'turn-status');
   return (

@@ -27,6 +27,8 @@ it('仅显示当前用户轮次的已完成统计，运行中或新轮缺值不�
   const first: ChatItem[] = [{ kind: 'user', id: 'one', text: '第一轮' }, statistics];
   expect(latestComposerStatistics(first, false)).toBe(statistics);
   expect(latestComposerStatistics(first, true)).toBeUndefined();
+  expect(latestComposerStatistics([statistics], false, true)).toBeUndefined();
+  expect(latestComposerStatistics(first, false, true)).toBe(statistics);
   expect(latestComposerStatistics([...first, { kind: 'user', id: 'two', text: '第二轮' }], false)).toBeUndefined();
   const step = {
     ...statistics,

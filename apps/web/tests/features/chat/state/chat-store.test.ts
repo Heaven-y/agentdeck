@@ -1454,3 +1454,85 @@ it('后台会话里的错误也能关闭，不动当前会话正文', () => {
   expect(state.background[origin]?.items.some((item) => item.kind === 'error')).toBe(false);
   expect(state.items).toEqual([]);
 });
+
+it('AGY 老页失败不清掉最新内容；重试前插且保留行、上下文和草稿，切换后忽略迟到页', async () => {
+  const target = { agent: 'antigravity' as const, sessionId: 'agy-history' };
+  const page = (start: number, before: string | undefined, text: string) => ({
+    session: { ...target, summary: '分页历史', lastModified: 1 },
+    page: { start, before },
+    events: [{ type: 'user_message' as const, text }],
+  });
+  let finish: ((data: ReturnType<typeof page>) => void) | undefined;
+  const usage = { source: 'antigravity_estimate' as const, usedTokens: 53, windowTokens: 1000 };
+  const latestPage = page(40, 'before40', '最新输入');
+  vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValueOnce({
+    ...latestPage,
+    events: [...latestPage.events, { type: 'context', usage }],
+  });
+  const request = vi
+    .spyOn(sessionsApi, 'olderSessionEvents')
+    .mockRejectedValueOnce(new ApiError(503, '较早历史暂时不可用'))
+    .mockResolvedValueOnce(page(10, 'before10', '较早输入'))
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+  await useChat.getState().openSession(target);
+  useChat.getState().setDraft('保留草稿');
+  const latest = useChat.getState().items[0];
+  await useChat.getState().loadOlderHistory();
+  expect(useChat.getState().items).toEqual([latest]);
+  expect(useChat.getState().olderHistoryError?.message).toBe('较早历史暂时不可用');
+  expect(useChat.getState().historyError).toBeUndefined();
+  await useChat.getState().loadOlderHistory();
+  const state = useChat.getState();
+  expect(state.items.map((item) => item.kind === 'user' && item.text)).toEqual(['较早输入', '最新输入']);
+  expect(state.items[1]).toBe(latest);
+  expect(state.items[0]?.id).not.toBe(latest?.id);
+  expect(state.contextUsage).toEqual(usage);
+  expect(state.draft).toBe('保留草稿');
+  const pending = state.loadOlderHistory();
+  expect(request.mock.calls.at(-1)?.[2]).toBe('before10');
+  const signal = request.mock.calls.at(-1)?.[3];
+  state.newSession('claude');
+  expect(signal?.aborted).toBe(true);
+  finish?.(page(0, undefined, '不允许串入'));
+  await pending;
+  expect(useChat.getState().items).toEqual([]);
+  expect(useChat.getState().loadingOlderHistory).toBe(false);
+});
+
+it('长回合补齐两段旧页后只结算一次，恢复绝对分叉点且保留最后一个片段的行', async () => {
+  const target = { agent: 'antigravity' as const, sessionId: 'agy-long-turn' };
+  const session = { ...target, summary: '长回合', lastModified: 1 };
+  const final = { failed: false, cancelled: false, omitted: false, forkPoint: '109' };
+  const middle = { failed: false, cancelled: true, omitted: false };
+  const first = { failed: false, omitted: false };
+  vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValueOnce({
+    session,
+    page: { start: 96, before: 'b96', leading: final },
+    events: [{ type: 'text', delta: '回合尾部答复' }],
+  });
+  vi.spyOn(sessionsApi, 'olderSessionEvents')
+    .mockResolvedValueOnce({
+      session,
+      page: { start: 48, before: 'b48', leading: middle, trailing: middle, sameFragment: true },
+      events: [{ type: 'text', delta: '中间片段' }],
+    })
+    .mockResolvedValueOnce({
+      session,
+      page: { start: 0, trailing: first },
+      events: [{ type: 'user_message', text: '长回合的起点' }],
+    });
+  await useChat.getState().openSession(target);
+  const reply = useChat.getState().items[0];
+  await useChat.getState().loadOlderHistory();
+  expect(useChat.getState().items.some((item) => item.kind === 'fork-point')).toBe(false);
+  await useChat.getState().loadOlderHistory();
+  const items = useChat.getState().items;
+  expect(items.filter((item) => item.kind === 'fork-point').map((item) => item.pointId)).toEqual(['109']);
+  expect(items.find((item) => item.id === reply?.id)).toBe(reply);
+  expect(items.some((item) => item.kind === 'turn-status')).toBe(false);
+});

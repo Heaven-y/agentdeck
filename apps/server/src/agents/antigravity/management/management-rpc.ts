@@ -8,13 +8,15 @@ export type ManagementMethod =
   | 'GetCascadeTrajectory'
   | 'GetCascadeTrajectorySteps'
   | 'GetConversationMetadata'
+  | 'GetCascadeTrajectoryGeneratorMetadata'
   | 'ForkConversation'
   | 'DeleteCascadeTrajectory'
   | 'JetboxDeleteSummary'
   | 'UpdateConversationAnnotations';
-export type ManagementBudget = 'history';
+export type ManagementBudget = 'history' | 'page';
 export type ManagementBackend = {
   request(method: ManagementMethod, params: ManagementRecord, budget?: ManagementBudget): Promise<ManagementRecord>;
+  readInitialUpdate?(params: ManagementRecord, limit?: number): Promise<ManagementRecord>;
   close(): Promise<void>;
 };
 export const managementObject = (value: unknown): ManagementRecord =>
@@ -23,7 +25,8 @@ export const managementText = (value: unknown) => (typeof value === 'string' ? v
 export const managementFailure = () =>
   new SessionError(503, 'session_runtime_failed', 'Antigravity 原生管理请求失败，请核对 CLI 版本与本机配置。');
 const MIB = 1024 * 1024;
-export const managementByteLimit = (budget?: ManagementBudget) => (budget === 'history' ? 64 : 32) * MIB;
+export const managementByteLimit = (budget?: ManagementBudget) =>
+  (budget === 'history' ? 64 : budget === 'page' ? 4 : 32) * MIB;
 export const historyLimitExceeded = () =>
   new SessionError(
     503,

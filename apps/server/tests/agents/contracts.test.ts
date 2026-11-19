@@ -11,7 +11,10 @@ it('固定SDK控制方法与原生会话管理均为必需契约', () => {
   expectTypeOf<Controls>().toEqualTypeOf<Pick<Query, keyof Controls>>();
   type ClaudeManagement = Omit<ClaudeSessionsApi, 'listProject'>;
   expectTypeOf<ClaudeManagement>().toEqualTypeOf<Required<ClaudeManagement>>();
-  type Management = Omit<SessionProvider, 'capabilities' | 'listProjects' | 'page' | 'subagents' | 'media'>;
+  type Management = Omit<
+    SessionProvider,
+    'capabilities' | 'listProjects' | 'page' | 'subagents' | 'media' | 'readHistoryPage'
+  >;
   expectTypeOf<Management>().toEqualTypeOf<Required<Management>>();
   type Operations = Parameters<typeof createSessionsService>[1];
   expectTypeOf<Operations>().toEqualTypeOf<NonNullable<Operations>>();

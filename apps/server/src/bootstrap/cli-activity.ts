@@ -30,6 +30,13 @@ export function createCliActivity() {
 }
 export type CliActivity = ReturnType<typeof createCliActivity>;
 
+function guardedHistoryPage(agent: AgentKind, provider: SessionProvider, activity: CliActivity) {
+  const read = provider.readHistoryPage?.bind(provider);
+  return read
+    ? { readHistoryPage: (...args: Parameters<typeof read>) => activity.run(agent, () => read(...args)) }
+    : {};
+}
+
 export function guardSessionProvider(
   agent: AgentKind,
   provider: SessionProvider,
@@ -44,6 +51,7 @@ export function guardSessionProvider(
     ...(media ? { media: (...args: Parameters<typeof media>) => activity.run(agent, () => media(...args)) } : {}),
     list: (...args) => activity.run(agent, () => provider.list(...args)),
     read: (...args) => activity.run(agent, () => provider.read(...args)),
+    ...guardedHistoryPage(agent, provider, activity),
     assertBelongs: (...args) => activity.run(agent, () => provider.assertBelongs(...args)),
     mutate: (...args) => activity.run(agent, () => provider.mutate(...args)),
     fork: (...args) => activity.run(agent, () => provider.fork(...args)),

@@ -1,3 +1,9 @@
+import {
+  HistoryPageControl,
+  HistoryPageViewport,
+  useHistoryPages,
+  type HistoryPagination,
+} from '../timeline/history-pages';
 import { ArrowDown, Bot, ChevronRight, Layers, User, Wrench } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
@@ -57,7 +63,7 @@ function StepRow({
   const role = trajectoryRole(item);
   const Icon = roleIcons[role];
   return (
-    <div className="trajectory-entry" data-role={role}>
+    <div className="trajectory-entry" data-role={role} data-trajectory-row={row.id}>
       <button
         type="button"
         onClick={inspect}
@@ -103,7 +109,7 @@ function TrajectoryEntry({
   const selected = selectedItemId === (row.kind === 'step' ? row.item.id : row.user?.id);
   if (row.kind === 'turn')
     return (
-      <div className="trajectory-turn">
+      <div className="trajectory-turn" data-trajectory-row={row.id}>
         <div className="trajectory-turn-label">第 {row.number} 轮</div>
         {row.user && (filter === 'all' || filter === 'user') && (
           <button
@@ -136,23 +142,27 @@ export function TrajectoryView({
   context,
   selectedItemId,
   inspect,
+  pagination,
 }: {
   items: ChatItem[];
   running: boolean;
   context?: ContextUsage | null;
   selectedItemId?: string;
   inspect(id: string): void;
+  pagination?: HistoryPagination;
 }) {
   const [filter, setFilter] = useState<TrajectoryFilter>('all');
   const rows = useMemo(() => filterTrajectory(projectTrajectory(items), filter), [items, filter]);
+  const pages = useHistoryPages(rows, pagination);
   const list = useRef<VirtuosoHandle>(null);
   const atBottom = useRef(true);
   const [bottom, setBottom] = useState(true);
+  const tail = items.at(-1);
   useEffect(() => {
     if (running && atBottom.current) list.current?.autoscrollToBottom();
-  }, [items, running]);
+  }, [tail, running]);
   return (
-    <div className="trajectory-view relative flex min-h-0 flex-1 flex-col">
+    <HistoryPageViewport className="trajectory-view relative flex min-h-0 flex-1 flex-col" start={pagination?.start}>
       <div className="trajectory-toolbar">
         <SegmentedControl<TrajectoryFilter>
           label="轨迹类型"
@@ -166,19 +176,23 @@ export function TrajectoryView({
       </div>
       {(filter === 'all' || filter === 'context') && <TrajectoryContext usage={context} />}
       {!rows.length ? (
-        <p className="m-auto px-4 py-8 text-sm text-muted-foreground">
-          {context && filter === 'context' ? '暂无压缩事件' : '暂无此类记录'}
-        </p>
+        <>
+          <HistoryPageControl context={pagination} />
+          <p className="m-auto px-4 py-8 text-sm text-muted-foreground">
+            {context && filter === 'context' ? '暂无压缩事件' : '暂无此类记录'}
+          </p>
+        </>
       ) : (
         <Virtuoso
           key={filter}
           ref={list}
+          {...pages}
           className="min-h-0 flex-1"
           data={rows}
           computeItemKey={(_index, row) => row.id}
           defaultItemHeight={38}
           increaseViewportBy={{ top: 200, bottom: 200 }}
-          initialTopMostItemIndex={initialPosition(running, filter)}
+          initialTopMostItemIndex={initialPosition(running || !!pagination, filter)}
           followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}
           atBottomThreshold={32}
           atBottomStateChange={(value) => {
@@ -204,6 +218,6 @@ export function TrajectoryView({
           回到底部
         </button>
       )}
-    </div>
+    </HistoryPageViewport>
   );
 }

@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { resolveLocalCommand, type ResolvedCommand } from '../../../platform/process/executable';
 import { AntigravityLines } from '../run/lines';
 import { antigravityBackgroundEnvironment } from '../run/process-environment';
+import { readInitialAgentUpdate } from './history-stream';
 import {
   managementFailure,
   managementObject,
@@ -230,6 +231,10 @@ export async function startManagementBackend(options: ManagementProcessOptions):
       request: (method, params, budget) =>
         process?.alive
           ? managementRequest(port, method, params, { signal: requests.signal, budget })
+          : Promise.reject(managementFailure()),
+      readInitialUpdate: (params, limit) =>
+        process?.alive
+          ? readInitialAgentUpdate(port, params, { signal: requests.signal, limit })
           : Promise.reject(managementFailure()),
       close,
     };

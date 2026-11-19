@@ -6,13 +6,23 @@ import type { ChatItem } from '../model/conversation-events';
 import { TimelineRowView, projectTimeline } from '.';
 import { UserMessageNavigation } from './UserMessageNavigation';
 import { useVisibleMessage } from './use-visible-message';
+import { HistoryPageViewport, useHistoryPages, type HistoryPagination } from './history-pages';
 
 /** 动态测量和跟随只交给Virtuoso；展开状态留在列表外，虚拟卸载不丢选择。 */
-export function ConversationTimeline({ items, running }: { items: ChatItem[]; running: boolean }) {
+export function ConversationTimeline({
+  items,
+  running,
+  pagination,
+}: {
+  items: ChatItem[];
+  running: boolean;
+  pagination?: HistoryPagination;
+}) {
   const rows = useMemo(
     () => projectTimeline(items.filter((item) => item.kind !== 'statistics' && item.kind !== 'turn-status')),
     [items],
   );
+  const pages = useHistoryPages(rows, pagination);
   const list = useRef<VirtuosoHandle>(null);
   const atBottom = useRef(true);
   const [bottom, setBottom] = useState(true);
@@ -27,14 +37,16 @@ export function ConversationTimeline({ items, running }: { items: ChatItem[]; ru
       return next;
     });
   }, []);
-  // 同一个assistant条目持续增高不会改变条目数量；只在贴底时触发官方跟随。
+  // 只跟随尾部更新；加载更早的页不能因为短列表恰好贴底而抢走阅读位置。
+  const tail = items.at(-1);
   useEffect(() => {
     if (atBottom.current) list.current?.autoscrollToBottom();
-  }, [items]);
+  }, [tail]);
   return (
-    <div className="relative min-h-0 flex-1">
+    <HistoryPageViewport className="relative min-h-0 flex-1" start={pagination?.start}>
       <Virtuoso
         ref={list}
+        {...pages}
         className="h-full"
         data={rows}
         computeItemKey={(_index, row) => row.id}
@@ -53,7 +65,9 @@ export function ConversationTimeline({ items, running }: { items: ChatItem[]; ru
         aria-label="对话内容"
         aria-live="polite"
         aria-busy={running}
-        itemContent={(index, row) => <TimelineRowView row={row} index={index} expanded={expanded} setOpen={setOpen} />}
+        itemContent={(index, row) => (
+          <TimelineRowView row={row} index={index - pages.firstItemIndex} expanded={expanded} setOpen={setOpen} />
+        )}
       />
       <UserMessageNavigation
         rows={rows}
@@ -75,6 +89,6 @@ export function ConversationTimeline({ items, running }: { items: ChatItem[]; ru
           回到底部
         </button>
       )}
-    </div>
+    </HistoryPageViewport>
   );
 }

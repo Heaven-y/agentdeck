@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import { SessionError } from '../../errors';
@@ -10,6 +10,9 @@ import { sameSessionDirectory } from '../../common/history/session-scope';
 import { nativeSessionDirectory } from '../../common/history/session-ownership';
 import type { AntigravitySessionManagement, SubagentTrajectoryIdentity } from '../history/session-management-types';
 import { startManagementBackend } from './management-process';
+import { readAntigravityForkStep, readAntigravityHistoryStep, readAntigravityHistoryWindow } from './history-window';
+import { NativeHistoryPagingUnavailable } from './history-stream';
+import { assertDirectory, missing } from './trajectory-scope';
 import { completeTrajectory } from '../history/trajectory-read';
 import {
   managementFailure,
@@ -33,31 +36,9 @@ type Options = {
 function assertId(id: unknown): asserts id is string {
   if (!NativeSessionIdSchema.safeParse(id).success) throw managementFailure();
 }
-function missing() {
-  return new SessionError(404, 'session_missing', 'Antigravity 在当前存储中没有此会话。');
-}
-function directories(metadata: ManagementRecord): string[] {
-  if (Array.isArray(metadata.workspaceUris))
-    return metadata.workspaceUris.filter((value): value is string => typeof value === 'string');
-  return Array.isArray(metadata.workspaces)
-    ? metadata.workspaces.map((value) => text(object(value).workspaceFolderAbsoluteUri)).filter(Boolean)
-    : [];
-}
-async function assertDirectory(metadata: ManagementRecord, dir: string) {
-  const uris = [...new Set(directories(metadata))];
-  if (uris.length !== 1) throw missing();
-  let directory: string;
-  try {
-    directory = fileURLToPath(uris[0]!);
-  } catch {
-    throw missing();
-  }
-  if (!(await sameSessionDirectory(directory, dir))) throw missing();
-}
-
 type RunOptions = {
   recoverDelete?: boolean;
-  trajectory?: 'history' | 'turn';
+  trajectory?: 'history' | 'turn' | 'fork';
   signal?: AbortSignal;
   readOnly?: boolean;
   child?: SubagentTrajectoryIdentity;
@@ -142,6 +123,10 @@ async function recheckTurnPages(
     unstableTurnTrajectory();
 }
 
+function requiresStableTotal(kind: RunOptions['trajectory'], total: unknown) {
+  return kind === 'turn' || (kind === 'fork' && total !== undefined);
+}
+
 async function checked(backend: ManagementBackend, id: string, dir: string, options: RunOptions = {}) {
   const budget = options.trajectory === 'history' ? 'history' : undefined;
   const result = await backend.request(
@@ -152,7 +137,7 @@ async function checked(backend: ManagementBackend, id: string, dir: string, opti
   const trajectory = await idleTrajectory(result, id, dir);
   if (!options.trajectory) return trajectory;
   const total = result.numTotalSteps;
-  const checkStable = options.trajectory === 'turn';
+  const checkStable = requiresStableTotal(options.trajectory, total);
   if (checkStable && !Number.isSafeInteger(total)) unstableTurnTrajectory();
   const complete = await completeTrajectory(backend, result, options.signal, budget);
   const firstPage = Array.isArray(trajectory.steps) ? trajectory.steps.length : 0;
@@ -199,18 +184,30 @@ async function clearSummary(backend: ManagementBackend, id: string, ready: (id: 
   throw new SessionError(503, 'session_runtime_failed', '原生会话已删除，摘要清理尚未确认；请重试删除以完成清理。');
 }
 
-function forkPoint(trajectory: ManagementRecord, requested?: string): number {
-  if (!Array.isArray(trajectory.steps) || !trajectory.steps.length)
-    throw new SessionError(400, 'invalid_fork_point', 'Antigravity 会话还没有可用于分支的消息。');
-  const point =
-    requested === undefined ? trajectory.steps.length - 1 : /^\d+$/.test(requested) ? Number(requested) : -1;
-  if (!Number.isSafeInteger(point) || point < 0 || point >= trajectory.steps.length)
+function forkIndex(total: number, requested?: string): number {
+  if (!total) throw new SessionError(400, 'invalid_fork_point', 'Antigravity 会话还没有可用于分支的消息。');
+  const point = requested === undefined ? total - 1 : /^\d+$/.test(requested) ? Number(requested) : -1;
+  if (!Number.isSafeInteger(point) || point < 0 || point >= total)
     throw new SessionError(400, 'invalid_fork_point', 'Antigravity 原生分支位置无效。');
-  const status = text(object(trajectory.steps[point]).status);
-  if (status !== 'CORTEX_STEP_STATUS_DONE') throw new SessionError(409, 'session_busy', '所选原生步骤尚未完成。');
-  if (object(trajectory.steps[point]).type === 'CORTEX_STEP_TYPE_USER_INPUT')
-    throw new SessionError(400, 'invalid_fork_point', '请从已有回复之后创建分支，最后一条用户消息还没有回复。');
   return point;
+}
+
+async function forkPoint(backend: ManagementBackend, id: string, dir: string, requested?: string) {
+  let selected: { point: number; step: unknown };
+  try {
+    selected = await readAntigravityForkStep(backend, { id, dir }, (total) => forkIndex(total, requested));
+  } catch (error) {
+    if (!(error instanceof NativeHistoryPagingUnavailable)) throw error;
+    const trajectory = await checked(backend, id, dir, { trajectory: 'fork' });
+    const steps = Array.isArray(trajectory.steps) ? trajectory.steps : [];
+    const point = forkIndex(steps.length, requested);
+    selected = { point, step: steps[point] };
+  }
+  const step = object(selected.step);
+  if (step.status !== 'CORTEX_STEP_STATUS_DONE') throw new SessionError(409, 'session_busy', '所选原生步骤尚未完成。');
+  if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT')
+    throw new SessionError(400, 'invalid_fork_point', '请从已有回复之后创建分支，最后一条用户消息还没有回复。');
+  return selected.point;
 }
 
 /** 只借助 agy 自身存储操作；不手动复制轨迹、改 SQLite，亦不发送模型消息。 */
@@ -247,17 +244,16 @@ export function createAntigravitySessionManagement(
     signal?.throwIfAborted();
     if (controller.signal.aborted) throw managementFailure();
   }
-  async function run<T>(
-    id: string,
-    dir: string,
-    action: (backend: ManagementBackend, trajectory: ManagementRecord) => Promise<T>,
-    runOptions: RunOptions = {},
+  async function withBackend<T>(
+    { id, dir }: { id: string; dir: string },
+    action: (backend: ManagementBackend) => Promise<T>,
+    requestSignal?: AbortSignal,
   ) {
     assertId(id);
-    assertActive(runOptions.signal);
+    assertActive(requestSignal);
     if (!path.isAbsolute(dir)) throw missing();
     // 本次读取预算必须覆盖后端初始化，不能等启动完成后才传入取消信号。
-    const signal = runOptions.signal ? AbortSignal.any([controller.signal, runOptions.signal]) : controller.signal;
+    const signal = requestSignal ? AbortSignal.any([controller.signal, requestSignal]) : controller.signal;
     const pending = start(dir, signal);
     starting.add(pending);
     let backend: ManagementBackend;
@@ -268,19 +264,45 @@ export function createAntigravitySessionManagement(
     }
     active.add(backend);
     const abort = () => void backend.close().catch(() => undefined);
-    runOptions.signal?.addEventListener('abort', abort, { once: true });
+    requestSignal?.addEventListener('abort', abort, { once: true });
     try {
-      assertActive(runOptions.signal);
-      const trajectory = await checkOrRecover(backend, id, dir, runOptions);
-      runOptions.signal?.throwIfAborted();
-      return await action(backend, trajectory);
+      assertActive(requestSignal);
+      const result = await action(backend);
+      assertActive(requestSignal);
+      return result;
     } finally {
-      runOptions.signal?.removeEventListener('abort', abort);
+      requestSignal?.removeEventListener('abort', abort);
       await backend.close();
       active.delete(backend);
     }
   }
+  function run<T>(
+    id: string,
+    dir: string,
+    action: (backend: ManagementBackend, trajectory: ManagementRecord) => Promise<T>,
+    options: RunOptions = {},
+  ) {
+    return withBackend(
+      { id, dir },
+      async (backend) => {
+        const trajectory = await checkOrRecover(backend, id, dir, options);
+        assertActive(options.signal);
+        return action(backend, trajectory);
+      },
+      options.signal,
+    );
+  }
+  const pageSignal = (request?: AbortSignal) =>
+    AbortSignal.any([AbortSignal.timeout(18_000), ...(request ? [request] : [])]);
   return {
+    readHistoryWindow: (id, dir, before, signal) =>
+      withBackend(
+        { id, dir },
+        (backend) => readAntigravityHistoryWindow(backend, { id, dir }, before),
+        pageSignal(signal),
+      ),
+    readHistoryStep: (id, dir, step, signal) =>
+      withBackend({ id, dir }, (backend) => readAntigravityHistoryStep(backend, { id, dir }, step), pageSignal(signal)),
     readSubagentTrajectory: (id, dir, child, signal) =>
       run(id, dir, (_backend, result) => Promise.resolve(result as { trajectory: ManagementRecord; status?: string }), {
         readOnly: true,
@@ -334,8 +356,8 @@ export function createAntigravitySessionManagement(
         { recoverDelete: true },
       ),
     fork: (id, dir, input) =>
-      run(id, dir, async (backend, trajectory) => {
-        const point = forkPoint(trajectory, input.pointId);
+      withBackend({ id, dir }, async (backend) => {
+        const point = await forkPoint(backend, id, dir, input.pointId);
         const response = await backend.request('ForkConversation', {
           sourceCascadeId: id,
           forkAtStepIndex: point,

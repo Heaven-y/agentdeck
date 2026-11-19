@@ -21,7 +21,7 @@ function detail(id = 'source', overrides: ManagementRecord = {}) {
     },
   };
 }
-function fixture(source = detail()) {
+function fixture(source: ManagementRecord = detail()) {
   const request = vi.fn(async (method: string, input: ManagementRecord): Promise<ManagementRecord> => {
     if (method === 'ForkConversation') return { newCascadeId: 'forked' };
     if (method === 'GetCascadeTrajectory')
@@ -233,4 +233,38 @@ it('关闭管理器会关闭活跃后端并拒绝后续调用', async () => {
   await expect(deleting).rejects.toMatchObject({ code: 'session_missing' });
   await expect(f.service.delete('source', dir)).rejects.toMatchObject({ code: 'session_runtime_failed' });
   expect(f.backend).toHaveBeenCalledOnce();
+});
+
+it('原生旧首包被裁剪时从末尾分支仍取原生最后一步，保留目标身份核对', async () => {
+  const step = { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE' };
+  const f = fixture({ ...detail(), numTotalSteps: 10 });
+  const impl = f.request.getMockImplementation()!;
+  f.request.mockImplementation(async (method, input) =>
+    method === 'GetCascadeTrajectory' && input.cascadeId === 'forked'
+      ? detail('forked', { parentReferences: [{ conversationId: 'source', stepIndex: 9 }] })
+      : impl(method, input),
+  );
+  const backend = async () => ({
+    request: f.request,
+    close: f.close,
+    readInitialUpdate: async (params: ManagementRecord) => {
+      const pageBounds = params.initialStepsPageBounds as { startIndex: number; endIndexExclusive: number };
+      const empty = pageBounds.endIndexExclusive === 0;
+      return {
+        conversationId: 'source',
+        trajectoryId: 'root-record',
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        mainTrajectoryUpdate: {
+          metadata: { workspaceUris: [uri] },
+          stepsUpdate: { pageBounds, totalLength: 10, steps: empty ? [] : [step], indices: empty ? [] : [9] },
+        },
+      };
+    },
+  });
+  const service = createAntigravitySessionManagement({ backend, summaryReady: f.summaryReady });
+  expect(await service.fork('source', dir, {})).toEqual({ sessionId: 'forked' });
+  expect(f.request.mock.calls.map(([method, input]) => [method, input.cascadeId ?? input.forkAtStepIndex])).toEqual([
+    ['ForkConversation', 9],
+    ['GetCascadeTrajectory', 'forked'],
+  ]);
 });

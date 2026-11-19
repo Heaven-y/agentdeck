@@ -152,6 +152,7 @@ export const useChat = create<ChatState>()((set, get) => {
     dismissInteraction(id) {
       set((state) => ({ nativeInteractions: state.nativeInteractions.filter((item) => item.id !== id) }));
     },
+    loadOlderHistory: history.loadOlder,
     cancelHistoryRead: () => {
       history.changeSelection();
     },

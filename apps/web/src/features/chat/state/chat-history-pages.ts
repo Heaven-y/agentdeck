@@ -1,0 +1,46 @@
+import type { HistoryTurnFragment, SessionHistoryPageInfo } from '@agentdeck/shared/conversation';
+import { reduceChat, type ChatItem } from '../../conversation/model/conversation-events';
+import type { ChatState } from './chat-state';
+
+function joinFragments(older: HistoryTurnFragment, newer: HistoryTurnFragment): HistoryTurnFragment {
+  return {
+    failed: older.failed || newer.failed,
+    cancelled: newer.cancelled ?? older.cancelled,
+    omitted: older.omitted || newer.omitted,
+    forkPoint: newer.forkPoint,
+  };
+}
+
+/** 只结算跨页的那个回合；已经渲染的正文、工具和选择继续使用原有行身份。 */
+export function prependHistoryPage(
+  current: Pick<ChatState, 'items' | 'historyPage'>,
+  older: ChatItem[],
+  page: SessionHistoryPageInfo,
+): Pick<ChatState, 'items' | 'historyPage'> {
+  const newer = current.historyPage?.leading;
+  if (!newer || !page.trailing) return { items: [...older, ...current.items], historyPage: page };
+  const turn = joinFragments(page.trailing, newer);
+  if (page.sameFragment) return { items: [...older, ...current.items], historyPage: { ...page, leading: turn } };
+  if (turn.omitted) return { items: [...older, ...current.items], historyPage: page };
+
+  return { items: finishJoinedItems(older, current.items, turn), historyPage: page };
+}
+
+function finishJoinedItems(older: ChatItem[], newer: ChatItem[], turn: HistoryTurnFragment) {
+  const start = Math.max(
+    0,
+    older.findLastIndex((item) => item.kind === 'user'),
+  );
+  const nextTurn = newer.findIndex((item) => item.kind === 'user');
+  const end = nextTurn < 0 ? newer.length : nextTurn;
+  const items = [...older.slice(start), ...newer.slice(0, end)];
+  const finished = reduceChat(items, {
+    type: 'turn_end',
+    isError: turn.failed || !!turn.cancelled,
+    forkPoint: turn.forkPoint,
+  });
+  const point = finished.at(-1);
+  if (finished.length > items.length && point?.kind === 'fork-point')
+    finished[finished.length - 1] = { ...point, id: `history-fork:${point.pointId}` };
+  return [...older.slice(0, start), ...finished, ...newer.slice(end)];
+}

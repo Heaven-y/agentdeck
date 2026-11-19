@@ -63,3 +63,29 @@ export type SessionRecord = SessionRef & {
   nativeModel?: string;
 };
 export type SessionHistory = { session: SessionRecord; events: AgentEvent[]; actualModel?: string };
+
+export const SessionHistoryPageQuerySchema = z.strictObject({
+  before: z
+    .string()
+    .min(1)
+    .max(800)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+});
+/** start 是原生步骤索引；无游标表示已经到达会话起点，旧原生接口无分页元数据。 */
+export type SessionHistoryPageInfo = {
+  start: number;
+  before?: string;
+  /** 与相邻页共同构成一轮；sameFragment 表示整页不含新的用户轮头。 */
+  leading?: HistoryTurnFragment;
+  trailing?: HistoryTurnFragment;
+  sameFragment?: boolean;
+};
+export type HistoryTurnFragment = {
+  failed: boolean;
+  /** 本片段最后一次明确取消或恢复；未提供表示不改变较早片段的状态。 */
+  cancelled?: boolean;
+  omitted: boolean;
+  forkPoint?: string;
+};
+export type SessionHistoryPage = SessionHistory & { page?: SessionHistoryPageInfo };

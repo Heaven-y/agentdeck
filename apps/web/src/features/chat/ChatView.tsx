@@ -7,6 +7,7 @@ import { useProductSettings } from '../settings/general/use-product-settings';
 import { useChat } from './state/chat-store';
 import { Composer } from './composer/Composer';
 import { ConversationTimeline } from '../conversation/timeline/ConversationTimeline';
+import type { HistoryPagination } from '../conversation/timeline/history-pages';
 import { LiveTrajectory } from './timeline/LiveTrajectory';
 import { LiveConversationSurface } from './timeline/LiveConversationSurface';
 import { RunStatus } from './runtime/RunStatus';
@@ -81,9 +82,46 @@ function RecoveredHistory() {
           disabled={busy}
           onClick={() => void openSession({ agent, sessionId }, { preserveDraft: true })}
         >
-          重新读取完整历史
+          {agent === 'antigravity' ? '重新读取最近记录' : '重新读取完整历史'}
         </button>
       )}
+    </div>
+  );
+}
+
+function restartHistory() {
+  const state = useChat.getState();
+  if (state.sessionId)
+    void state.openSession({ agent: state.agent, sessionId: state.sessionId }, { preserveDraft: true });
+}
+function useHistoryPagination(): HistoryPagination | undefined {
+  const page = useChat((s) => s.historyPage);
+  const error = useChat((s) => s.olderHistoryError);
+  const loading = useChat((s) => s.loadingOlderHistory);
+  const load = useChat((s) => s.loadOlderHistory);
+  const restartDisabled = useChat((s) => s.running || !!s.pendingClientTurnId || s.permissionSaving);
+  return page
+    ? {
+        start: page.start,
+        hasOlder: !!page.before,
+        loading,
+        error,
+        load: () => void load(),
+        restart: restartHistory,
+        restartDisabled,
+      }
+    : undefined;
+}
+
+function EmptyConversation({ hasSession, notice }: { hasSession: boolean; notice?: string }) {
+  return (
+    <div className="m-auto max-w-lg px-6 py-12 text-center">
+      <h2 className="text-[26px] font-medium leading-8 tracking-tight">
+        {hasSession ? '继续原生会话' : '从一条消息开始'}
+      </h2>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        {notice ?? (hasSession ? '原生记录中没有可显示的消息，可以继续发送。' : '描述你想完成的任务。')}
+      </p>
     </div>
   );
 }
@@ -96,22 +134,15 @@ function Messages({ view }: { view: 'chat' | 'trajectory' }) {
   const historyError = useChat((s) => s.historyError);
   const historyNotice = useChat((s) => s.historyNotice);
   const sessionId = useChat((s) => s.sessionId);
+  const pagination = useHistoryPagination();
   if (loading) return <p className="m-auto text-sm text-muted-foreground">正在加载会话…</p>;
   if (historyError && items.length === 0) return null;
-  if (view === 'trajectory') return <LiveTrajectory key={version} items={items} running={running} />;
-  if (items.length === 0)
-    return (
-      <div className="m-auto max-w-lg px-6 py-12 text-center">
-        <h2 className="text-[26px] font-medium leading-8 tracking-tight">
-          {sessionId ? '继续原生会话' : '从一条消息开始'}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          {historyNotice ?? (sessionId ? '原生记录中没有可显示的消息，可以继续发送。' : '描述你想完成的任务。')}
-        </p>
-      </div>
-    );
+  if (view === 'trajectory')
+    return <LiveTrajectory key={version} items={items} running={running} pagination={pagination} />;
+  if (items.length === 0 && !pagination?.hasOlder)
+    return <EmptyConversation hasSession={!!sessionId} notice={historyNotice} />;
 
-  return <ConversationTimeline key={version} items={items} running={running} />;
+  return <ConversationTimeline key={version} items={items} running={running} pagination={pagination} />;
 }
 
 export function ChatView({ workspace }: { workspace: Workspace }) {

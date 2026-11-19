@@ -9,7 +9,12 @@ it('安装排斥在途原生读取，维护期间拒绝同来源新读取，其�
     new Promise<void>((resolve) => {
       release = resolve;
     });
-  const reading = activity.run('antigravity', pending);
+  const provider = guardSessionProvider(
+    'antigravity',
+    { readHistoryPage: pending } as unknown as SessionProvider,
+    activity,
+  );
+  const reading = provider.readHistoryPage!('session', 'project', undefined);
   await expect(activity.exclusive('antigravity', async () => undefined)).rejects.toMatchObject({ code: 'agent_busy' });
   release();
   await reading;

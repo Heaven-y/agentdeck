@@ -32,6 +32,8 @@ const fields = [
   'pendingClientTurnId',
   'interruptRequested',
   'loadingHistory',
+  'historyPage',
+  'olderHistoryError',
   'historyReloadNeeded',
   'historyReplayable',
   'historyError',
@@ -139,6 +141,8 @@ function trimConversationBodies(background: ChatState['background']) {
       compaction: undefined,
       inspectedItemId: undefined,
       historyReloadNeeded: true,
+      historyPage: undefined,
+      olderHistoryError: undefined,
     };
     count--;
     bytes -= sizes[index]!;
