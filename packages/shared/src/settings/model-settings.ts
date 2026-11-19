@@ -26,6 +26,8 @@ export type NativeModelSettingsDocument = {
 };
 /** 所选模型在下一次启动时使用的原生窗口；未知时省略，不以历史窗口补造。 */
 export type NativeContextWindow = { model?: string; windowTokens?: number };
+/** 只在原生 CLI 返回已确认的账号时提供邮箱。 */
+export type AntigravityAccount = { email?: string };
 export const NativeModelSettingsInputSchema = z.strictObject({
   revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
   changes: z.record(

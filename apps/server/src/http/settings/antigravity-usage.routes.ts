@@ -1,7 +1,20 @@
 import type { AntigravityOfficialUsage } from '@agentdeck/shared/conversation';
+import type { AntigravityAccount } from '@agentdeck/shared/settings';
 import type { FastifyInstance } from 'fastify';
 import { SessionError } from '../../agents/errors';
 import { requestSignal } from '../request-signal';
+
+export function registerAntigravityAccountRoute(
+  app: FastifyInstance,
+  read: (signal: AbortSignal) => Promise<AntigravityAccount>,
+): void {
+  app.get('/api/settings/models/antigravity/account', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const signal = requestSignal(request, reply);
+    const account = await read(signal).catch(() => ({}));
+    return signal.aborted ? undefined : account;
+  });
+}
 
 export function registerAntigravityUsageRoute(
   app: FastifyInstance,

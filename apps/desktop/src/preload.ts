@@ -1,6 +1,7 @@
 // 预加载脚本：只经 contextBridge 暴露窄接口，不暴露 ipcRenderer、require 或 Node 全局。
 import { contextBridge, ipcRenderer } from 'electron';
 import {
+  ANTIGRAVITY_LOGIN_CHANNEL,
   APP_MENU_CHANNEL,
   INITIAL_SESSION_LINK_CHANNEL,
   OPEN_PATH_CHANNEL,
@@ -18,6 +19,9 @@ if (process.isMainFrame) {
     selectDirectory: (initialPath?: string) =>
       ipcRenderer.invoke(SELECT_DIRECTORY_CHANNEL, initialPath) as Promise<string | null>,
     openPath: (target: string) => ipcRenderer.invoke(OPEN_PATH_CHANNEL, target) as Promise<boolean>,
+    ...(process.platform === 'win32' && {
+      openAntigravityLogin: () => ipcRenderer.invoke(ANTIGRAVITY_LOGIN_CHANNEL) as Promise<boolean>,
+    }),
     chrome: {
       showMenu: (name: AppMenuName, position: AppMenuPosition) =>
         ipcRenderer.invoke(APP_MENU_CHANNEL, name, position) as Promise<void>,

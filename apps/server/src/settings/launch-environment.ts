@@ -1,9 +1,14 @@
 import {
+  ANTIGRAVITY_PROXY_VARIABLES,
+  AntigravityProxyInputSchema,
   LaunchEnvironmentInputSchema,
   LaunchSecretInputSchema,
+  isAntigravityProxyVariable,
   type LaunchSecretInput,
   type LaunchEnvironmentDocument,
   type LaunchEnvironmentInput,
+  type AntigravityProxyDocument,
+  type AntigravityProxyInput,
 } from '@agentdeck/shared/settings';
 import { AGENT_KINDS, type AgentKind } from '@agentdeck/shared/conversation';
 import { createHash } from 'node:crypto';
@@ -27,7 +32,7 @@ type Deps = {
   configDir: string;
   env?: NodeJS.ProcessEnv;
   protector?: SecretProtector;
-  onSaved?: (agent: AgentKind) => void | Promise<void>;
+  onSaved?: (agent: AgentKind, names: readonly string[]) => void | Promise<void>;
 };
 const entropy = (agent: AgentKind, name: string) =>
   createHash('sha256').update(`AgentDeck:launch:${agent}:${name}`).digest();
@@ -78,6 +83,9 @@ export function createLaunchEnvironment(deps: Deps) {
   const file = path.join(directory, 'launch-environment.json');
   const inherited = deps.env ?? process.env;
   const protector = deps.protector ?? createWindowsProtector();
+  const inheritedValue = (agent: AgentKind, name: string) =>
+    inherited[name] ||
+    (agent === 'antigravity' && isAntigravityProxyVariable(name) ? inherited[name.toLowerCase()] : undefined);
   let queue: Promise<unknown> = Promise.resolve();
   const serial = <T>(action: () => Promise<T>): Promise<T> => {
     const result = queue.then(action, action).catch((error: unknown) => {
@@ -96,6 +104,32 @@ export function createLaunchEnvironment(deps: Deps) {
         : validateStored(JSON.parse(snapshot.content));
     return { stored, snapshot };
   }
+
+  async function readValue(agent: AgentKind, name: string, entry: z.infer<typeof Entry>) {
+    const data = await protector.unprotect(Buffer.from(entry.protected!, 'base64'), entropy(agent, name));
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(data);
+    } finally {
+      data.fill(0);
+    }
+  }
+
+  /** 兼容旧的独立地址；HTTPS 优先。未显式设地址时沿用父进程环境。 */
+  async function antigravityProxy(stored: StoredEnvironment) {
+    for (const name of ['HTTPS_PROXY', 'HTTP_PROXY']) {
+      const entry = stored.antigravity[name];
+      if (entry?.mode === 'set') return readValue('antigravity', name, entry);
+    }
+    return '';
+  }
+
+  async function proxyDocument({
+    stored,
+    snapshot,
+  }: Awaited<ReturnType<typeof load>>): Promise<AntigravityProxyDocument> {
+    const proxy = await antigravityProxy(stored);
+    return { revision: snapshot.revision, address: proxy ? new URL(proxy).origin : '' };
+  }
   function metadata(agent: AgentKind, stored: StoredEnvironment, revision: string): LaunchEnvironmentDocument {
     return {
       agent,
@@ -104,7 +138,7 @@ export function createLaunchEnvironment(deps: Deps) {
       note: cliConfigurations[agent].launchNote,
       variables: cliConfigurations[agent].launchVariables.map((item) => {
         const entry = stored[agent][item.name];
-        const source = stateOf(entry, inherited[item.name]);
+        const source = stateOf(entry, inheritedValue(agent, item.name));
         return {
           ...item,
           mode: entry?.mode ?? 'inherit',
@@ -140,6 +174,29 @@ export function createLaunchEnvironment(deps: Deps) {
       value.fill(0);
     }
   }
+
+  async function saveChanges(agent: AgentKind, input: LaunchEnvironmentInput) {
+    const parsed = LaunchEnvironmentInputSchema.safeParse(input);
+    if (!parsed.success) throw new NativeConfigError('invalid_request');
+    checkChanges(agent, parsed.data);
+    const { stored, snapshot } = await load();
+    if (snapshot.revision !== input.revision) throw new NativeConfigError('revision_conflict');
+    for (const item of input.variables) await change(agent, stored, item);
+    const parents = await inspectDirectory(directory, true);
+    await writeConfigFile(file, Buffer.from(JSON.stringify(stored, null, 2) + '\n'), snapshot, parents!);
+    await deps.onSaved?.(
+      agent,
+      input.variables.map(({ name }) => name),
+    );
+    return load();
+  }
+
+  function applyProxy(env: NodeJS.ProcessEnv, proxy: string) {
+    if (!proxy) return;
+    // 不让旧的大/小写绕过名单截断显式代理；回环是本机 CLI 管理和服务的通道。
+    for (const name of Object.keys(env)) if (isAntigravityProxyVariable(name.toUpperCase())) delete env[name];
+    Object.assign(env, { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NO_PROXY: 'localhost,127.0.0.1,::1' });
+  }
   return {
     readSecret: (agent: AgentKind, input: LaunchSecretInput) =>
       serial(async () => {
@@ -152,17 +209,9 @@ export function createLaunchEnvironment(deps: Deps) {
         const { stored, snapshot } = await load();
         if (snapshot.revision !== parsed.data.revision) throw new NativeConfigError('revision_conflict');
         const entry = stored[agent][parsed.data.name];
-        if (!entry) return { value: inherited[parsed.data.name] || null };
+        if (!entry) return { value: inheritedValue(agent, parsed.data.name) || null };
         if (entry.mode === 'disabled') return { value: null };
-        const data = await protector.unprotect(
-          Buffer.from(entry.protected!, 'base64'),
-          entropy(agent, parsed.data.name),
-        );
-        try {
-          return { value: new TextDecoder('utf-8', { fatal: true }).decode(data) || null };
-        } finally {
-          data.fill(0);
-        }
+        return { value: (await readValue(agent, parsed.data.name, entry)) || null };
       }),
     read: (agent: AgentKind) =>
       serial(async () => {
@@ -171,35 +220,35 @@ export function createLaunchEnvironment(deps: Deps) {
       }),
     save: (agent: AgentKind, input: LaunchEnvironmentInput) =>
       serial(async () => {
-        const parsed = LaunchEnvironmentInputSchema.safeParse(input);
-        if (!parsed.success) throw new NativeConfigError('invalid_request');
-        checkChanges(agent, parsed.data);
-        const { stored, snapshot } = await load();
-        if (snapshot.revision !== input.revision) throw new NativeConfigError('revision_conflict');
-        for (const item of input.variables) await change(agent, stored, item);
-        const parents = await inspectDirectory(directory, true);
-        await writeConfigFile(file, Buffer.from(JSON.stringify(stored, null, 2) + '\n'), snapshot, parents!);
-        await deps.onSaved?.(agent);
-        const updated = await load();
-        return metadata(agent, updated.stored, updated.snapshot.revision);
+        const { stored, snapshot } = await saveChanges(agent, input);
+        return metadata(agent, stored, snapshot.revision);
       }),
-    resolve: (agent: AgentKind) =>
+    readAntigravityProxy: () => serial(async () => proxyDocument(await load())),
+    saveAntigravityProxy: (input: AntigravityProxyInput) =>
+      serial(async () => {
+        const parsed = AntigravityProxyInputSchema.safeParse(input);
+        if (!parsed.success) throw new NativeConfigError('invalid_request');
+        const { revision, address } = parsed.data;
+        const variables = ANTIGRAVITY_PROXY_VARIABLES.map((name) =>
+          address && name === 'HTTPS_PROXY'
+            ? { name, mode: 'set' as const, value: address }
+            : { name, mode: 'inherit' as const },
+        );
+        return proxyDocument(await saveChanges('antigravity', { revision, variables }));
+      }),
+    resolve: (agent: AgentKind, include: (name: string) => boolean = () => true) =>
       serial(async () => {
         const { stored } = await load();
         const env = { ...inherited };
-        for (const [name, entry] of Object.entries(stored[agent])) {
+        const variables = Object.entries(stored[agent]).filter(
+          ([name]) => include(name) && !(agent === 'antigravity' && isAntigravityProxyVariable(name)),
+        );
+        for (const [name, entry] of variables) {
           // undefined 在 spawn 时移除变量，同时阻止 SDK 再合并 process.env 时恢复继承值。
-          if (entry.mode === 'disabled') {
-            env[name] = undefined;
-            continue;
-          }
-          const data = await protector.unprotect(Buffer.from(entry.protected!, 'base64'), entropy(agent, name));
-          try {
-            env[name] = new TextDecoder('utf-8', { fatal: true }).decode(data);
-          } finally {
-            data.fill(0);
-          }
+          env[name] = entry.mode === 'set' ? await readValue(agent, name, entry) : undefined;
         }
+        if (agent === 'antigravity' && ANTIGRAVITY_PROXY_VARIABLES.some(include))
+          applyProxy(env, await antigravityProxy(stored));
         return env;
       }),
   };

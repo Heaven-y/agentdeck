@@ -1,6 +1,7 @@
 import { request } from '../../../lib/http';
 import type { AgentCapabilities, AgentKind } from '@agentdeck/shared/conversation';
 import type {
+  AntigravityAccount,
   NativeContextWindow,
   NativeModelSettingsDocument,
   NativeModelSettingsInput,
@@ -8,7 +9,11 @@ import type {
   SecretValue,
 } from '@agentdeck/shared/settings';
 
+export const antigravityAccountKey = ['antigravity-account'] as const;
+
 export const modelSettingsApi = {
+  antigravityAccount: (signal?: AbortSignal) =>
+    request<AntigravityAccount>('/api/settings/models/antigravity/account', { signal, cache: 'no-store' }),
   readSecret: (agent: AgentKind, input: ModelSecretInput, signal?: AbortSignal) =>
     request<SecretValue>(`/api/settings/models/${agent}/secret`, {
       method: 'POST',

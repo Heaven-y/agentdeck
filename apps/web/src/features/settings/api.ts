@@ -11,6 +11,8 @@ import type {
   NativeResourceSaved,
   LaunchEnvironmentDocument,
   LaunchEnvironmentInput,
+  AntigravityProxyDocument,
+  AntigravityProxyInput,
   LaunchSecretInput,
   SecretValue,
   ProductSettingsDocument,
@@ -65,6 +67,17 @@ export const settingsApi = {
     }),
   readLaunchEnvironment: (agent: AgentKind, signal?: AbortSignal) =>
     request<LaunchEnvironmentDocument>(`/api/settings/launch-environment/${agent}`, { signal, cache: 'no-store' }),
+  readAntigravityProxy: (signal?: AbortSignal) =>
+    request<AntigravityProxyDocument>('/api/settings/launch-environment/antigravity/proxy', {
+      signal,
+      cache: 'no-store',
+    }),
+  saveAntigravityProxy: (input: AntigravityProxyInput) =>
+    request<AntigravityProxyDocument>('/api/settings/launch-environment/antigravity/proxy', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+      cache: 'no-store',
+    }),
   readLaunchSecret: (agent: AgentKind, input: LaunchSecretInput, signal?: AbortSignal) =>
     request<SecretValue>(`/api/settings/launch-environment/${agent}/secret`, {
       method: 'POST',

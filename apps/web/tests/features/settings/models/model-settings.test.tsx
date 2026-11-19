@@ -7,6 +7,7 @@ import ProductSettingsDialog from '../../../../src/features/settings/navigation/
 import { useModelSettings } from '../../../../src/features/settings/models/use-model-settings';
 import { modelSettingsApi } from '../../../../src/features/settings/models/model-settings-api';
 import { queryClient } from '../../../../src/lib/query-client';
+import { settingsApi } from '../../../../src/features/settings/api';
 
 const document: NativeModelSettingsDocument = {
   agent: 'claude',
@@ -51,12 +52,75 @@ beforeEach(() => {
     discovered: true,
   });
   vi.spyOn(window, 'confirm').mockReturnValue(false);
+  vi.spyOn(modelSettingsApi, 'antigravityAccount').mockResolvedValue({});
+  vi.spyOn(settingsApi, 'readAntigravityProxy').mockResolvedValue({ revision: 'missing', address: '' });
 });
 afterEach(async () => {
   cleanup();
   await queryClient.cancelQueries();
   queryClient.clear();
   vi.restoreAllMocks();
+});
+
+it('AGY 显示当前账号，原生登录返回后刷新，API Key 不展示官方账号', async () => {
+  const originalBridge = window.agentDeck;
+  const terminal = deferred<boolean>();
+  const openAntigravityLogin = vi.fn(() => terminal.promise);
+  window.agentDeck = { platform: 'win32', selectDirectory: async () => null, openAntigravityLogin };
+  try {
+    vi.mocked(modelSettingsApi.antigravityAccount)
+      .mockResolvedValueOnce({ email: 'first@example.invalid' })
+      .mockResolvedValue({ email: 'next@example.invalid' });
+    vi.mocked(modelSettingsApi.read).mockResolvedValue({
+      ...document,
+      agent: 'antigravity',
+      fields: [
+        {
+          key: 'modelProvider',
+          label: '连接方式',
+          value: '',
+          group: 'connection',
+          options: [
+            { value: '', label: 'Antigravity 账号登录' },
+            { value: 'gemini', label: 'Gemini API Key' },
+          ],
+        },
+      ],
+    });
+    render(<ProductSettingsDialog initialPage="antigravity" onClose={vi.fn()} onNative={vi.fn()} />);
+    const login = await screen.findByRole<HTMLButtonElement>('button', { name: '重新登录 Antigravity' });
+    await screen.findByText('first@example.invalid');
+    fireEvent.click(login);
+    expect(login.disabled).toBe(true);
+    expect(openAntigravityLogin).toHaveBeenCalledExactlyOnceWith();
+    expect(screen.getByText(/授权码，请粘贴回该终端/)).toBeTruthy();
+    await act(async () => terminal.resolve(true));
+    await screen.findByText('next@example.invalid');
+    expect(login.disabled).toBe(false);
+    fireEvent.click(screen.getByLabelText('连接方式'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Gemini API Key' }));
+    expect(screen.queryByRole('button', { name: '重新登录 Antigravity' })).toBeNull();
+    expect(screen.queryByText('next@example.invalid')).toBeNull();
+  } finally {
+    window.agentDeck = originalBridge;
+  }
+});
+
+it('AGY 在模型与连接直接保存一个代理地址，不要求用户重启 CLI 或选择变量模式', async () => {
+  const provider = { key: 'modelProvider', label: '连接方式', value: 'gemini', group: 'connection' } as const;
+  vi.mocked(modelSettingsApi.read).mockResolvedValue({ ...document, agent: 'antigravity', fields: [provider] });
+  const save = vi
+    .spyOn(settingsApi, 'saveAntigravityProxy')
+    .mockResolvedValue({ revision: 'a'.repeat(64), address: 'http://my-server' });
+  render(<ProductSettingsDialog initialPage="antigravity" onClose={vi.fn()} />);
+  const proxy = await screen.findByLabelText('AGY 代理地址');
+  fireEvent.change(proxy, { target: { value: 'http://my-server' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存代理' }));
+  await screen.findByText('代理已保存，下次启动 AGY 时生效。');
+  expect(save).toHaveBeenCalledExactlyOnceWith({ revision: 'missing', address: 'http://my-server' });
+  expect(screen.queryByRole('button', { name: '重新启动 CLI' })).toBeNull();
+  expect(screen.queryByText('HTTPS_PROXY')).toBeNull();
+  expect(modelSettingsApi.antigravityAccount).not.toHaveBeenCalled();
 });
 
 it('常用模型表单只发送修改字段，空密码保留且显式清除使用 null', async () => {

@@ -1,16 +1,17 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { isAntigravityProxyVariable } from '@agentdeck/shared/settings';
 import { afterEach, expect, it } from 'vitest';
 import { createLaunchEnvironment } from '../../src/settings/launch-environment';
 
 const directories: string[] = [];
-async function fixture() {
+async function fixture(env: NodeJS.ProcessEnv = { ANTHROPIC_AUTH_TOKEN: 'inherited-secret', PATH: 'native-path' }) {
   const configDir = await mkdtemp(path.join(tmpdir(), 'agentdeck-env-test-'));
   directories.push(configDir);
   const service = createLaunchEnvironment({
     configDir,
-    env: { ANTHROPIC_AUTH_TOKEN: 'inherited-secret', PATH: 'native-path' },
+    env,
     protector: {
       available: true,
       protect: async (value) => Buffer.from(value.toString('hex')),
@@ -89,4 +90,44 @@ it('拒绝加载器变量、跨CLI变量、重复变量和旧revision', async ()
   await expect(service.save('codex', { revision: 'missing', variables: [] })).rejects.toThrow('修改');
   expect((await service.read('antigravity')).variables.map((item) => item.name)).toContain('GEMINI_API_KEY');
   expect((await service.read('antigravity')).variables.map((item) => item.name)).not.toContain('GOOGLE_API_KEY');
+});
+
+it('AGY 一个代理覆盖 HTTP/HTTPS 并保留本机回环，清空后恢复继承，其他 CLI 不受影响', async () => {
+  const env = { https_proxy: 'http://inherited-proxy', no_proxy: '.example.invalid' };
+  const { service } = await fixture(env);
+  const initial = await service.read('antigravity');
+  expect(initial.variables.find((item) => item.name === 'HTTPS_PROXY')?.source).toBe('inherited');
+  await expect(
+    service.save('antigravity', {
+      revision: initial.revision,
+      variables: [{ name: 'HTTPS_PROXY', mode: 'set', value: 'http://my-server/path' }],
+    }),
+  ).rejects.toMatchObject({ code: 'invalid_request' });
+
+  const saved = await service.save('antigravity', {
+    revision: initial.revision,
+    variables: [
+      { name: 'HTTPS_PROXY', mode: 'set', value: 'http://proxy-user:fixture-password@my-server' },
+      { name: 'HTTP_PROXY', mode: 'set', value: 'http://previous-proxy' },
+      { name: 'NO_PROXY', mode: 'set', value: '*' },
+      { name: 'GEMINI_API_KEY', mode: 'set', value: 'fixture-gemini-key' },
+    ],
+  });
+  expect(JSON.stringify(saved)).not.toContain('fixture-password');
+  expect(await service.readAntigravityProxy()).toEqual({ revision: saved.revision, address: 'http://my-server' });
+  const address = 'http://proxy-user:fixture-password@my-server';
+  const proxy = { HTTPS_PROXY: address, HTTP_PROXY: address, NO_PROXY: 'localhost,127.0.0.1,::1' };
+  expect(await service.resolve('antigravity', isAntigravityProxyVariable)).toEqual(proxy);
+  expect(await service.resolve('antigravity')).toEqual({ ...proxy, GEMINI_API_KEY: 'fixture-gemini-key' });
+  expect(await service.resolve('codex')).toEqual(env);
+  expect(await service.resolve('claude')).toEqual(env);
+  const updated = await service.saveAntigravityProxy({ revision: saved.revision, address: 'http://new-proxy' });
+  expect(updated.address).toBe('http://new-proxy');
+  expect(await service.resolve('antigravity', isAntigravityProxyVariable)).toEqual({
+    ...proxy,
+    HTTP_PROXY: 'http://new-proxy',
+    HTTPS_PROXY: 'http://new-proxy',
+  });
+  await service.saveAntigravityProxy({ revision: updated.revision, address: '' });
+  expect(await service.resolve('antigravity', isAntigravityProxyVariable)).toEqual(env);
 });

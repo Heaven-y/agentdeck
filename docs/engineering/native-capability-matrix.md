@@ -59,7 +59,7 @@
 | MCP Apps交互界面 | **协议/运行环境待核**：本机SDK类型有条件的tool UI元数据，不等同于AgentDeck已承载外部`ui://`应用 | **协议已声明，工作台未承载**：Codex schema有MCP App资源URI/显示模式字段；当前界面未加载远端UI资源或提供完整隔离执行容器 | **协议/运行环境待核**：本轮未取得并验证ACP中可承载MCP App UI的宿主扩展；MCP服务配置管理不等于嵌入App。E13 |
 | 音频 / 实时语音 | **不纳入**：用户不需要实时音频；当前CLI运行路径也未核实语音会话协议 | **不纳入**：schema虽列出`thread/realtime/*`方法，本轮不建设录放界面 | **不纳入**：ACP报告`audio=false`，且用户明确不需要此功能 |
 | 远程 / 云会话 | **范围待定**：官方支持Web/Cloud/Remote Control及`--teleport`，是账号和原生远端执行生命周期；当前集成本机CLI会话，不创建云会话或把云数据并入本地历史 | **部分接入**：当前集成本地app-server `stdio://`。官方另有remote TUI/app-server与云端环境，但工作台未把它们接成会话host，也不接受任意远程主机凭据 | **范围待定**：Remote Control使用Antigravity原生远端产品；当前ACP/headless工作在本机目录，不作透明远端代理。E15 |
-| 账号 / 计费 | **本机原生登录**：登录状态由CLI和用户账户决定；AgentDeck不创建/退出订阅账号，不显示账单、权益价格或代扣方式 | **本机原生登录**：仅识别已生效的原生 ChatGPT 模式，模型显示范围与 API Key／自定义服务独立；用户可显式读原生额度窗口，不提供登录切换、通用账号、账单或服务商用量页 | **本机原生登录**：Google 原生登录或 API Key 按原生方式工作，模型目录及工作台显示范围分别保存；官方账号可手动读取原生 `/usage`，不读取 API Key 服务商的用量、个人账单或完整订阅信息。真实对话和 OAuth 兼容性分别验证。E16 |
+| 账号 / 计费 | **本机原生登录**：登录状态由CLI和用户账户决定；AgentDeck不创建/退出订阅账号，不显示账单、权益价格或代扣方式 | **本机原生登录**：仅识别已生效的原生 ChatGPT 模式，模型显示范围与 API Key／自定义服务独立；用户可显式读原生额度窗口，不提供登录切换、通用账号、账单或服务商用量页 | **本机原生登录**：官方模式显示原生确认的邮箱。Windows 可启动原生交互登录，不在工作台收集授权码。Google 登录与 API Key 的模型目录和显示范围分开；官方账号可手动读取原生 `/usage`。E16 |
 | 自动化 / 定时任务 | **原生 Claude 管理**：session Cron/Create 依赖 CLI 进程、空闲时机和项目身份；Cloud/Desktop scheduled task 属于其他宿主。AgentDeck 不提供跨应用调度 | **原生 Codex 管理**：active goal 不是 cron；Codex 应用 Automations 也不由本机 CLI adapter 管理。AgentDeck 不接管持续目标或定时任务 | **原生 CLI 管理/生命周期未验证**：ACP目录可出现 `schedule`，但 AgentDeck 未验证其恢复、取消和跨进程寿命，也不接管调度。E10、E17 |
 
 ## 证据索引

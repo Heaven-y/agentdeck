@@ -5,6 +5,7 @@ import { ProcessError, runProcess, type ProcessResult } from '../../../platform/
 import { SessionError } from '../../errors';
 import { withAntigravityDiscoveryProfile } from '../models/discovery-profile';
 import { readAntigravityConnection } from '../models/model-catalog';
+import { antigravityAccountReadEnvironment } from '../run/process-environment';
 
 type Options = { env?: NodeJS.ProcessEnv; signal?: AbortSignal; homeDir?: string };
 const timeoutMs = 35_000;
@@ -70,16 +71,6 @@ async function assertAccount(options: Options) {
   throw new SessionError(409, 'antigravity_official_usage_account_required', message);
 }
 
-function accountEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  // 不继承 Gemini/ADC 认证或原生配置覆盖。尤其不能让 AGY_DISABLE_SLASH_COMMANDS 将 /usage 降级为生成。
-  const overridden =
-    /^(?:(?:AGY|ANTIGRAVITY|GEMINI|GOOGLE|GCLOUD|CLOUDSDK)_|XDG_(?:DATA|STATE)_HOME$|NODE_(?:OPTIONS|PATH)$)/i;
-  return {
-    ...Object.fromEntries(Object.entries(env).filter(([name]) => !overridden.test(name))),
-    AGY_CLI_DISABLE_AUTO_UPDATE: 'true',
-  };
-}
-
 function usageFailure(error: unknown, deadline: AbortSignal, request?: AbortSignal): SessionError {
   if (request?.aborted)
     return new SessionError(499, 'antigravity_official_usage_cancelled', 'Antigravity 官方额度查询已取消。');
@@ -100,7 +91,8 @@ export async function readAntigravityOfficialUsage(options: Options = {}): Promi
     const cli = resolveLocalCommand('agy', env);
     const groups = await withAntigravityDiscoveryProfile(
       {},
-      accountEnvironment(env),
+      // 不让 AGY_DISABLE_SLASH_COMMANDS 将 /usage 降级为生成。
+      antigravityAccountReadEnvironment(env),
       async ({ root, env: isolated }) => {
         const run = (args: string[], timeoutMs: number, outputCap: number) => {
           signal.throwIfAborted();

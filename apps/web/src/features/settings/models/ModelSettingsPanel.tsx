@@ -1,4 +1,4 @@
-import { useLayoutEffect, type MutableRefObject } from 'react';
+import { useLayoutEffect, type MutableRefObject, type ReactNode } from 'react';
 import { ArrowUpRight, FileCode2, RefreshCw } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ModelSettingField } from '@agentdeck/shared/settings';
@@ -7,7 +7,7 @@ import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
 import { ModelSettingsField } from './ModelSettingsField';
 import { modelSettingValue, modelSettingsFields, useModelSettings } from './use-model-settings';
 import type { SettingsLeave } from '../navigation/settings-navigation';
-import { leaveSettings } from '../navigation/settings-navigation';
+import { leaveSettings, useGuardedSettingsNavigation } from '../navigation/settings-navigation';
 import { modelEfforts } from '../../../cli/model-capabilities';
 import { ANTIGRAVITY_CONNECTION_LABELS, antigravityConnectionField } from '../../../cli/antigravity/model-policy';
 import { modelVisibilityKey } from '../../../cli/shared/model-visibility';
@@ -15,6 +15,8 @@ import { antigravityModelSuggestions } from '../../../cli/antigravity/model-sugg
 import { ModelVisibilityPanel } from './ModelVisibilityPanel';
 import { useVisibilityDraft } from './use-visibility-draft';
 import { modelSettingsApi } from './model-settings-api';
+import { AntigravityConnectionActions } from './AntigravityConnectionActions';
+import { AntigravityProxyField } from './AntigravityProxyField';
 
 type State = ReturnType<typeof useModelSettings>;
 function visibleFields(fields: ModelSettingField[], state: State) {
@@ -106,7 +108,15 @@ function ConnectionFields({ fields, state }: { fields: ModelSettingField[]; stat
     </div>
   );
 }
-function ModelSettingsForm({ state, fields }: { state: State; fields: ModelSettingField[] }) {
+function ModelSettingsForm({
+  state,
+  fields,
+  connectionActions,
+}: {
+  state: State;
+  fields: ModelSettingField[];
+  connectionActions?: ReactNode;
+}) {
   const connections = fields.filter((field) => !field.advanced && field.group === 'connection');
   const models = fields.filter((field) => !field.advanced && field.group === 'model');
   const parameters = models.filter((field) =>
@@ -118,6 +128,7 @@ function ModelSettingsForm({ state, fields }: { state: State; fields: ModelSetti
         <section aria-label="服务连接" className="space-y-3.5">
           <h4 className="text-xs font-medium text-muted-foreground">服务连接</h4>
           <ConnectionFields fields={connections} state={state} />
+          {connectionActions}
         </section>
       )}
       <section aria-label="模型选择" className="space-y-3.5 border-t border-border pt-5">
@@ -169,7 +180,7 @@ function AdvancedSettings({
             disabled={state.saving || state.modelsLoading}
             aria-label={`编辑 ${AGENT_FULL_NAMES[state.document!.agent]} 配置文件`}
             title="打开 CLI 自己的配置、规则与扩展文件"
-            onClick={() => state.leave(onNative)}
+            onClick={onNative}
           >
             <FileCode2 aria-hidden className="size-3.5" />
             CLI 配置文件
@@ -180,7 +191,7 @@ function AdvancedSettings({
               className={buttonClass('ghost')}
               disabled={state.saving || state.modelsLoading}
               title="仅为工作台启动的 CLI 设置环境变量"
-              onClick={() => state.leave(onLaunchEnvironment)}
+              onClick={onLaunchEnvironment}
             >
               CLI 环境变量
               <ArrowUpRight aria-hidden className="size-3.5" />
@@ -340,6 +351,7 @@ export function ModelSettingsPanel({
       action();
     });
   };
+  const leavePage = useGuardedSettingsNavigation(leave);
   const save = async () => {
     if (await state.save()) await visibility.save();
   };
@@ -356,13 +368,26 @@ export function ModelSettingsPanel({
         <SettingsFeedback state={state} />
         {state.document && (
           <>
-            <ModelSettingsForm state={state} fields={fields} />
+            <ModelSettingsForm
+              state={state}
+              fields={fields}
+              connectionActions={
+                agent === 'antigravity' && (
+                  <>
+                    {info.connection === 'account' && !info.switching && (
+                      <AntigravityConnectionActions disabled={saving} />
+                    )}
+                    <AntigravityProxyField disabled={saving} />
+                  </>
+                )
+              }
+            />
             <VisibilitySection agent={agent} state={state} visibility={visibility} info={info} />
             <AdvancedSettings
               state={state}
               fields={fields}
-              onNative={() => leave(onNative)}
-              onLaunchEnvironment={onLaunchEnvironment && (() => leave(onLaunchEnvironment))}
+              onNative={() => leavePage(onNative)}
+              onLaunchEnvironment={onLaunchEnvironment && (() => leavePage(onLaunchEnvironment))}
             />
           </>
         )}

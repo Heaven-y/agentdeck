@@ -86,6 +86,30 @@ it('环境准备中停止不投递正文，准备和运行期间不允许重启'
   await runner.dispose?.();
 });
 
+it('代理版本变更后同一个原生会话的下一轮使用新代理', async () => {
+  let generation = 0;
+  const proxies = ['http://first-proxy', 'http://next-proxy'];
+  const create = vi.fn<(env: NodeJS.ProcessEnv) => TurnRunner>(() => () => ({
+    done: Promise.resolve(),
+    interrupt: async () => undefined,
+  }));
+  const runner = createConfiguredRunner({
+    environment: async () => ({ HTTPS_PROXY: proxies[generation] }),
+    environmentVersion: () => generation,
+    create,
+  });
+  try {
+    await runner(input('native')).done;
+    await runner(input('native')).done;
+    expect(create).toHaveBeenCalledOnce();
+    generation++;
+    await runner(input('native')).done;
+    expect(create.mock.calls.map(([env]) => env.HTTPS_PROXY)).toEqual(proxies);
+  } finally {
+    await runner.dispose?.();
+  }
+});
+
 it('保存配置后新会话立即使用新环境，已有会话继续持有原快照', async () => {
   let current = 'before-save';
   let created = 0;

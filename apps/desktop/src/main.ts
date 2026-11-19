@@ -8,6 +8,7 @@ import { startServer, type StartedServer } from '../../server/src/server';
 import { acquireSingleInstance, createShutdown, resolveWindowUrl } from './lifecycle';
 import { desktopPaths, externalWebLink, navigationAllowed, rendererAddress } from './system/paths';
 import {
+  ANTIGRAVITY_LOGIN_CHANNEL,
   APP_MENU_CHANNEL,
   INITIAL_SESSION_LINK_CHANNEL,
   OPEN_PATH_CHANNEL,
@@ -15,6 +16,7 @@ import {
   TITLE_BAR_THEME_CHANNEL,
 } from './bridge';
 import { createDirectoryPicker } from './window/directory-picker';
+import { createAntigravityLoginHandler, runAntigravityLoginInTerminal } from './window/antigravity-login';
 import { createPathOpener } from './window/path-opener';
 import { applicationMenuTemplate, createWindowChrome, desktopChromeOptions } from './window/window-chrome';
 import { createDesktopLogger } from './system/logging';
@@ -41,7 +43,7 @@ function focusMainWindow(): void {
   mainWindow.focus();
 }
 
-function createMainWindow(url: string): BrowserWindow {
+function createMainWindow(url: string, started: StartedServer): BrowserWindow {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -74,6 +76,12 @@ function createMainWindow(url: string): BrowserWindow {
   ipcMain.handle(SELECT_DIRECTORY_CHANNEL, directoryPicker.select);
   const pathOpener = createPathOpener(window, url, (target) => shell.openPath(target));
   ipcMain.handle(OPEN_PATH_CHANNEL, pathOpener);
+  if (process.platform === 'win32') {
+    ipcMain.handle(
+      ANTIGRAVITY_LOGIN_CHANNEL,
+      createAntigravityLoginHandler(window, url, () => started.loginAntigravity(runAntigravityLoginInTerminal)),
+    );
+  }
   const links = sessionLinks.attach(window, url);
   ipcMain.handle(INITIAL_SESSION_LINK_CHANNEL, links.initial);
   window.once('ready-to-show', () => window.show());
@@ -82,6 +90,7 @@ function createMainWindow(url: string): BrowserWindow {
     links.detach();
     ipcMain.removeHandler(SELECT_DIRECTORY_CHANNEL);
     ipcMain.removeHandler(OPEN_PATH_CHANNEL);
+    ipcMain.removeHandler(ANTIGRAVITY_LOGIN_CHANNEL);
     ipcMain.removeHandler(APP_MENU_CHANNEL);
     ipcMain.removeHandler(TITLE_BAR_THEME_CHANNEL);
     ipcMain.removeHandler(INITIAL_SESSION_LINK_CHANNEL);
@@ -128,7 +137,7 @@ async function startDesktop(): Promise<void> {
     { webDir: paths.web, log: (message) => logger.log(message), logError: (message) => logger.error(message) },
   );
   server = started;
-  mainWindow = createMainWindow(resolveWindowUrl(started.url, rendererUrl));
+  mainWindow = createMainWindow(resolveWindowUrl(started.url, rendererUrl), started);
 }
 
 function failStartup(error: unknown): void {

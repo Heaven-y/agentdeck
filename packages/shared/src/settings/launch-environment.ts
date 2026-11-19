@@ -1,6 +1,19 @@
 import { z } from 'zod';
 import type { AgentKind } from '../conversation/agents';
 
+export const ANTIGRAVITY_PROXY_VARIABLES = ['HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'] as const;
+export function isAntigravityProxyVariable(name: string): boolean {
+  return ANTIGRAVITY_PROXY_VARIABLES.some((variable) => variable === name);
+}
+
+export const AntigravityProxyInputSchema = z.strictObject({
+  revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
+  address: z.string().trim().max(4096),
+});
+export type AntigravityProxyInput = z.infer<typeof AntigravityProxyInputSchema>;
+/** 只返回代理端点，不回显代理用户名和密码。 */
+export type AntigravityProxyDocument = { revision: string; address: string };
+
 export const LaunchVariableModeSchema = z.enum(['inherit', 'set', 'disabled']);
 export const LaunchEnvironmentInputSchema = z.strictObject({
   revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),

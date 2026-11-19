@@ -121,7 +121,10 @@ function failureDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEven
       line,
     )
   )
-    return { type: 'error', message: 'Antigravity 认证失败或凭据无效，请检查原生登录状态与当前模型服务的凭据。' };
+    return {
+      type: 'error',
+      message: 'Antigravity 认证失败。官方账号可在模型设置中重新登录；Gemini 模式请检查凭据。',
+    };
   const service = serviceDiagnostic(line, source);
   if (service) return service;
   if (/soft[-_\s]?den(?:ied|y)|\b(?:user denied permission|approval (?:was )?denied)\b/i.test(line))

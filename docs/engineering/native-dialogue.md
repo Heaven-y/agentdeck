@@ -103,6 +103,8 @@ AGY ACP 仅在安装了工作台交互处理器时声明 elicitation 能力；�
 
 Antigravity 使用本机 `agy --input-format stream-json --output-format stream-json`，输入为 `{"event":"user","message":{"content":"…"}}`。依据是本机帮助和[官方 headless 协议](https://antigravity.google/docs/cli/headless/)。每轮关闭 stdin，下一轮用 `--conversation` 续接；不依赖猜测的常驻控制接口。输出按 `event` 与嵌套载荷解码，处理 `init`、`step_update`、`result` 和 stderr。续接用摘要验证目录，成功结果仍等待真实进程退出；超时请求停止并保持占用，不能伪造退出成功。
 
+账号重新登录不复用回合 stdin。Windows 桌面桥只允许同源主窗口触发固定的 `agy acp --login`，不接收参数或授权码；终端交互与浏览器回跳均由原生 CLI 管理。同一次登录窗口关闭前合并重复请求。正常退出后使 AGY 能力缓存失效；账号行单独读取原生状态，不自动重发，也不以邮箱或 HTTP 连通结果推断生成地区可用。
+
 AGY 1.5.1 的新摘要通常在进程 close 后才完整落库。本页通过已发送会话补充工作区导航，原生摘要到来后合并；不提前生成原生记录。公开 `agent_response.text_delta` 按增量显示，隐藏思考与签名不公开；原生可能从工具公开参数中删除 `toolSummary`，此时仅显示已知动作与参数。
 
 普通 stderr 不再直接当作错误。明确认证失败、HTTP 500、503 / UNAVAILABLE、权限软拒用固定脱敏说明，result、工具错误与 stderr 的同类提示去重；未知失败在排空双流并确认进程退出后兜底。500 只说明服务内部错误，不推断凭据错误或配置未保存。原生 auto 不支持且已回退时显示权限模式活动，不替用户改模式或重新请求。工具软拒也读取 `denied_actions`，原生 SUCCESS 仍保持原生结果语义。持续重试而未报告原因时只能显示等待，不能凭空判定 503。

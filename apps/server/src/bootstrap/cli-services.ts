@@ -8,6 +8,7 @@ import { registerChatAttachmentRoutes } from '../http/conversation/chat-attachme
 import { inputCapabilities } from '../chat/capabilities/input-capabilities';
 import type { AgentTurnInput } from '../agents/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
+import { isAntigravityProxyVariable } from '@agentdeck/shared/settings';
 import { createCliActivity, guardSessionProvider } from './cli-activity';
 import { createAgentProbes } from '../agents/common/probe';
 import { createCliInstallationBackend } from '../cli-installation';
@@ -16,9 +17,11 @@ import { createCliInstallationService } from '../cli-installation/service';
 import { registerCliInstallationRoutes } from '../http/settings/cli-installation.routes';
 import { runProcess, type ProcessRunner } from '../platform/process/run';
 import { createAntigravityRunner } from '../agents/antigravity/adapter';
+import { readAntigravityAccount } from '../agents/antigravity/account';
 import { invalidateAntigravityModelCatalog } from '../agents/antigravity/models/context-window';
 import { discoverAntigravityCapabilities } from '../agents/antigravity/capabilities';
 import { readAntigravityConnection } from '../agents/antigravity/models/model-catalog';
+import { antigravityLoginEnvironment } from '../agents/antigravity/run/process-environment';
 import { readAntigravityOfficialUsage } from '../agents/antigravity/usage/official-usage';
 import { readCodexOfficialUsage } from '../agents/codex/account';
 import { createAntigravitySessionManagement } from '../agents/antigravity/management/management';
@@ -47,7 +50,10 @@ import { registerAgentConfigRoutes } from '../http/settings/agent-config.routes'
 import { registerCapabilityRoutes } from '../http/conversation/capabilities.routes';
 import { registerLaunchEnvironmentRoutes } from '../http/settings/launch-environment.routes';
 import { registerModelCatalogRoutes } from '../http/settings/model-catalog.routes';
-import { registerAntigravityUsageRoute } from '../http/settings/antigravity-usage.routes';
+import {
+  registerAntigravityAccountRoute,
+  registerAntigravityUsageRoute,
+} from '../http/settings/antigravity-usage.routes';
 import { registerCodexUsageRoute } from '../http/settings/codex-usage.routes';
 import { registerModelSettingsRoutes } from '../http/settings/model-settings.routes';
 import { registerNativeResourceRoutes } from '../http/settings/native-resources.routes';
@@ -96,10 +102,16 @@ export function createCliServices({
   const attachments = new AttachmentStore(path.join(configDir, 'attachments'));
   const nativeActivity = createCliActivity();
   const mcpRegistry = new McpRuntimeRegistry();
+  let antigravityProxyVersion = 0;
   const launchEnvironment = createLaunchEnvironment({
     configDir: configDir,
-    onSaved: (agent) => capabilities.invalidate(agent),
+    onSaved: (agent, names) => {
+      if (agent === 'antigravity' && names.some(isAntigravityProxyVariable)) antigravityProxyVersion++;
+      return capabilities.invalidate(agent);
+    },
   });
+  // 官方登录与额度只需要代理覆盖，不解密已保存的 Gemini API Key。
+  const antigravityNetworkEnvironment = () => launchEnvironment.resolve('antigravity', isAntigravityProxyVariable);
   const inputFeatures = (agent: AgentKind, input: AgentTurnInput, signal: AbortSignal) =>
     nativeActivity.run(agent, async () =>
       inputCapabilities(agent, input, await launchEnvironment.resolve(agent), signal),
@@ -210,6 +222,7 @@ export function createCliServices({
     }),
     antigravity: createConfiguredRunner({
       environment: () => launchEnvironment.resolve('antigravity'),
+      environmentVersion: () => antigravityProxyVersion,
       create: (env) =>
         createAntigravityRunner({
           env,
@@ -280,6 +293,16 @@ export function createCliServices({
 
   return {
     turns,
+    loginAntigravity: (launch: (env: NodeJS.ProcessEnv) => Promise<boolean>) =>
+      nativeActivity.run('antigravity', async () => {
+        const env = await antigravityNetworkEnvironment();
+        if ((await readAntigravityConnection({ env })) !== 'account') {
+          throw new SessionError(409, 'antigravity_account_required', '请先在模型设置中保存 Antigravity 账号登录。');
+        }
+        const completed = await launch(antigravityLoginEnvironment(env));
+        if (completed) await capabilities.invalidate('antigravity');
+        return completed;
+      }),
     registerAttachments(app: FastifyInstance, recovery: ResumeHub) {
       registerChatAttachmentRoutes(app, {
         attachments,
@@ -307,8 +330,15 @@ export function createCliServices({
         ),
       );
       registerModelCatalogRoutes(a, { store, capabilities });
+      registerAntigravityAccountRoute(a, (signal) =>
+        nativeActivity.run('antigravity', async () =>
+          readAntigravityAccount({ signal, env: await antigravityNetworkEnvironment() }),
+        ),
+      );
       registerAntigravityUsageRoute(a, (signal) =>
-        nativeActivity.run('antigravity', () => readAntigravityOfficialUsage({ signal })),
+        nativeActivity.run('antigravity', async () =>
+          readAntigravityOfficialUsage({ signal, env: await antigravityNetworkEnvironment() }),
+        ),
       );
       const legacyConfig = createNativeConfigService({ onSaved: nativeChanged });
       registerAgentConfigRoutes(a, {

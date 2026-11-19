@@ -20,7 +20,12 @@ import { createWorkspaceActivity } from './workspaces/activity';
 import { createWorkspaceStore } from './workspaces/store';
 
 /** 已启动的本机服务：地址固定带尾部斜杠，close 可重复调用。 */
-export type StartedServer = { url: string; close: () => Promise<void> };
+export type StartedServer = {
+  url: string;
+  close: () => Promise<void>;
+  /** 仅供本机桌面壳打开交互终端，不注册为 HTTP 接口。 */
+  loginAntigravity(launch: (env: NodeJS.ProcessEnv) => Promise<boolean>): Promise<boolean>;
+};
 
 export type StartServerOptions = {
   /** 前端构建产物目录；不传则只提供接口，不托管页面 */
@@ -151,7 +156,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
       log('本机探测只运行 --version、--help 与 Codex 的 schema 生成，不检查账号、不请求模型端点，也未安装或升级软件。');
     });
 
-    return { url: accessUrl(config.host, port, config.devOrigin), close };
+    return { url: accessUrl(config.host, port, config.devOrigin), close, loginAntigravity: cli.loginAntigravity };
   } catch (error) {
     await close().catch(() => undefined);
     throw error;

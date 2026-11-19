@@ -114,9 +114,13 @@ Codex 的自动压缩计数口径 `model_auto_compact_token_limit_scope` 和较�
 |---|---|
 | Claude | ANTHROPIC_API_KEY、ANTHROPIC_AUTH_TOKEN、ANTHROPIC_BASE_URL |
 | Codex | OPENAI_API_KEY、OPENAI_BASE_URL |
-| Antigravity | GEMINI_API_KEY、GOOGLE_GEMINI_BASE_URL、AGY_ADC_AUTH、GOOGLE_CLOUD_QUOTA_PROJECT、GOOGLE_CLOUD_LOCATION |
+| Antigravity | GEMINI_API_KEY、GOOGLE_GEMINI_BASE_URL、AGY_ADC_AUTH、GOOGLE_CLOUD_QUOTA_PROJECT、GOOGLE_CLOUD_LOCATION；代理在服务连接单独填写一个地址 |
 
 Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使用 `AGY_ADC_AUTH=true`。官方账号使用原生登录，不需要填写 API Key；两个连接的模型目录和工作台显示范围互相隔离，切换原生连接不删除保存的服务地址或密钥。不把 GOOGLE_API_KEY、.env 或 SDK 专用变量当作 CLI 的同等接口。
+
+服务连接的“AGY 代理地址”使用 HTTP 或 HTTPS URL（例如 `http://my-server`），内部给 `HTTP_PROXY` 和 `HTTPS_PROXY` 同时赋值，只保留本机回环绕过。旧的工作台显式地址继续使用，两者不同时取 HTTPS 的地址；没有显式地址或清空保存后按父进程环境启动。界面不回显代理认证信息。设置保存后在下一次 AGY 启动时生效，包括续聊、原生登录、账号读取、模型发现和额度；不影响正在运行的进程，也不修改系统代理、TUN 或独立终端的环境。刻意禁止联网的本地命令目录探测保持隔离。
+
+官方模式只从原生 `GetUserStatus` 返回经过校验的邮箱。AGY 1.5.11 已取得真实返回；失败或无邮箱只视为未能确认，不查凭据、不返回原始账号信息，也不长期缓存。Windows 桌面端用原生 `agy acp --login` 重新登录，授权码仅在原生终端输入，结束后重新读取账号。
 
 模型菜单的官方额度使用 `POST /api/settings/models/antigravity/official-usage`，仅在已保存的账号模式且本机 CLI 支持非交互 JSON 时运行隔离的 `agy -p /usage --output-format json`。不读写登录令牌、不使用 Gemini API Key，不返回原始命令输出。读取失败报告未知，不把错误或缺字段显示成零额度；不是第三方用量或账单接口。
 

@@ -1,5 +1,9 @@
 import { AgentKindSchema, type AgentKind } from '@agentdeck/shared/conversation';
-import { LaunchEnvironmentInputSchema, LaunchSecretInputSchema } from '@agentdeck/shared/settings';
+import {
+  AntigravityProxyInputSchema,
+  LaunchEnvironmentInputSchema,
+  LaunchSecretInputSchema,
+} from '@agentdeck/shared/settings';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HookHandlerDoneFunction } from 'fastify';
 import { z } from 'zod';
 import { NativeConfigError } from '../../agents/common/configuration/legacy-errors';
@@ -44,6 +48,13 @@ export function registerLaunchEnvironmentRoutes(
     const input = LaunchEnvironmentInputSchema.safeParse(req.body);
     if (!input.success) throw new NativeConfigError('invalid_request');
     return deps.service.save(agent, input.data);
+  });
+  const proxyPath = '/api/settings/launch-environment/antigravity/proxy';
+  app.get(proxyPath, options, () => deps.service.readAntigravityProxy());
+  app.put(proxyPath, options, (req) => {
+    const input = AntigravityProxyInputSchema.safeParse(req.body);
+    if (!input.success) throw new NativeConfigError('invalid_request');
+    return deps.service.saveAntigravityProxy(input.data);
   });
   app.post('/api/settings/launch-environment/:agent/secret', options, (req) => {
     const agent = agentOf(req.params, req.query);

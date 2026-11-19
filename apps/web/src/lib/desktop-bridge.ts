@@ -15,6 +15,10 @@ export function desktopChrome() {
   return window.agentDeck?.chrome;
 }
 
+export function desktopAntigravityLogin() {
+  return window.agentDeck?.openAntigravityLogin;
+}
+
 /** 浏览器调试与旧桌面壳没有打开路径的能力，此时界面不显示该入口。 */
 export function desktopPathOpener() {
   return window.agentDeck?.openPath;

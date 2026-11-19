@@ -2,7 +2,7 @@ import { settingsApi } from '../api';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
-import type { LaunchEnvironmentDocument } from '@agentdeck/shared/settings';
+import { isAntigravityProxyVariable, type LaunchEnvironmentDocument } from '@agentdeck/shared/settings';
 
 import { buttonClass } from '../../../ui/styles';
 import { SettingsDetailDialog } from '../navigation/SettingsDetailDialog';
@@ -171,9 +171,7 @@ function LaunchContent({ state }: { state: LaunchState }) {
   const loading = !state.document && !state.error;
   return (
     <>
-      <p className="text-xs leading-6 text-muted-foreground">
-        这里的变量仅传给工作台启动的 CLI，用于需要环境变量的代理、认证等高级配置。
-      </p>
+      <p className="text-xs leading-6 text-muted-foreground">这里管理工作台启动 CLI 时附加的环境变量。</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={buttonClass('outline')} disabled={busy || loading} onClick={state.reread}>
           <RefreshCw aria-hidden className="size-4" />
@@ -228,11 +226,15 @@ function LaunchVariables({
   disabled: boolean;
   change(variable: LaunchVariable, patch: Partial<LaunchVariableDraft>): void;
 }) {
+  const variables =
+    document.agent === 'antigravity'
+      ? document.variables.filter((variable) => !isAntigravityProxyVariable(variable.name))
+      : document.variables;
   const advanced =
     document.agent === 'antigravity'
-      ? document.variables.filter((variable) => !['GEMINI_API_KEY', 'GOOGLE_GEMINI_BASE_URL'].includes(variable.name))
+      ? variables.filter((variable) => !['GEMINI_API_KEY', 'GOOGLE_GEMINI_BASE_URL'].includes(variable.name))
       : [];
-  const common = document.variables.filter((variable) => !advanced.includes(variable));
+  const common = variables.filter((variable) => !advanced.includes(variable));
   const renderVariable = (variable: LaunchVariable) => (
     <LaunchEnvironmentVariable
       key={`${document.revision}:${variable.name}`}
@@ -264,7 +266,7 @@ function LaunchVariables({
           {advanced.map(renderVariable)}
         </details>
       )}
-      {document.variables.length === 0 && (
+      {variables.length === 0 && (
         <p className="text-sm text-muted-foreground">当前 CLI 没有已接入的附加启动变量，请使用其原生登录和配置入口。</p>
       )}
     </div>
