@@ -1,12 +1,12 @@
 import { featuresForModel, type AgentKind, type NativeInteractionFeatures } from '@agentdeck/shared/conversation';
-import type { AgentTurnInput } from '../../agents/contracts';
+import type { AttachmentCapabilityInput } from '../../agents/contracts';
 import { nativeVersion, claudeSdkVersion } from '../../agents/common/native-version';
 import { discoverClaudeCapabilities } from '../../agents/claude/capabilities';
 import { discoverCodexCapabilities } from '../../agents/codex/capabilities';
 import { antigravityInputFeatures } from '../../agents/antigravity/acp/features';
 export async function inputCapabilities(
   agent: AgentKind,
-  input: AgentTurnInput,
+  input: AttachmentCapabilityInput,
   env: NodeJS.ProcessEnv,
   signal: AbortSignal,
 ): Promise<NativeInteractionFeatures> {

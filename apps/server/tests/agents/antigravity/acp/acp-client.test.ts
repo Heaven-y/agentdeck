@@ -36,7 +36,7 @@ it('原生错误不回显诊断，非白名单方法不发送', async () => {
     lines +
       "console.log(JSON.stringify({jsonrpc:'2.0',id:msg.id,error:{code:-32603,message:'token=private endpoint=https://private.invalid'}}));});",
   );
-  await expect(client.request('authenticate', {})).rejects.toThrow('Antigravity ACP 未完成请求');
+  await expect(client.request('authenticate', {})).rejects.toThrow('AGY 没有完成请求');
   await expect(client.request('execute/arbitrary', {})).rejects.toThrow('协议数据');
 });
 it('当前服务524保留安全说明，下一请求成功不携带旧错误', async () => {

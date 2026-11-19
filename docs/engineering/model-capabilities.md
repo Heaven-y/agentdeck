@@ -1,6 +1,6 @@
 # 模型身份、上下文与推理强度
 
-基础核对日期：2026-11-10；AGY 变体于 2026-11-17 按 1.5.9 原生目录及本地模拟补核。本页只记录已核对的模型元数据和工作台的匹配规则。原生 CLI 返回的目录优先；官方资料只补全原生没有报告的、且能精确匹配的型号。未知强度保留图标入口，不按模型家族猜测。
+基础核对日期：2026-11-10；AGY 自定义窗口变体于 2026-11-17 按 1.5.9 原生目录与本地模拟核对，官方目录的变体参数于 2026-11-19 用 1.5.11 只读核对。本页只记录已核对的模型元数据和工作台的匹配规则。原生 CLI 返回的目录优先；官方资料只补全原生没有报告的、且能精确匹配的型号。未知强度保留图标入口，不按模型家族猜测。
 
 ## 工作台显示规则
 
@@ -27,7 +27,11 @@ Claude 模型菜单提供“默认窗口 / 1M”。只有点击 1M 才生成对�
 | GLM-5.2 | high、max（服务商可接受更宽输入并映射） | 只对明确的 GLM-5.2 精确 ID 补全 |
 | GLM-5.3 | low、high、max | reasoning_effort 只在思考开启时有效 |
 | Qwen3.8 Max/Flash 及列出的同系列 ID | none、low、medium、xhigh | 官方兼容 Responses 页记录其余档位映射到这四档 |
-| Antigravity 原生模型变体 | 由同族 `-low/-medium/-high/-xhigh/-max` 目录项决定 | 自定义配置键不从底层 Gemini 名称猜档位；`--effort` 用于用户显式选择，以及临时窗口标签路径中经原生目录确认的变体默认档位 |
+| Antigravity 原生模型变体 | 由同族 `-low/-medium/-high/-xhigh/-max` 目录项决定 | 带档位的目录 ID 已选定该档；自定义配置键不能从底层 Gemini 名称猜档位 |
+
+**AGY 官方目录选档。** 1.5.11 的 `agy models` 列出 `gemini-4-neon-low`、`gemini-4-neon-medium`、`gemini-4-neon-high` 和 `gemini-4-neon-xhigh` 四个变体。直接选择具体变体无需另选强度。原生交互式 `/effort` 切换同族变体；启动参数 `--effort` 只作用于本次运行，不写默认设置。
+
+同版本隔离的只读对照使用 `agy -p "/effort" --output-format json`：`--model gemini-4-neon-high` 报 `high`，`--model gemini-4-neon-low` 报 `low`，在 `-high` 上再传 `--effort low` 会在生成前报参数冲突，使用工作台同款 `stream-json` 参数、空输入也可复现。工作台的文字路径仍可能同时传两个显式值；直接选对应型号即可换档。官方账号发图则通过 ACP 核对基础型号和对应档位，只有两者都得到原生确认才发送；用户另外选了冲突的强度时保留草稿。自定义窗口的临时标签不适用此规则。
 
 DeepSeek、Kimi、GLM、Qwen 的兼容协议字段并不相同。当前文档补全不冒充提供方完整握手：Claude 使用 SDK effort，Codex 使用 turn/start effort 与原生 Responses 映射，Antigravity 使用原生变体。未核实 Messages 映射的 GLM/Qwen 不为 Claude 补档；提供方额外别名、快照或未知版本只采用原生报告。工作台只负责 CLI 能接收的字符串；`thinking` 开关、`thinking_budget` 和 `reasoning.effort` 不在没有适配证据时互相转换。
 

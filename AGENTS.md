@@ -3,12 +3,12 @@
 开发本仓库时 Agent（Codex、Claude Code）必须遵守的规则。
 
 - 回复、文档、注释和提交信息使用中文。
-- 开始任务前阅读 `.agents/skills/using-superpowers/SKILL.md`；本项目未安装启动钩子。
-- skill 中 `${CLAUDE_PLUGIN_ROOT}/.claude/skills/<名称>/...` 改用仓库根目录下的 `.agents/skills/<名称>/...`。
+- 本仓库的默认开发流程是 [Matt Pocock Skills](docs/guides/dev-environment.md#21-任务流程)。根据任务范围选步骤；以本文件为准，技能模板不另行授权提交、发布或扩大测试范围。
 - 仓库公开：不写入真实服务器地址、端口、用户名、密钥或会话正文，示例使用 `my-server`、`~/projects/demo`。
 - 优先成熟组件，方案保持简单；技术栈沿用 Node.js + TypeScript + Fastify、React 与 Electron。服务器脚本只用已有环境，缺依赖不自动安装。
 - 主线是各 CLI 原生会话与能力。先完成对话，再补原生配置，之后实现工作台插件；具体状态看路线图。
 - 配置作用域、权限、Skills、MCP 与原生插件按各 CLI 实际支持处理，不自行强造用户/项目两层或覆盖原生默认。
+- 新增或修改用户可见提示（含透传错误）必须按[用户可见提示](docs/product/ui-layout.md#71-用户可见提示)审查。不影响用户操作或判断时，不额外提醒；需要提示时说清具体影响和可用下一步。
 - 工作台扩展采用自有插件接口；SSH Console 是按服务器管理的内置插件，不兼容 DSH 插件包。
 - 未经用户明确要求不提交、不推送；当前会话的明确授权优先。分支目标按开发状态确定：在开发功能的修复回所属功能分支，已交付功能的独立修复回 main；大功能分支保留、小分支完成后清理。
 - 合并按开发指南选择：无分叉的单提交小修复可快进，多提交或并行开发保留合并边界，大功能阶段进入 main 使用 `--no-ff`。不为同一小改动机械制造两层合并。
@@ -18,6 +18,11 @@
 - 同一症状复发，或修改跨原生调用、配置与界面时，先按[反复修复排查流程](docs/guides/dev-environment.md#51-同一问题反复修复)对照[Antigravity 两例复盘](docs/engineering/incidents/antigravity-repeated-regressions.md)：定位首次改变语义的环节，写清当前轮、真失败、未知等验收反例；取不到原生证据时不宣告运行生效。
 - 行为、配置、接口或交付状态变化时，提交前执行[文档事实审查](docs/guides/dev-environment.md#18-文档事实审查)。委派审查时明确包含未修改的关联说明，并要求报告核对范围与遗漏。
 - 日常修改不自动递增版本号或重打安装包；拟升版本、制作新版本安装包或发布前，先说明本轮范围并取得用户确认。Git 提交与推送授权不等于版本发布授权。
+
+## 开发技能入口
+
+- 工单：[本地 Markdown 工单](docs/agents/issue-tracker.md)；按[分流标签](docs/agents/triage-labels.md)记录处理状态。
+- 术语与决策：按[领域文档入口](docs/agents/domain.md)读取和维护。
 
 ## 文档入口
 

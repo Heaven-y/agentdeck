@@ -15,7 +15,10 @@ skills-lock.json
 # Claude Code 本地设置
 .claude/settings.local.json
 
-# 本机技能执行记录、临时验收配置与截图
+# 本地规格、工单和验收材料
+.scratch/
+
+# 旧技能执行记录和浏览器截图
 .superpowers/
 .playwright-mcp/
 

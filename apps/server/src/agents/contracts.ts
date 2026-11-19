@@ -51,6 +51,12 @@ export type AgentTurnInput = {
   registerRuntime?: (control: RuntimeControl) => void;
 };
 export type NativeAttachment = ChatAttachment & { path: string; data: Buffer };
+export type AttachmentCapabilityInput = Pick<
+  AgentTurnInput,
+  'workspace' | 'sessionId' | 'model' | 'reasoningEffort' | 'permission'
+> & {
+  includeImages?: boolean;
+};
 export type NativeInputResult = { status: 'accepted' | 'rejected' | 'unknown'; message?: string };
 export type NativeSteerInput = {
   clientMessageId: string;

@@ -156,8 +156,8 @@ it('批量附件遵守数量和字节预算，上传失败保持文字草稿，�
     expect(useChat.getState().draft).toBe('原草稿');
   }
   expect(features).not.toHaveBeenCalled();
-  await useChat.getState().addAttachments([new File(['x'], 'notes.txt')]);
-  expect(features).toHaveBeenCalledWith(expect.objectContaining({ permission }), expect.anything());
+  await useChat.getState().addAttachments([new File(['x'], 'notes.txt', { type: 'text/plain' })]);
+  expect(features).toHaveBeenCalledWith(expect.objectContaining({ permission }), expect.anything(), false);
   const id = useChat.getState().draftAttachments[0]!.id;
   useChat.getState().attachmentPreviewFailed(id);
   expect(useChat.getState().draftAttachments[0]?.error).toContain('无法解码');

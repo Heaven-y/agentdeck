@@ -94,6 +94,7 @@ function fakeClient() {
 function setup(
   options: {
     settings?: () => Promise<AcpRecord>;
+    readAccount?: () => Promise<{ email?: string }>;
     input?: Partial<AgentTurnInput>;
     client?: ReturnType<typeof fakeClient>;
     contextWindow?: (settings: AcpRecord, model?: string) => Promise<NativeContextWindow>;
@@ -107,6 +108,7 @@ function setup(
     env: { GEMINI_API_KEY: 'synthetic' },
     createClient,
     settings: options.settings ?? configuration,
+    readAccount: options.readAccount,
     contextWindow: options.contextWindow ?? (async (_settings, model) => ({ model, windowTokens: 1048576 })),
     headless,
   });
@@ -566,6 +568,170 @@ describe('ACP 原生事件投影', () => {
     ).toContainEqual(expect.objectContaining({ type: 'activity', name: '计划' }));
     expect(mapper.update({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text: '历史' } })).toEqual([]);
     expect(mapper.update({ sessionUpdate: 'private', signature: 'hidden' })).toEqual([]);
+  });
+});
+
+const image = {
+  id: 'image-proof',
+  revision: 'revision',
+  name: 'test.png',
+  kind: 'image' as const,
+  mimeType: 'image/png',
+  size: 3,
+  path: path.join(cwd, 'test.png'),
+  data: Buffer.from([1, 2, 3]),
+};
+
+function accountClient() {
+  const f = fakeClient();
+  const request = f.client.request.bind(f.client);
+  const configOptions = [
+    {
+      id: 'model',
+      currentValue: 'gemini-4-neon',
+      options: [
+        { value: 'gemini-4-neon', name: 'Gemini 4 Neon' },
+        { value: 'gemini-4-argon', name: 'Gemini 4 Argon' },
+      ],
+    },
+    { id: 'thought_level', currentValue: 'high', options: [{ value: 'high', name: 'High' }] },
+    {
+      id: 'mode',
+      currentValue: 'default',
+      options: [
+        { value: 'default', name: 'Default' },
+        { value: 'plan', name: 'Plan' },
+      ],
+    },
+  ];
+  f.client.request = vi.fn(async (method, params, callOptions) => {
+    if (method === 'initialize')
+      return {
+        ...(await request(method, params, callOptions)),
+        authMethods: [{ id: 'oauth-personal' }, { id: 'gemini-api-key' }],
+      };
+    if (method === 'session/new' || method === 'session/resume')
+      return { ...(method === 'session/new' ? { sessionId: 'native-1' } : {}), configOptions };
+    if (method === 'session/set_config_option') {
+      configOptions.find((option) => option.id === params.configId)!.currentValue = String(params.value);
+      if (params.configId === 'model') configOptions[1]!.options.push({ value: 'low', name: 'Low' });
+      return { configOptions };
+    }
+    return request(method, params, callOptions);
+  });
+  return f;
+}
+
+describe('AGY 官方账号图片', () => {
+  const settings = async () => ({ model: 'Gemini 4 Argon (Low)' });
+  const readAccount = async () => ({ email: 'fixture@example.invalid' });
+
+  it.each([undefined, 'native-1'])('复用登录，按原生选项发图且不重放历史：%s', async (sessionId) => {
+    const attachmentsStored = vi.fn(async () => {});
+    const f = setup({
+      settings,
+      readAccount,
+      client: accountClient(),
+      input: {
+        sessionId,
+        attachments: [image],
+        attachmentsStored,
+        permission: { agent: 'antigravity', mode: 'plan' },
+      },
+    });
+    const turn = f.run();
+    await started(f.client);
+    expect(f.createClient.mock.calls).toEqual([
+      [expect.objectContaining({ env: expect.not.objectContaining({ GEMINI_API_KEY: expect.anything() }) })],
+    ]);
+    expect(f.client.request).toHaveBeenCalledWith('authenticate', { methodId: 'oauth-personal' }, expect.anything());
+    expect(f.client.request).toHaveBeenCalledWith(
+      sessionId ? 'session/resume' : 'session/new',
+      { cwd, mcpServers: [], ...(sessionId ? { sessionId } : {}) },
+      expect.anything(),
+    );
+    expect(f.client.request).not.toHaveBeenCalledWith('session/load', expect.anything(), expect.anything());
+    expect(f.client.request).toHaveBeenCalledWith(
+      'session/prompt',
+      {
+        sessionId: 'native-1',
+        prompt: [
+          { type: 'text', text: f.input.text },
+          { type: 'image', mimeType: image.mimeType, data: image.data.toString('base64') },
+        ],
+      },
+      expect.anything(),
+    );
+    const applied = vi.mocked(f.client.request).mock.calls.filter(([method]) => method === 'session/set_config_option');
+    expect(applied.map(([, p]) => [p.configId, p.value])).toEqual([
+      ['model', 'gemini-4-argon'],
+      ['thought_level', 'low'],
+      ['mode', 'plan'],
+    ]);
+    expect(f.events).toContainEqual(
+      expect.objectContaining({ type: 'session', sessionId: 'native-1', model: 'gemini-4-argon-low' }),
+    );
+    expect(f.headless).not.toHaveBeenCalled();
+    f.finish();
+    await turn.done;
+    expect(attachmentsStored).toHaveBeenCalledWith([image.id]);
+  });
+
+  it('已发图但本轮失败时保留正文，不标记成功或换协议重发', async () => {
+    const attachmentsStored = vi.fn(async () => {});
+    const f = setup({
+      settings,
+      readAccount,
+      client: accountClient(),
+      input: { attachments: [image], attachmentsStored },
+    });
+    const turn = f.run();
+    await started(f.client);
+    f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '已收到的正文' } });
+    f.failPrompt(new AcpError('native', 'AGY 模型服务超时。', true));
+    await turn.done;
+    expect(f.events).toContainEqual({ type: 'text', delta: '已收到的正文' });
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+    expect(f.headless).not.toHaveBeenCalled();
+    expect(attachmentsStored).not.toHaveBeenCalled();
+    expect(vi.mocked(f.client.request).mock.calls.filter(([method]) => method === 'session/prompt')).toHaveLength(1);
+  });
+
+  it('账号文字续聊不探测登录、不打开 ACP', async () => {
+    const probe = vi.fn(readAccount);
+    const f = setup({ settings, readAccount: probe, input: { sessionId: 'native-1' } });
+    await f.run().done;
+    expect(f.headless).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'native-1', text: f.input.text }));
+    expect(probe).not.toHaveBeenCalled();
+    expect(f.createClient).not.toHaveBeenCalled();
+  });
+
+  it.each(['无登录', '强度冲突', '自动权限', '会话不匹配'])('%s时保留图片且不改用文字发送', async (cause) => {
+    const f = setup({
+      settings,
+      client: accountClient(),
+      readAccount: cause === '无登录' ? async () => ({}) : readAccount,
+      input: {
+        attachments: [image],
+        ...(cause === '强度冲突' ? { reasoningEffort: 'high' } : {}),
+        ...(cause === '自动权限' ? { permission: { agent: 'antigravity', mode: 'auto' } } : {}),
+        ...(cause === '会话不匹配' ? { sessionId: 'native-origin' } : {}),
+      },
+    });
+    if (cause === '会话不匹配') {
+      const request = f.client.request.bind(f.client);
+      f.client.request = vi.fn((method, params, options) =>
+        method === 'session/resume'
+          ? Promise.resolve({ sessionId: 'other-session' })
+          : request(method, params, options),
+      );
+    }
+    await f.run().done;
+    expect(f.headless).not.toHaveBeenCalled();
+    expect(f.client.request).not.toHaveBeenCalledWith('session/prompt', expect.anything(), expect.anything());
+    expect(f.events.some((e) => e.type === 'session')).toBe(false);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+    if (cause === '无登录' || cause === '自动权限') expect(f.createClient).not.toHaveBeenCalled();
   });
 });
 

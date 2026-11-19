@@ -46,8 +46,9 @@ describe('文档工作树枚举', () => {
     write(root, '.agents/skills/example/SKILL.md');
     write(root, '.claude/skills/example/SKILL.md');
     write(root, '.superpowers/run/progress.md');
+    write(root, '.scratch/example/issues/01-start.md');
     write(root, '.pi/draft.md');
-    execFileSync('git', ['add', '.superpowers/run/progress.md'], { cwd: root });
+    execFileSync('git', ['add', '.superpowers/run/progress.md', '.scratch/example/issues/01-start.md'], { cwd: root });
 
     expect(markdownFiles(root)).toEqual(['docs/current.md']);
   });

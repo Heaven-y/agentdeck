@@ -51,6 +51,8 @@ Windows 10/11、Node.js 22+ 与 Git 是开发基础。按需安装 `claude`、`c
 
 文档检查采用 NUL 分隔枚举，保留中文和空格路径；开发技能与过程目录即使意外跟踪也不纳入检查，已删除文件跳过。相同长句跨文件达到 40 字符会报告，单篇超过 600 行只预警。新文档须登记在导航，不为通过检查重复定义参数。
 
+新增或改动用户可见提示时，按[文案规范](../product/ui-layout.md#71-用户可见提示)检查变更实际影响的显示位置，包括前端、服务端错误透传和桌面弹窗。审查先问「不显示会不会妨碍操作」，再核对已知事实、用户下一步和是否重复展示。涉及发送、保存或删除的提示分别对照已成功、明确失败和结果不明，不能把不明写成未执行，也不能为每种内部状态各加一条警告。只验证受影响的场景，不用关键词扫描代替判断。
+
 定向覆盖率可在仓库根目录用测试文件路径筛选，并用 `--coverage.include` 限定生产模块。Vitest 5 使用 `--project` 时会将覆盖匹配根改为对应包；此时不能直接沿用根目录前缀，否则可能得到 0/0 空报告。空报告不作为覆盖验证通过依据。
 
 测试放各包 `tests/`，路径与模块相呼应。只补核心行为和实际回归，用临时目录生成绝对路径，不写开发机固定路径；脚本枚举回归复用服务端 `tests/dev` 发现范围。生命周期测试用明确屏障，不凭放宽超时掩盖竞争。
@@ -133,17 +135,33 @@ jscpd 递归扫描 server/web/desktop 的 src、shared/src、scripts/dev 与 scr
 powershell -ExecutionPolicy Bypass -File scripts\dev\install-skills.ps1
 ```
 
-脚本使用固定 `skills@1.7.0`，设置 `DISABLE_TELEMETRY=1`，为 Claude Code 与 Codex 建立入口。真实文件放 `.agents/skills/`，`.claude/skills/` 为目录链接；`skills-lock.json` 记录来源与内容哈希，三者都忽略。
+脚本使用固定 `skills@1.7.0`，设置 `DISABLE_TELEMETRY=1`，为 Claude Code 与 Codex 建立入口。真实文件放 `.agents/skills/`，`.claude/skills/` 为目录链接；`skills-lock.json` 记录来源与内容哈希，三者都忽略。若 Git 因代理未继承而连不上 GitHub，在当前 PowerShell 设置 `HTTPS_PROXY` 后重跑。
 
 | 来源 | 能力 | 许可 |
 |---|---|---|
-| obra/superpowers | 需求梳理、计划、执行、调试与评审 | MIT |
+| mattpocock/skills | 本项目默认工作流：需求澄清、规格与工单、实现、调试、审查、复盘 | MIT |
 | vercel-labs/agent-skills | React 实践 | MIT |
 | anthropics/skills | Web 应用验证 | Apache-2.0 |
 | anthropics/claude-plugins-official | MCP 开发 | Apache-2.0 |
 | nextlevelbuilder/ui-ux-pro-max-skill | UI/UX 辅助 | MIT |
 
-查看用 `npx skills@1.7.0 ls -a claude-code -a codex`，项目更新用 `npx skills@1.7.0 update -p`；新增来源先改安装脚本。更新取上游最新内容，锁文件不是提交号。技能中的插件根路径按 AGENTS 映射到本地；没有启动钩子，因此任务开始必须主动读取 using-superpowers。
+查看项目技能用 `npx.cmd skills@1.7.0 ls -a claude-code codex`。Matt Pocock 的工程和协作技能按[安装脚本](../../scripts/dev/install-skills.ps1)中的提交号安装；升级时先核对上游职责、技能清单和项目约定，再改脚本并重跑。其他四项辅助来源不变。
+
+已有旧技能的检出目录重跑脚本即可迁移。新技能安装并核对后，脚本只将本地锁文件中属于 `obra/superpowers` 的安装项逐项移到 `.scratch/.retired-superpowers-*/`，保留备份和原锁文件；不操作全局安装或 `.superpowers/` 中的历史记录。新会话使用项目目录发现技能，不再依赖旧启动技能。
+
+### 2.1 任务流程
+
+仓库已配置工单位置、分流标签和领域文档，无需再运行 `setup-matt-pocock-skills`。
+
+| 场景 | 使用方法 |
+|---|---|
+| 范围明确的小改动 | 直接做，按受影响场景验证和审查，不为改字或小修复另写规格、拆工单 |
+| 大功能或可分阶段的工作 | 重大不确定性用 `grill-with-docs` 澄清，按 `to-spec` → `to-tickets` 写规格、拆成可独立验收的工单，再按顺序实现 |
+| 实现和回归 | `implement` 按工单工作；用 `diagnosing-bugs` 建立复现，用 `tdd` 从可观察接口验证核心行为 |
+| 交付前审查 | 按 `code-review` 分开核对需求和仓库规范，再按[文档事实审查](#18-文档事实审查)核对相关资料 |
+| 架构问题和反复失误 | `improve-codebase-architecture` 先找改动分散的边界；`retro` 从已发生的问题判断应改文档、补验证还是加自动检查 |
+
+工单只写到[本地目录](../agents/issue-tracker.md)；术语、产品要求和设计决策按[领域文档](../agents/domain.md)各归其位。模板要求额外确认、跑全量测试或提交时，按本项目的澄清、验证与 Git 规则执行。
 
 ## 3. 启动与隔离验证
 
@@ -191,7 +209,7 @@ SSH 验证使用合成服务或授权目标，核对主机信任和凭据流程�
 - 已有非 watch 服务正在使用时，不重启它、不覆盖其默认前端产物。使用专用临时 outDir 和匹配版本的隔离后端，避免混版。
 - 大于 500 kB 的构建 chunk 提示通过按需加载和实际分析处理，不抬阈值隐藏；jscpd 只发现精确 token 重复，近似逻辑仍需评审。
 - Markdown 没有自动排版；纯文档改动检查链接、编号、事实、编码与差异即可，不为文档内容新增单元测试。
-- 当前没有独立 Playwright E2E 目录；界面验收用可用浏览器与隔离服务，临时截图和执行记录放 `.superpowers/` 或任务临时目录。
+- 当前没有独立 Playwright E2E 目录；界面验收用可用浏览器与隔离服务，临时截图和执行记录放 `.scratch/` 或任务临时目录。
 
 ## 5. 按症状查
 

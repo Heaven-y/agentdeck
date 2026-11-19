@@ -37,7 +37,7 @@ function nativeFailure(value: unknown): AcpError {
   const diagnostic = antigravityDiagnostic(text(error.message));
   return new AcpError(
     'native',
-    diagnostic?.type === 'error' ? diagnostic.message : 'Antigravity ACP 未完成请求，请核对模型、配置或原生运行状态。',
+    diagnostic?.type === 'error' ? diagnostic.message : 'AGY 没有完成请求。',
     serviceFailure(text(error.message)),
   );
 }

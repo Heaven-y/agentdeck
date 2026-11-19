@@ -12,14 +12,24 @@ import { fileReference } from '../../common/media/attachment-input';
 import { AcpPrompts, firstAcpInput } from './prompts';
 import { AcpCommands } from './commands';
 import { AntigravityAcpMapper, acpTurnUsage } from './mapper';
-import { configureSession, needsHeadless } from './selection';
-import { AcpError, cancelled, object, list, protocolFailure, type AcpConnection, type AcpRecord } from './types';
+import {
+  accountImageRestriction,
+  configureSession,
+  isAccountConnection,
+  needsHeadless,
+  sessionIdentity,
+} from './selection';
+import { ACCOUNT_ACP_AUTH, acpPromptCapabilities, canResumeAcp, hasAcpAuth, initializeAcp } from './handshake';
+import { readAntigravityAccount } from '../account';
+import { antigravityLoginEnvironment } from '../run/process-environment';
+import { AcpError, cancelled, object, protocolFailure, type AcpConnection, type AcpRecord } from './types';
 
 type Options = {
   env?: NodeJS.ProcessEnv;
   headless: TurnRunner;
   createClient?: (options: AcpLaunchOptions) => Promise<AcpConnection>;
   settings?: () => Promise<AntigravityModelSettings>;
+  readAccount?: typeof readAntigravityAccount;
   contextWindow?: typeof antigravityContextWindowSnapshot;
   invocationText?: (input: AgentTurnInput, signal: AbortSignal) => Promise<string>;
 };
@@ -35,6 +45,7 @@ class AcpTurn {
   private contextWindow?: NativeContextWindow;
   private promptCapabilities?: AcpRecord;
   private sent = false;
+  private accountImage = false;
   private ended = false;
   /** 本轮已流出正文：原生服务在末尾报临时故障时不能再把这一轮说成什么都没产出。 */
   private produced = false;
@@ -45,6 +56,7 @@ class AcpTurn {
   private compacting = false;
   canSteer(): boolean {
     return (
+      !this.accountImage &&
       this.input.invocation?.kind !== 'acp-command' &&
       !!this.prompts?.accepting &&
       this.sent &&
@@ -70,33 +82,11 @@ class AcpTurn {
     this.done = this.run();
   }
 
-  private async initialize(client: AcpConnection): Promise<AcpRecord> {
-    const signal = this.controller.signal;
-    const initialized = await client.request(
-      'initialize',
-      {
-        protocolVersion: 1,
-        clientInfo: { name: 'agentdeck', title: 'AgentDeck', version: '0.1.1' },
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-          ...(this.input.requestInteraction ? { elicitation: { form: {}, url: {} } } : {}),
-        },
-      },
-      { signal },
-    );
-    if (initialized.protocolVersion !== 1) throw new AcpError('unavailable', '当前 ACP 协议版本尚未适配。');
-    if (!list(initialized.authMethods).some((value) => object(value).id === 'gemini-api-key'))
-      throw new AcpError('unavailable', '当前 ACP 未提供 API Key 认证方式。');
-    await client.request('authenticate', { methodId: 'gemini-api-key' }, { signal });
-    return initialized;
-  }
-
-  private async prepare(settings: AntigravityModelSettings): Promise<string> {
+  private async prepare(settings: AntigravityModelSettings, env = this.options.env): Promise<string> {
     const signal = this.controller.signal;
     this.client = await (this.options.createClient ?? AntigravityAcpClient.start)({
       cwd: this.input.workspace.dir,
-      env: this.options.env,
+      env,
       bypass: this.input.permission?.mode === 'bypass',
     });
     signal.throwIfAborted();
@@ -105,11 +95,7 @@ class AcpTurn {
     this.client.onRequest = (request) => {
       if (!this.interactions?.request(request)) this.client?.reject(request.id);
     };
-    const initialized = await this.initialize(this.client);
-    const capabilities = object(initialized.agentCapabilities);
-    this.promptCapabilities = object(capabilities.promptCapabilities);
-    const resume = object(capabilities.sessionCapabilities).resume !== undefined;
-    if (this.input.sessionId && !resume) throw new AcpError('unavailable', '当前 ACP 未提供无重放续接。');
+    await this.authenticate(this.client);
     const response = await this.client.request(
       this.input.sessionId ? 'session/resume' : 'session/new',
       {
@@ -119,8 +105,13 @@ class AcpTurn {
       },
       { signal },
     );
-    const selected = await configureSession(this.client, this.input, { response, settings, signal });
-    this.nativeId = selected.id;
+    this.nativeId = sessionIdentity(response, this.input.sessionId);
+    const selected = await configureSession(this.client, this.input, {
+      response,
+      settings,
+      signal,
+      account: this.accountImage,
+    });
     // ACP 已确认的是内置型号，不再拿其 ID 反查未使用的自定义别名。
     this.contextWindow = await (this.options.contextWindow ?? antigravityContextWindowSnapshot)(
       { modelProvider: settings.modelProvider },
@@ -132,6 +123,18 @@ class AcpTurn {
     };
     this.client.onNotification = (method, params) => this.notification(method, params);
     return selected.model;
+  }
+
+  private async authenticate(client: AcpConnection): Promise<void> {
+    const signal = this.controller.signal;
+    const initialized = await initializeAcp(client, signal, !!this.input.requestInteraction);
+    this.promptCapabilities = acpPromptCapabilities(initialized);
+    if (this.input.sessionId && !canResumeAcp(initialized))
+      throw new AcpError('unavailable', '当前 AGY 不能接着这条会话发图，可移除图片继续。');
+    if (this.accountImage) this.validateAttachments();
+    const methodId = this.accountImage ? ACCOUNT_ACP_AUTH : 'gemini-api-key';
+    if (!hasAcpAuth(initialized, methodId)) throw new AcpError('unavailable', '当前 AGY 不支持所选登录方式。');
+    await client.request('authenticate', { methodId }, { signal });
   }
 
   private notification(method: string, params: AcpRecord): void {
@@ -165,7 +168,7 @@ class AcpTurn {
     if (this.input.invocation?.kind === 'acp-command')
       throw new AcpError('selection', '所选模型或权限使用兼容通道，不能执行ACP专用命令。');
     if (this.input.attachments?.some((file) => file.kind === 'image'))
-      throw new AcpError('selection', '当前 Antigravity 兼容运行路径不支持图片，请保留附件并选择可用的 ACP 模型。');
+      throw new AcpError('selection', '当前 AGY 会话不能直接发图，可移除图片后继续。');
     await this.client?.close();
     this.client = undefined;
     this.controller.signal.throwIfAborted();
@@ -192,14 +195,28 @@ class AcpTurn {
       this.prompts?.close();
       this.interactions?.close();
       this.permissions?.cancel();
-      await this.client?.close();
+      await this.closeSession();
     }
   }
 
-  /** 可重试的服务错误在正文已流出时不代表整轮失败，只留一条可折叠记录。 */
+  private async closeSession(): Promise<void> {
+    if (this.accountImage && this.nativeId && !this.controller.signal.aborted)
+      await this.client
+        ?.request('session/close', { sessionId: this.nativeId }, { timeoutMs: 3000 })
+        .catch(() => undefined);
+    await this.client?.close();
+  }
+
+  /** 旧 API Key 路径维持原有收尾；账号发图失败时，正文和待发暂停都保留。 */
   private failTurn(error: unknown): void {
     const message = this.errorMessage(error);
-    if (error instanceof AcpError && error.retryable && this.produced && !this.controller.signal.aborted) {
+    if (
+      !this.accountImage &&
+      error instanceof AcpError &&
+      error.retryable &&
+      this.produced &&
+      !this.controller.signal.aborted
+    ) {
       this.input.emit({
         type: 'activity',
         // 带上本轮身份：同一个会话再次超时时各轮保留自己的记录，不会被并进上一轮的位置。
@@ -218,19 +235,25 @@ class AcpTurn {
   private errorMessage(error: unknown): string {
     if (this.failed) return this.failed.message;
     if (this.controller.signal.aborted) return '本轮已中断。';
-    return error instanceof AcpError || error instanceof ModelSettingsError
-      ? error.message
-      : 'Antigravity ACP 运行失败，请核对原生配置与运行状态。';
+    if (error instanceof AcpError || error instanceof ModelSettingsError) return error.message;
+    return this.accountImage ? 'AGY 没有完成这条图片消息。' : 'AGY 没有完成本轮。';
   }
   private async selectRuntime(): Promise<string | undefined> {
     const env = this.options.env ?? process.env;
     const settings = await (this.options.settings ?? (() => readAntigravityModelConfig({ env })))();
     this.controller.signal.throwIfAborted();
     assertAntigravitySelection(settings, this.input.model);
+    this.accountImage =
+      isAccountConnection(settings) && this.input.attachments?.some((file) => file.kind === 'image') === true;
+    if (this.accountImage) return this.prepareAccountImage(settings, env);
     if (needsHeadless(this.input, settings, env)) {
       await this.useHeadless();
       return;
     }
+    return this.prepareKey(settings);
+  }
+
+  private async prepareKey(settings: AntigravityModelSettings): Promise<string | undefined> {
     try {
       return await this.prepare(settings);
     } catch (error) {
@@ -243,11 +266,23 @@ class AcpTurn {
       await this.useHeadless();
     }
   }
+  private async prepareAccountImage(settings: AntigravityModelSettings, env: NodeJS.ProcessEnv): Promise<string> {
+    const restriction = accountImageRestriction(this.input);
+    if (restriction) throw new AcpError('selection', restriction);
+    const accountEnv = antigravityLoginEnvironment(env);
+    const signal = this.controller.signal;
+    const account = await (this.options.readAccount ?? readAntigravityAccount)({ env: accountEnv, signal });
+    signal.throwIfAborted();
+    if (!account.email) throw new AcpError('unavailable', '无法使用 AGY 登录。请在模型设置中检查登录后再发图。');
+    // 不启动登录终端；只使用原生已经存在的账号。图片不能改用文字路径发送。
+    return this.prepare(settings, accountEnv);
+  }
+
   private validateAttachments(attachments = this.input.attachments): void {
     if (attachments?.some((file) => file.kind === 'image') && this.promptCapabilities?.image !== true)
-      throw new AcpError('selection', '当前 Antigravity 运行通道没有确认图片输入支持。');
+      throw new AcpError('selection', '当前 AGY 会话不能直接发图。');
     if (attachments?.some((file) => file.kind === 'text') && this.promptCapabilities?.embeddedContext !== true)
-      throw new AcpError('selection', '当前 Antigravity 运行通道没有确认文件上下文支持。');
+      throw new AcpError('selection', '当前 AGY 会话不能读取所附文件。');
   }
   private async invocationText(): Promise<string> {
     if (this.input.invocation?.kind === 'acp-command')
@@ -291,8 +326,7 @@ class AcpTurn {
     if (this.compacting)
       this.input.emit({ type: 'compaction', state: { status: isError ? 'failed' : 'completed', trigger: 'manual' } });
     this.compacting = false;
-    if (isError)
-      this.input.emit({ type: 'error', message: 'Antigravity 未完整完成本轮，请检查原生停止原因或调整本轮请求。' });
+    if (isError) this.input.emit({ type: 'error', message: 'AGY 没有完成本轮。' });
     this.input.emit({
       type: 'turn_end',
       isError,

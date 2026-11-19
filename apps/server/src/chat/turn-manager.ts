@@ -15,6 +15,7 @@ import type {
 import type { Workspace } from '@agentdeck/shared/projects';
 import type {
   AgentTurnInput,
+  AttachmentCapabilityInput,
   PermissionAnswer,
   TurnHandle,
   TurnRunner,
@@ -45,7 +46,11 @@ export type TurnManagerDeps = {
   capabilities?: Pick<CapabilitiesService, 'prepare'>;
   acquireWorkspace?: (id: string) => () => void;
   attachments?: AttachmentStore;
-  inputFeatures?(agent: AgentKind, input: AgentTurnInput, signal: AbortSignal): Promise<NativeInteractionFeatures>;
+  inputFeatures?(
+    agent: AgentKind,
+    input: AttachmentCapabilityInput,
+    signal: AbortSignal,
+  ): Promise<NativeInteractionFeatures>;
 };
 type Turn = {
   id: string;
@@ -130,7 +135,11 @@ export class TurnManager {
         if (!turn?.input || !this.deps.inputFeatures)
           throw new SessionError(400, 'attachment_unavailable', '当前无法确认引导附件能力，请保留输入。');
         const features = await preparing(
-          this.deps.inputFeatures(turn.agent, turn.input, turn.controller.signal),
+          this.deps.inputFeatures(
+            turn.agent,
+            { ...turn.input, includeImages: includesImage(assets) },
+            turn.controller.signal,
+          ),
           turn.controller.signal,
         );
         validateInputFeatures(assets, features);
@@ -601,7 +610,7 @@ export class TurnManager {
     };
     const assets = await this.deps.attachments.inspect(turn.socket, scope, msg.attachments!);
     const features = await preparing(
-      this.deps.inputFeatures(turn.agent, input, turn.controller.signal),
+      this.deps.inputFeatures(turn.agent, { ...input, includeImages: includesImage(assets) }, turn.controller.signal),
       turn.controller.signal,
     );
     validateInputFeatures(assets, features);
@@ -742,8 +751,11 @@ function isFollowupAction(message: ClientMessage): message is Parameters<Followu
     'followup.steer',
   ]).has(message.type);
 }
+function includesImage(assets: ChatAttachment[]): boolean {
+  return assets.some((file) => file.kind === 'image');
+}
 function validateInputFeatures(assets: ChatAttachment[], features: NativeInteractionFeatures): void {
-  if (assets.some((file) => file.kind === 'image') && !features.images.available)
+  if (includesImage(assets) && !features.images.available)
     throw new SessionError(400, 'attachment_unavailable', features.images.reason ?? '当前模型或运行通道不支持图片。');
   if (assets.some((file) => file.kind !== 'image') && !features.documents.available)
     throw new SessionError(

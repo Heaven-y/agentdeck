@@ -60,7 +60,8 @@ function unknownFeatures(): NativeInteractionFeatures {
 function initialFeatures(runtime?: NativeRuntimePath): NativeInteractionFeatures {
   const features = unknownFeatures();
   if (runtime === 'antigravity-headless') {
-    for (const name of ['images', 'questions', 'forms', 'steer'] as const)
+    features.images = unavailable('unsupported', '当前 AGY 会话不能直接发图。可在原生 AGY 终端粘贴图片。');
+    for (const name of ['questions', 'forms', 'steer'] as const)
       features[name] = unavailable('unsupported', 'AGY headless 没有此原生交互通道，不能借用 ACP 能力。');
   }
   return features;

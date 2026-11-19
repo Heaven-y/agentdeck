@@ -17,6 +17,7 @@ export default tseslint.config(
       '.agents/**',
       '.claude/**',
       '.pi/**',
+      '**/.scratch/**',
       '**/.superpowers/**',
     ],
   },
