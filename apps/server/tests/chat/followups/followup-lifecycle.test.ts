@@ -8,7 +8,7 @@ import { AttachmentStore } from '../../../src/chat/attachments/attachments';
 import { FollowupQuestions } from '../../../src/chat/followups/followup-questions';
 import { codexAsyncQuestion } from '../../../src/agents/codex/interaction/async-questions';
 
-it('首轮创建会话同时绑定待发附件，编辑替换租约、过期版本拒绝且清空后释放文件', async () => {
+it('首轮创建会话同时绑定待发附件，取回移出调度并释放文件，拒绝过期版本', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'agentdeck-queue-lifecycle-'));
   const attachments = new AttachmentStore(root),
     owner = { send: vi.fn(), isOpen: () => true };
@@ -41,17 +41,24 @@ it('首轮创建会话同时绑定待发附件，编辑替换租约、过期版�
     });
     await attachments.remove(owner, scope, a);
     await host.handle(owner, {
-      type: 'followup.edit',
+      type: 'followup.cancel',
       queueId,
       clientMessageId,
       revision: previous.revision,
-      content: { text: 'stale' },
+      returnToDraft: true,
     });
     expect(owner.send.mock.lastCall?.[1]).toMatchObject({ type: 'followup.error' });
     await host.bind('first', 'native');
     expect(host.snapshots(owner)[0]).toMatchObject({ sessionId: 'native', items: [{ content: { text: 'edited' } }] });
     await expect(attachments.remove(owner, { ...scope, sessionId: 'native' }, b)).rejects.toThrow();
-    await host.handle(owner, { type: 'followup.clear', queueId });
+    await host.handle(owner, {
+      type: 'followup.cancel',
+      queueId,
+      clientMessageId,
+      revision: previous.revision + 1,
+      returnToDraft: true,
+    });
+    expect(host.snapshots(owner)[0]!.items[0]).toMatchObject({ status: 'cancelled', returnedToDraft: true });
     await attachments.remove(owner, { ...scope, sessionId: 'native' }, b);
   } finally {
     host.dispose();

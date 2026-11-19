@@ -8,7 +8,7 @@ import { useChat } from '../state/chat-store';
 
 type StatisticsItem = Extract<ChatItem, { kind: 'statistics' }>;
 
-/** 底部只代表最新用户轮次；正在运行或本轮无报告时不借用上一轮速度。 */
+/** 只读当前用户轮次，不将旧值归到本轮。 */
 export function latestComposerStatistics(
   items: ChatItem[],
   running: boolean,
@@ -32,45 +32,64 @@ function statisticsForTurn(current: ChatItem[]): StatisticsItem | undefined {
   return latest && failed ? { ...latest, isError: true } : latest;
 }
 
-function statisticsHint(item: StatisticsItem | undefined, running: boolean): string {
-  if (running) return '本轮完成后显示平均速度';
-  if (!item) return '此会话未提供本轮输出 token 与耗时';
+function isTurnInput(item: ChatItem): boolean {
+  return item.kind === 'user' && !item.steeringInput;
+}
+
+/** 查找同一会话最近的可用速度，跳过当前运行、截断开头和引导输入。 */
+function previousStatistics(items: ChatItem[], leadingFragment: boolean) {
+  let end = items.findLastIndex(isTurnInput);
+  for (let index = end - 1; index >= 0; index--) {
+    if (!isTurnInput(items[index]!)) continue;
+    const item = latestComposerStatistics(items.slice(index, end), false, leadingFragment);
+    if (item && averageTokenRate(item) !== undefined) return item;
+    end = index;
+  }
+}
+
+function statisticsHint(item?: StatisticsItem): string {
+  if (!item) return '暂无速度数据';
   if (item.isError) return '本轮未成功完成，不计算平均速度';
   if (averageTokenRate(item) !== undefined)
     return item.scope === 'turn' ? '回合输出 token ÷ 总耗时，包含工具与等待时间' : '模型步骤输出 token ÷ 步骤耗时';
-  return '缺少同一范围的有效输出 token 或耗时，无法计算速度';
+  return '暂无速度数据';
 }
 
 function rateLabel(rate: number | undefined, showStep: boolean): string {
   return `${showStep ? '步骤平均 ' : ''}${rate === undefined ? '—' : rate.toFixed(1)} tok/s`;
 }
 
+function metrics(item?: StatisticsItem) {
+  const rate = item && averageTokenRate(item);
+  const duration = finiteCount(item?.durationMs) ? item.durationMs : undefined;
+  return { rate, duration, hasDetails: item && (duration !== undefined || tokenFields(item.usage).length > 0) };
+}
 function TurnStatistics({
   item,
-  running,
+  previous,
   unconfirmed,
 }: {
   item?: StatisticsItem;
-  running: boolean;
+  previous: boolean;
   unconfirmed: boolean;
 }) {
   const popover = usePopoverStore({ placement: 'top-end' });
-  const rate = item && averageTokenRate(item);
-  const duration = finiteCount(item?.durationMs) ? item.durationMs : undefined;
-  const hint = statisticsHint(item, running);
-  const hasDetails = item && (duration !== undefined || tokenFields(item.usage).length > 0);
+  const { rate, duration, hasDetails } = metrics(item);
+  const hint = statisticsHint(item);
+  const detailsLabel = previous ? '最近一次统计详情' : '本轮统计详情';
   return (
     <>
       <PopoverDisclosure
         store={popover}
         render={<button type="button" />}
-        aria-label="本轮统计详情"
+        aria-label={detailsLabel}
         className="composer-statistic inline-flex min-h-6 max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         title={hint}
       >
         <span className="inline-flex items-center gap-1 tabular-nums">
           <Gauge aria-hidden className="size-3" />
-          {rateLabel(rate, unconfirmed && item?.scope === 'step')}
+          {previous && <span>最近一次</span>}
+          {rateLabel(rate, (previous || unconfirmed) && item?.scope === 'step')}
         </span>
         {duration !== undefined && (
           <span className="inline-flex items-center gap-1 tabular-nums">
@@ -84,10 +103,14 @@ function TurnStatistics({
         portal
         unmountOnHide
         gutter={8}
-        aria-label="本轮统计详情"
+        aria-label={detailsLabel}
         className="z-50 max-w-[calc(100vw-32px)] rounded-xl border border-border bg-card px-4 py-3 shadow-lg"
       >
-        {hasDetails ? <StatisticsLine statistics={item} /> : <p className="text-xs text-muted-foreground">{hint}</p>}
+        {hasDetails && item ? (
+          <StatisticsLine statistics={item} />
+        ) : (
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        )}
       </Popover>
     </>
   );
@@ -100,11 +123,14 @@ export function ComposerStatus() {
   const inspect = useChat((state) => state.inspectItem);
   const leadingFragment = useChat((state) => !!state.historyPage?.leading);
   const latest = latestComposerStatistics(items, running, leadingFragment);
+  const previous =
+    !latest || averageTokenRate(latest) === undefined ? previousStatistics(items, leadingFragment) : undefined;
+  const displayed = previous ?? latest;
   const start = items.findLastIndex((item) => item.kind === 'user');
   const status = !running && items.slice(start + 1).findLast((item) => item.kind === 'turn-status');
   return (
     <div role="group" aria-label="会话统计" className="composer-status">
-      <TurnStatistics key={latest?.id ?? 'pending'} item={latest} running={running} unconfirmed={!!status} />
+      <TurnStatistics key={displayed?.id ?? 'pending'} item={displayed} previous={!!previous} unconfirmed={!!status} />
       {status && (
         <button
           type="button"

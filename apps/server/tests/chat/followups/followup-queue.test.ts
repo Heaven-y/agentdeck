@@ -69,7 +69,7 @@ it('每会话最多十条，未知受理暂停且不能重试；编辑、删除�
     revision: first.revision,
     content: { text: 'edited' },
   });
-  expect(() => f.queue.cancel(f.owner, f.context.queueId, first.clientMessageId, first.revision)).toThrow('版本');
+  expect(() => f.queue.cancel(f.owner, f.context.queueId, first)).toThrow('版本');
   const claimed = f.queue.next(f.owner, f.context.queueId)!;
   f.queue.result(f.owner, f.context.queueId, claimed.clientMessageId, { status: 'unknown', reason: '原生受理未确认' });
   expect(f.queue.next(f.owner, f.context.queueId)).toBeUndefined();
@@ -81,7 +81,7 @@ it('每会话最多十条，未知受理暂停且不能重试；编辑、删除�
     }),
   ).toThrow();
   const unknown = f.queue.snapshot(f.owner, f.context.queueId).items[0]!;
-  f.queue.cancel(f.owner, f.context.queueId, unknown.clientMessageId, unknown.revision);
+  f.queue.cancel(f.owner, f.context.queueId, unknown);
   f.queue.resume(f.owner, f.context.queueId);
   expect(f.queue.next(f.owner, f.context.queueId)?.content?.text).toBe('1');
 });

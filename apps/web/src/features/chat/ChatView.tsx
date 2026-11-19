@@ -11,7 +11,6 @@ import type { HistoryPagination } from '../conversation/timeline/history-pages';
 import { LiveTrajectory } from './timeline/LiveTrajectory';
 import { LiveConversationSurface } from './timeline/LiveConversationSurface';
 import { RunStatus } from './runtime/RunStatus';
-import { FollowupQueue } from './followups/FollowupQueue';
 import { RuntimeTasksPanel } from './runtime/RuntimeTasksPanel';
 
 function Banner() {
@@ -164,7 +163,6 @@ export function ChatView({ workspace }: { workspace: Workspace }) {
         </LiveConversationSurface>
       </div>
       <RunStatus />
-      <FollowupQueue />
       <RuntimeTasksPanel />
       <Composer key={version} />
     </section>

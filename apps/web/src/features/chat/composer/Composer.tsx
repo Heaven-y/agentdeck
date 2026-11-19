@@ -13,6 +13,7 @@ import { ComposerSurface } from './ComposerSurface';
 import { AttachmentDropzone, ComposerAttachmentPicker, ComposerAttachments } from './ComposerAttachments';
 import { attachmentBlocked } from './attachment-actions';
 import { steerAvailable, pendingFollowups, viewQueue } from '../followups/followup-state';
+import { FollowupQueue } from '../followups/FollowupQueue';
 
 const ResumeSessionDialog = lazy(() => import('./ResumeSessionDialog'));
 
@@ -36,41 +37,23 @@ function StopAction() {
 
 function SubmitActions({ disabled, resume }: { disabled: boolean; resume: boolean }) {
   const running = useChat((s) => s.running);
-  const canSteer = useChat(steerAvailable);
-  const steer = useChat((state) => state.sendFollowup);
-  const draft = useChat((state) => state.draft);
   const queued = useChat((state) => !viewQueue(state)?.invalid && pendingFollowups(viewQueue(state)).length > 0);
-  const label = submitLabel(resume, running || queued);
-  const useText = running || resume;
+  if (running && !resume) return <StopAction />;
+  const label = resume ? '继续会话' : queued ? '加入待发' : '发送';
   return (
     <div className="flex shrink-0 items-center gap-2">
-      {running && canSteer && !resume && (
-        <button
-          type="button"
-          className="composer-followup"
-          disabled={disabled}
-          onClick={() => steer(draft.trim(), 'steer')}
-        >
-          引导本轮
-        </button>
-      )}
       <button
         type="submit"
         aria-label={label}
         title={label}
-        className={useText ? 'composer-followup' : 'composer-submit'}
+        className={resume ? 'composer-followup' : 'composer-submit'}
         disabled={!resume && disabled}
       >
-        {useText ? label : <ArrowUp aria-hidden className="size-5" />}
+        {resume ? label : <ArrowUp aria-hidden className="size-5" />}
       </button>
       {running && <StopAction />}
     </div>
   );
-}
-
-function submitLabel(resume: boolean, queue: boolean) {
-  if (resume) return '继续会话';
-  return queue ? '排队发送' : '发送';
 }
 
 function ComposerActions({ disabled, resume }: { disabled: boolean; resume: boolean }) {
@@ -96,13 +79,16 @@ function ComposerActions({ disabled, resume }: { disabled: boolean; resume: bool
   );
 }
 
+function runningHint(running: boolean, canSteer: boolean) {
+  if (running) return canSteer ? 'Enter 加入待发 · Ctrl/Cmd+Enter 引导' : '输入消息，Enter 加入待发';
+}
 function placeholder(connected: boolean, hint?: string): string {
   return connected ? hint || '描述你想完成的任务…' : '等待连接…';
 }
 const emptyInput = (text: string, selection: AgentCapability | undefined) => !text.trim() && !selection;
 const anyBlocked = (conditions: unknown[]) => conditions.some(Boolean);
 
-/** 运行中仍可编辑；Enter默认排队，引导需即时原生证据且独立点击。 */
+/** 运行中 Enter 加入待发；引导只走明确支持的原生通道。 */
 export function Composer() {
   const id = useId();
   const resume = useResumeSession();
@@ -119,6 +105,9 @@ export function Composer() {
   const sessionId = useChat((s) => s.sessionId);
   const managing = useChat(managementPending);
   const send = useChat((s) => s.send);
+  const running = useChat((s) => s.running);
+  const canSteer = useChat(steerAvailable);
+  const steer = useChat((s) => s.sendFollowup);
   const restriction = selectionRestriction(selection, sessionId, text);
   const resumeSearch = selection ? undefined : resumeArgument(text, agent);
   const busy = anyBlocked([loading, managing, permissionPending]);
@@ -133,6 +122,8 @@ export function Composer() {
   ]);
   const dropDisabled = anyBlocked([busy, !connected]);
   const pickerDisabled = anyBlocked([dropDisabled, uploading]);
+  const inputHint = selection?.argumentHint || runningHint(running, canSteer);
+  const steerBlocked = anyBlocked([!canSteer, blocked, resumeSearch !== undefined]);
 
   const submit = (e?: FormEvent<HTMLFormElement>) => {
     if (e && e.target !== e.currentTarget) return;
@@ -143,6 +134,7 @@ export function Composer() {
 
   const form = (
     <form onSubmit={submit} className="composer">
+      <FollowupQueue focusComposer={() => document.getElementById(id)?.focus()} />
       <AttachmentDropzone disabled={dropDisabled}>
         <ComposerSurface>
           <ComposerAttachments />
@@ -154,9 +146,10 @@ export function Composer() {
             text={text}
             onChange={setText}
             onSend={submit}
+            onSteer={steerBlocked ? undefined : () => steer(text.trim(), 'steer')}
             onResume={resume.open}
             busy={busy}
-            placeholder={placeholder(connected, selection?.argumentHint)}
+            placeholder={placeholder(connected, inputHint)}
           />
           {restriction && <p className="px-4 text-xs leading-5 text-warning">{restriction}</p>}
           <SessionReferencePreview text={text} />

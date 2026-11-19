@@ -1,5 +1,5 @@
 import { Combobox, ComboboxItem, ComboboxPopover, useComboboxStore } from '@ariakit/react/combobox';
-import { useRef, useState } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import type { AgentCapabilities, AgentCapability, AgentKind } from '@agentdeck/shared/conversation';
 import { capabilityRestriction, isInvocableCapability } from '../controls/capability-selection';
 import { useChat } from '../state/chat-store';
@@ -36,6 +36,7 @@ type InputProps = {
   text: string;
   onChange(text: string): void;
   onSend(): void;
+  onSteer?(): void;
   onResume(argument: string): void;
   placeholder: string;
   busy: boolean;
@@ -79,7 +80,17 @@ function nativeSuggestions(catalog: AgentCapabilities | undefined, query: string
 }
 
 /** 选择工作台导航或原生能力；发送原生能力仍经过原有 store 和后端复验。 */
-function ScopedInput({ id, text, onChange, onSend, onResume, placeholder, busy }: InputProps) {
+function imeEnter(event: KeyboardEvent, composing: boolean) {
+  return composing || event.nativeEvent.isComposing || event.keyCode === 229;
+}
+function captureSteerShortcut(event: KeyboardEvent, open: boolean, steer?: () => void) {
+  if (!event.ctrlKey && !event.metaKey) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!open) steer?.();
+  return true;
+}
+function ScopedInput({ id, text, onChange, onSend, onSteer, onResume, placeholder, busy }: InputProps) {
   const input = useRef<HTMLTextAreaElement>(null);
   const [range, setRange] = useState({ start: text.length, end: text.length });
   const [requested, setRequested] = useState(false);
@@ -142,7 +153,7 @@ function ScopedInput({ id, text, onChange, onSend, onResume, placeholder, busy }
         onKeyDownCapture={(event) => {
           if (event.key !== 'Enter') return;
           // 部分输入法在确认文字时已清除 isComposing，仍需识别组字状态或 IME 键码。
-          if (composing || event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (imeEnter(event, composing)) {
             event.stopPropagation();
             return;
           }
@@ -155,6 +166,7 @@ function ScopedInput({ id, text, onChange, onSend, onResume, placeholder, busy }
             }
             return;
           }
+          if (captureSteerShortcut(event, open, onSteer)) return;
           if (open) return;
           event.preventDefault();
           onSend();

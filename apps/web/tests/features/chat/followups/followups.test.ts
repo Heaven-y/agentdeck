@@ -206,7 +206,7 @@ it('unknown不能编辑或重发，clear仅清可清条目；错误回执保持�
       },
     ]),
   });
-  expect(useChat.getState().editFollowup(queueId, message.clientMessageId, '不准编辑')).toBe(false);
+  expect(useChat.getState().editFollowup(queueId, message.clientMessageId)).toBe(false);
   const before = sent.length;
   expect(useChat.getState().resumeFollowups(queueId)).toBe(false);
   expect(sent).toHaveLength(before);
@@ -266,7 +266,7 @@ it('列表可清空并显式继续；身份失效后所有原列表操作被阻�
   expect(sent.at(-1)).toEqual({ type: 'followup.resume', queueId });
   recover({ type: 'connection.rejected', code: 'owner_missing', message: '失效' });
   const count = sent.length;
-  expect(useChat.getState().editFollowup(queueId, item.clientMessageId, '修改')).toBe(false);
+  expect(useChat.getState().editFollowup(queueId, item.clientMessageId)).toBe(false);
   expect(useChat.getState().cancelFollowup(queueId, item.clientMessageId)).toBe(false);
   expect(useChat.getState().clearFollowups(queueId)).toBe(false);
   expect(useChat.getState().resumeFollowups(queueId)).toBe(false);

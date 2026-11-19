@@ -12,7 +12,7 @@ DSH 的生成速度同时依赖提供方输出 token 数与首个 token 至完�
 
 依据为安装包中的 `@deepseek-ai/dsh-client-ui-trajectory/README.zh.md`、`@deepseek-ai/dsh-session-stats/README.zh.md`，以及 chat 客户端的计时投影。参考范围限于交互和指标定义。
 
-当前输入框外下方显示上下文和最新一轮耗时、平均 tok/s；点击统计可展开 token 分项。开始新轮或本轮未报告时不借用旧速度，完整历史统计保留在轨迹视图。Antigravity 使用官方彩色标识。
+输入框外下方显示上下文及耗时、平均 tok/s；点击统计可展开 token 分项。本轮运行中或无新值时，保留同会话已加载的最近有效速度并标记“最近一次”，不算作本轮数据。完整的已有历史统计可在轨迹查看。Antigravity 使用官方彩色标识。
 
 ## 能力对照
 

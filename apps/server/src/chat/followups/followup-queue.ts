@@ -22,6 +22,7 @@ type Group = {
 };
 type Options = { now?: () => number; onChange?(owner: object, state: FollowupSnapshot): void };
 type Input = { clientMessageId: string; mode: FollowupMode; content: FollowupContent };
+type ItemVersion = Pick<FollowupItem, 'clientMessageId' | 'revision'>;
 const failure = (message: string) => new SessionError(409, 'followup_conflict', message);
 const terminal = (item: Entry) => item.status === 'accepted' || item.status === 'cancelled';
 const publicItem = ({ digest: _digest, expiresAt: _expiresAt, ...item }: Entry): FollowupItem => structuredClone(item);
@@ -159,9 +160,16 @@ export class FollowupQueue {
     this.changed(group);
     return publicItem(item);
   }
-  cancel(owner: object, id: string, messageId: string, revision: number): void {
+  cancel(
+    owner: object,
+    id: string,
+    { clientMessageId, revision, returnToDraft }: ItemVersion & { returnToDraft?: true },
+  ): void {
     const group = this.group(owner, id),
-      item = this.entry(group, messageId, revision);
+      item = this.entry(group, clientMessageId, revision);
+    if (returnToDraft && (item.mode !== 'queue' || !['queued', 'failed'].includes(item.status)))
+      throw failure('待发状态已变化，不能取回编辑。');
+    if (returnToDraft) item.returnedToDraft = true;
     if (item.status === 'dispatching' || item.status === 'accepted')
       throw failure('消息已投递，不能作为待发消息撤回。');
     this.setResult(
@@ -187,6 +195,23 @@ export class FollowupQueue {
     if (group.paused || group.items.some((item) => ['dispatching', 'unknown', 'failed'].includes(item.status))) return;
     const item = group.items.find((item) => item.status === 'queued' && item.mode === 'queue');
     return item && this.claim(group, item);
+  }
+  promoteToSteer(
+    owner: object,
+    id: string,
+    { clientMessageId, revision }: ItemVersion,
+    validate: (content: FollowupContent) => void,
+  ): FollowupItem {
+    const group = this.group(owner, id),
+      item = this.entry(group, clientMessageId, revision);
+    if (group.paused || item.mode !== 'queue' || item.status !== 'queued' || !item.content)
+      throw failure('待发状态已变化，不能引导本轮。');
+    validate(item.content);
+    // 先从下一轮调度中摘出，再异步调用原生接口；保持原消息 ID 与回执指纹。
+    item.mode = 'steer';
+    item.revision++;
+    this.changed(group);
+    return publicItem(item);
   }
   claimSteer(owner: object, id: string, messageId: string): FollowupItem {
     const group = this.group(owner, id),

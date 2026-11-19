@@ -22,7 +22,10 @@ import { FollowupAnswerGate, followupQuestionIdentity } from './followup-answer-
 type Send = Extract<ClientMessage, { type: 'chat.send' }>;
 type Action = Extract<
   ClientMessage,
-  { type: 'chat.followup' | 'followup.edit' | 'followup.cancel' | 'followup.clear' | 'followup.resume' }
+  {
+    type:
+      'chat.followup' | 'followup.edit' | 'followup.cancel' | 'followup.clear' | 'followup.resume' | 'followup.steer';
+  }
 >;
 export type FollowupGroup = {
   owner: Socket;
@@ -407,28 +410,20 @@ export class FollowupHost {
     });
   }
   private async action(group: FollowupGroup, message: Action): Promise<void> {
-    const { owner, context } = group,
-      id = context.queueId;
+    const {
+      owner,
+      context: { queueId: id },
+    } = group;
     if (!this.groups.has(id)) throw conflict('待发列表已失效。');
     switch (message.type) {
       case 'chat.followup':
         return this.withQueueLease(group, () => this.add(group, message));
-      case 'followup.edit': {
-        const hold = await this.hold(group, message.content);
-        try {
-          this.queue.edit(owner, id, message.clientMessageId, { revision: message.revision, content: message.content });
-        } catch (error) {
-          hold?.release();
-          throw error;
-        }
-        this.replaceHold(group, message.clientMessageId, hold);
-        return;
-      }
+      case 'followup.edit':
+        return this.editQueued(group, message);
       case 'followup.cancel':
-        this.queue.cancel(owner, id, message.clientMessageId, message.revision);
-        this.replaceHold(group, message.clientMessageId);
-        this.publish(id);
-        return;
+        return this.cancelQueued(group, message);
+      case 'followup.steer':
+        return this.withQueueLease(group, () => this.steerQueued(group, message));
       case 'followup.clear':
         for (const key of this.queue.clear(owner, id)) this.replaceHold(group, key);
         return;
@@ -436,6 +431,23 @@ export class FollowupHost {
         this.queue.resume(owner, id);
         return this.pump(group);
     }
+  }
+  private async editQueued(group: FollowupGroup, message: Extract<Action, { type: 'followup.edit' }>): Promise<void> {
+    const hold = await this.hold(group, message.content);
+    try {
+      this.queue.edit(group.owner, message.queueId, message.clientMessageId, message);
+    } catch (error) {
+      hold?.release();
+      throw error;
+    }
+    this.replaceHold(group, message.clientMessageId, hold);
+  }
+  private cancelQueued(group: FollowupGroup, message: Extract<Action, { type: 'followup.cancel' }>): void {
+    if (message.returnToDraft && group.questions.ownsInput(message.clientMessageId))
+      throw conflict('请在原生问题卡片中编辑答复。');
+    this.queue.cancel(group.owner, message.queueId, message);
+    this.replaceHold(group, message.clientMessageId);
+    this.publish(message.queueId);
   }
   private async hold(group: FollowupGroup, content: FollowupContent): Promise<AttachmentHold | undefined> {
     if (!content.attachments?.length) return;
@@ -482,8 +494,19 @@ export class FollowupHost {
     if (this.queue.snapshot(group.owner, group.context.queueId).paused)
       throw conflict('待发列表已暂停，请先核对后继续。');
     this.assertSteerTarget(group, message.turnId);
-    if (message.content.selection || choices(message.content) !== choices(group.template))
-      throw conflict('引导不能切换模型、权限或附带原生技能命令，请使用排队发送。');
+    this.assertSteerChoices(group, message.content);
+  }
+  private assertSteerChoices(group: FollowupGroup, content: FollowupContent): void {
+    if (content.selection || choices(content) !== choices(group.template))
+      throw conflict('引导须沿用本轮的模型、强度和权限，且不能附带原生命令。');
+  }
+  private async steerQueued(group: FollowupGroup, message: Extract<Action, { type: 'followup.steer' }>): Promise<void> {
+    this.assertSteerTarget(group, message.turnId);
+    if (group.questions.ownsInput(message.clientMessageId)) throw conflict('原生问题答复不能作为普通消息引导。');
+    const item = this.queue.promoteToSteer(group.owner, message.queueId, message, (content) =>
+      this.assertSteerChoices(group, content),
+    );
+    await this.steer(group, item);
   }
   private assertSteerTarget(group: FollowupGroup, turnId?: string): void {
     const active = group.turnId ? this.deps.active(group.turnId) : undefined;

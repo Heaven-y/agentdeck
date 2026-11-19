@@ -14,7 +14,7 @@ it.each([
   useChat.getState().newSession(agent);
   const { rerender } = render(<PermissionOptionsMenu disabled={false} />);
   const trigger = screen.getByRole('button', { name: '权限模式' });
-  expect(trigger.textContent).toBe('');
+  expect(trigger.textContent).toBe('原生默认');
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('menuitemradio', { name: new RegExp('^' + label) }));
   expect(useChat.getState().permission).toEqual({ agent, mode });
@@ -25,4 +25,5 @@ it.each([
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('menuitem', { name: '重置权限' }));
   expect(useChat.getState().permission).toEqual(agent === 'codex' ? { agent: 'codex', mode: 'native' } : undefined);
+  expect(trigger.textContent).toBe('原生默认');
 });
