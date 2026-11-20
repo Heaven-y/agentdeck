@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import {
+  checkCodexForkTurns,
   readCodexHistoryItem,
   readCodexHistoryWindow,
   type CodexHistoryRpc,
@@ -19,6 +20,57 @@ const turn = (id: string) => ({
 });
 const users = (page: Awaited<ReturnType<typeof readCodexHistoryWindow>>) =>
   page.events.flatMap((event) => (event.type === 'user_message' ? [event.text] : []));
+
+it.each([
+  { data: [turn('duplicate'), turn('duplicate')] },
+  { data: [turn('partial')], nextCursor: '' },
+  { data: [], nextCursor: 'more' },
+  { data: [{ ...turn('partial'), itemsView: 'summary' }] },
+])('拒绝不完整或重复的原生历史页，不把它呈现为完整记录：%j', async (page) => {
+  const read = vi.fn<CodexHistoryRpc>().mockResolvedValue(page);
+  await expect(readCodexHistoryWindow(read, threadId)).rejects.toMatchObject({
+    code: 'session_history_page_incomplete',
+  });
+  expect(read).toHaveBeenCalledOnce();
+});
+
+it('无效游标不发原生请求，历史缩短或游标循环时不误报已读完', async () => {
+  const read = vi.fn<CodexHistoryRpc>();
+  await expect(readCodexHistoryWindow(read, threadId, 'invalid')).rejects.toMatchObject({ code: 'invalid_request' });
+  expect(read).not.toHaveBeenCalled();
+  read.mockResolvedValueOnce({ data: [turn('last')], nextCursor: 'older' });
+  const first = await readCodexHistoryWindow(read, threadId);
+  read.mockResolvedValueOnce({ data: [], nextCursor: null });
+  await expect(readCodexHistoryWindow(read, threadId, first.page.before)).rejects.toMatchObject({
+    code: 'session_history_changed',
+  });
+  read.mockResolvedValueOnce({ data: [turn('old')], nextCursor: 'older' });
+  await expect(readCodexHistoryWindow(read, threadId, first.page.before)).rejects.toMatchObject({
+    code: 'session_history_page_incomplete',
+  });
+});
+
+it('分叉点在后续页时只读轮头核对，跨页游标循环则拒绝分叉', async () => {
+  const metadata = (id: string) => ({ id, status: 'completed', itemsView: 'notLoaded' });
+  const read = vi
+    .fn<CodexHistoryRpc>()
+    .mockResolvedValueOnce({ data: [metadata('recent')], nextCursor: 'older' })
+    .mockResolvedValueOnce({ data: [metadata('point')], nextCursor: null });
+  await expect(checkCodexForkTurns(read, threadId, 'point')).resolves.toBe(true);
+  expect(read.mock.calls.map(([, params]) => params)).toEqual([
+    { threadId, limit: 100, itemsView: 'notLoaded', sortDirection: 'desc' },
+    { threadId, limit: 100, itemsView: 'notLoaded', sortDirection: 'desc', cursor: 'older' },
+  ]);
+  read
+    .mockReset()
+    .mockResolvedValueOnce({ data: [metadata('recent')], nextCursor: 'first' })
+    .mockResolvedValueOnce({ data: [metadata('older')], nextCursor: 'second' })
+    .mockResolvedValueOnce({ data: [metadata('oldest')], nextCursor: 'first' });
+  await expect(checkCodexForkTurns(read, threadId, 'absent')).rejects.toMatchObject({
+    code: 'session_history_page_incomplete',
+  });
+  expect(read).toHaveBeenCalledTimes(3);
+});
 
 it('Codex 首屏只取三轮并反转为时间顺序；下一页使用原生游标且不可串到另一会话', async () => {
   const read = vi
