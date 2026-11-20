@@ -58,3 +58,15 @@ it('实时流的未知片段不继承下一条模型，用户与工具条目不�
   expect(screen.getAllByText(/响应模型：/)).toHaveLength(1);
   expect(screen.getByText('响应模型：actual-stream-model')).toBeTruthy();
 });
+
+it('相邻原生回复按步骤分别保留，不能因为响应模型相同就拼成一条', () => {
+  const events = [
+    { type: 'text', id: 'agy-step-1', delta: '第一段', responseModel: 'actual-model' },
+    { type: 'text', id: 'agy-step-1', delta: '续文', responseModel: 'actual-model' },
+    { type: 'text', id: 'agy-step-2', delta: '另一条', responseModel: 'actual-model' },
+  ] as AgentEvent[];
+  expect(historyItems(events)).toMatchObject([
+    { kind: 'assistant', nativeId: 'agy-step-1', text: '第一段续文', responseModel: 'actual-model' },
+    { kind: 'assistant', nativeId: 'agy-step-2', text: '另一条', responseModel: 'actual-model' },
+  ]);
+});

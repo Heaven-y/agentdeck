@@ -15,6 +15,7 @@ import { LiveConversationSurface } from '../../../../src/features/chat/timeline/
 import { TrajectoryView } from '../../../../src/features/conversation/trajectory/TrajectoryView';
 import { StatisticsLine } from '../../../../src/features/conversation/timeline/StatisticsLine';
 import { ComposerStatus } from '../../../../src/features/chat/composer/ComposerStatus';
+import { FollowupQueue } from '../../../../src/features/chat/followups/FollowupQueue';
 import { ConversationSidebar } from '../../../../src/app/sidebar/ConversationSidebar';
 import { useConversationSidebar } from '../../../../src/app/sidebar/use-conversation-sidebar';
 import type { TrajectoryRow } from '../../../../src/features/conversation/trajectory/trajectory-model';
@@ -94,14 +95,36 @@ it('没有回复正文时，未确认的结果仍能从本轮轨迹打开详情'
   expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
 });
 
-it('没有回复正文时，页脚状态入口可直接打开本轮详情', async () => {
+it('没有回复正文的恢复状态仍可从待发暂停处打开本轮详情', async () => {
   const items = historyItems([
     { type: 'user_message', text: '示例请求' },
     { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
   ]);
-  useChat.setState({ items });
+  const conversationId = useChat.getState().conversationId;
+  useChat.setState({
+    items,
+    workspaceId: 'project',
+    agent: 'antigravity',
+    followups: {
+      queue: {
+        drafts: {},
+        snapshot: {
+          queueId: 'queue',
+          conversationId,
+          workspaceId: 'project',
+          agent: 'antigravity',
+          revision: 1,
+          paused: true,
+          canSteer: false,
+          reason: '本轮原生结果未确认，待发列表已暂停。',
+          items: [{ clientMessageId: 'next', revision: 0, mode: 'queue', status: 'queued', text: '下一条' }],
+        },
+      },
+    },
+  });
   render(<FooterFixture />);
-  fireEvent.click(screen.getByRole('button', { name: '查看本轮状态' }));
+  expect(screen.queryByRole('button', { name: '查看本轮状态' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '查看待发暂停原因' }));
   expect(await screen.findByRole('heading', { name: '步骤详情' })).toBeTruthy();
   expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
 });
@@ -176,6 +199,7 @@ function FooterFixture() {
   return (
     <>
       <ComposerStatus />
+      <FollowupQueue focusComposer={() => undefined} />
       {dock.open && <ConversationSidebar open close={dock.hide} settings={() => undefined} />}
     </>
   );

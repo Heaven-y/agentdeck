@@ -53,8 +53,10 @@ export function registerSecurity(app: FastifyInstance, opts: SecurityOptions): v
 
   /** /api 与 /ws 需要有效的登录 Cookie */
   const loginRejected = (req: FastifyRequest, path: string) => {
-    if (path === '/api/local-session' && req.method === 'POST') return false;
-    if (!path.startsWith('/api/') && path !== '/ws') return false;
+    // 路由器会解码静态路径段，鉴权必须同时识别匹配的路由，不能只看原始 URL。
+    const route = req.routeOptions.url ?? path;
+    if (route === '/api/local-session' && req.method === 'POST') return false;
+    if (![route, path].some((value) => value.startsWith('/api/') || value === '/ws')) return false;
     const value = readCookie(req.headers.cookie, SESSION_COOKIE);
     return !value || !safeEqual(value, opts.token);
   };

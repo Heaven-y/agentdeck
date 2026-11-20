@@ -2,15 +2,22 @@ import type { FollowupSnapshot, ServerMessage } from '@agentdeck/shared/conversa
 import type { ChatState, ConversationView } from '../state/chat-state';
 import type { DraftAttachment } from '../composer/attachment-actions';
 import { emptyConversation, EMPTY_MODEL_OVERRIDES, DEFAULT_REASONING_EFFORTS } from '../state/chat-state-helpers';
-import { conversationById, conversationViews, updateConversation } from '../state/conversations';
-import { inputItem, sameDraft, restoreDraft, type LocalFollowupQueue, type FollowupDraft } from './followup-state';
+import { conversationById, updateConversation } from '../state/conversations';
+import {
+  followupView,
+  inputItem,
+  sameDraft,
+  restoreDraft,
+  type LocalFollowupQueue,
+  type FollowupDraft,
+} from './followup-state';
 import { openedTab } from '../tabs/conversation-tabs';
 import { reduceChat } from '../../conversation/model/conversation-events';
 import { snapshotQuestions } from '../interactions/async-question-actions';
 type Set = (patch: Partial<ChatState>) => void;
 type Get = () => ChatState;
 function snapshotView(state: ChatState, snapshot: FollowupSnapshot): ConversationView {
-  const found = conversationById(state, snapshot.conversationId);
+  const found = conversationById(state, snapshot.conversationId) ?? followupView(state, snapshot);
   if (found) return found;
   return {
     ...emptyConversation,
@@ -24,16 +31,22 @@ function snapshotView(state: ChatState, snapshot: FollowupSnapshot): Conversatio
   };
 }
 
-/** 快照只能挂到已存在的视图；同一原生会话的身份可以跨 conversationId 认领。 */
-function knownView(state: ChatState, snapshot: FollowupSnapshot): ConversationView | undefined {
-  const byId = conversationById(state, snapshot.conversationId);
-  if (byId || !snapshot.sessionId) return byId;
-  return conversationViews(state).find(
-    (view) =>
-      view.workspaceId === snapshot.workspaceId &&
-      view.agent === snapshot.agent &&
-      view.sessionId === snapshot.sessionId,
+/** 回合缓存可能先于待发过期；只为仍有未决内容的恢复快照补回入口。 */
+function recoveredSnapshotView(state: ChatState, snapshot: FollowupSnapshot): ConversationView | undefined {
+  if (conversationById(state, snapshot.conversationId)) return;
+  const pending = [...snapshot.items, ...(snapshot.questions ?? [])].some(
+    (item) => !['accepted', 'cancelled'].includes(item.status),
   );
+  if (!pending) return;
+  return {
+    ...snapshotView(state, snapshot),
+    historyReloadNeeded: !!snapshot.sessionId,
+    permissionLoading: !!snapshot.sessionId,
+    unread: true,
+  };
+}
+function snapshotTarget(state: ChatState, snapshot: FollowupSnapshot, recoverMissing: boolean) {
+  return followupView(state, snapshot) ?? (recoverMissing ? recoveredSnapshotView(state, snapshot) : undefined);
 }
 
 function matchesView(view: ConversationView, snapshot: Pick<FollowupSnapshot, 'workspaceId' | 'agent' | 'sessionId'>) {
@@ -81,12 +94,11 @@ function returnedDraft(view: ConversationView, snapshot: FollowupSnapshot, pendi
   const patch = view.attachmentsBusy ? { draftBackups: [...view.draftBackups, backup] } : restoreDraft(view, backup);
   return { patch };
 }
-export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnapshot) {
+export function applyFollowupSnapshot(get: Get, set: Set, snapshot: FollowupSnapshot, recoverMissing = false) {
   const state = get(),
     old = state.followups[snapshot.queueId];
   if (old && (old.invalid || old.snapshot.revision > snapshot.revision)) return;
-  // 没有对应视图就不能显示或操作这个队列；凭空补一条会留下无法回收的「草稿」。
-  const view = knownView(state, snapshot);
+  const view = snapshotTarget(state, snapshot, recoverMissing);
   if (!view || !matchesView(view, snapshot)) return;
   const { drafts, clearDraft } = mergeDrafts(old, snapshot, view);
   const cleared = clearDraft ? { draft: '', draftAttachments: [], selectedCapability: undefined } : {};
@@ -204,7 +216,7 @@ export function startFollowupTurn(get: Get, set: Set, message: Started) {
 }
 export function followupDelivered(get: Get, set: Set, message: Extract<ServerMessage, { type: 'followup.delivered' }>) {
   const state = get();
-  const view = conversationById(state, message.conversationId);
+  const view = followupView(state, message);
   if (
     !view ||
     view.workspaceId !== message.workspaceId ||

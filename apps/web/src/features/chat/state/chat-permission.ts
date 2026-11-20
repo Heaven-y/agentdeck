@@ -76,11 +76,19 @@ export function saveConversationPermission(
   set({
     ...(session ? { permission, permissionSaving: true, permissionError: undefined } : {}),
     initialDefaultsEligible: false,
-    permissionDefaults: { ...permissionDefaults, saving: { ...permissionDefaults.saving, [agent]: true } },
+    permissionDefaults: {
+      ...permissionDefaults,
+      values: selectedDefault(permissionDefaults.values, agent, permission),
+      saving: { ...permissionDefaults.saving, [agent]: true },
+    },
   });
   function complete(confirmed: boolean) {
     const state = get();
-    const next = completedDefault(state.permissionDefaults, agent, permission, confirmed);
+    const next = completedDefault(state.permissionDefaults, agent, {
+      permission,
+      confirmed,
+      previous: permissionDefaults.values[agent],
+    });
     const view = session && conversationById(state, conversationId);
     const patch: Partial<ConversationView> = confirmed
       ? { permissionSaving: false, permissionError: undefined }
@@ -105,27 +113,31 @@ export function saveConversationPermission(
   );
 }
 
+function selectedDefault(values: SessionPermissionDefaults, agent: AgentKind, permission?: PermissionSelection) {
+  const next = { ...values };
+  const selected = permissionForNewSession(permission);
+  if (selected) next[agent] = selected;
+  else delete next[agent];
+  return next;
+}
+
 function completedDefault(
   current: PermissionDefaultsState,
   agent: AgentKind,
-  permission: PermissionSelection | undefined,
-  confirmed: boolean,
+  result: { permission?: PermissionSelection; previous?: PermissionSelection; confirmed: boolean },
 ): PermissionDefaultsState {
   const { saving, saveErrors, values } = current;
   const pending = { ...saving };
   delete pending[agent];
   // 断线时写入可能已落盘，重读后才能为该 CLI 的新会话使用缓存。
-  if (!confirmed)
+  if (!result.confirmed)
     return {
       ...current,
       saving: pending,
+      values: selectedDefault(values, agent, result.previous),
       saveErrors: { ...saveErrors, [agent]: '新会话权限保存未确认，请重新读取。' },
     };
-  const next = { ...values };
   const errors = { ...saveErrors };
   delete errors[agent];
-  const selected = permissionForNewSession(permission);
-  if (selected) next[agent] = selected;
-  else delete next[agent];
-  return { ...current, saving: pending, values: next, saveErrors: errors };
+  return { ...current, saving: pending, values: selectedDefault(values, agent, result.permission), saveErrors: errors };
 }

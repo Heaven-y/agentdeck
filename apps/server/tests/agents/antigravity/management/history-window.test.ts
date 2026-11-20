@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { NativeHistoryPageTooLarge } from '../../../../src/agents/antigravity/management/history-stream';
 import { readAntigravityHistoryWindow } from '../../../../src/agents/antigravity/management/history-window';
 import type { ManagementRecord } from '../../../../src/agents/antigravity/management/management-rpc';
+import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
 
 const dir = path.join(tmpdir(), 'agy-window-fixture');
 const scope = { id: 'main', dir };
@@ -109,4 +110,49 @@ it('轮次目录缺失也用用户步骤约束最近三轮，补页核对相邻�
   expect(prior.page.start).toBe(0);
   expect(prior.partialEnd).toBe(false);
   expect(prior.trajectory.steps).toHaveLength(20);
+});
+
+it('较早页恢复省略零索引的首条生成型号，保留轨迹与绝对步骤身份', async () => {
+  const f = fixture(40);
+  const update = f.update.getMockImplementation()!;
+  const generator = { executionId: 'generation', stepIndices: [1], chatModel: { responseModel: 'actual-first' } };
+  f.backend.request.mockResolvedValue({ generatorMetadata: [generator] });
+  f.update.mockImplementation(async (params) => {
+    const result = await update(params);
+    const trajectory = result.mainTrajectoryUpdate as ManagementRecord;
+    const page = trajectory.stepsUpdate as { indices: number[]; steps: ManagementRecord[] };
+    const position = page.indices.indexOf(1);
+    if (position >= 0)
+      page.steps[position] = {
+        ...page.steps[position],
+        plannerResponse: { response: '第一轮回复' },
+        metadata: {
+          executionId: 'generation',
+          sourceTrajectoryStepInfo: {
+            cascadeId: 'main',
+            trajectoryId: 'record',
+            stepIndex: 1,
+          },
+        },
+      };
+    const bounds = params.initialGeneratorMetadatasPageBounds as { startIndex: number; endIndexExclusive: number };
+    trajectory.generatorMetadatasUpdate = {
+      totalLength: 1,
+      pageBounds: bounds,
+      indices: bounds.endIndexExclusive ? [0] : [],
+      generatorMetadatas: bounds.endIndexExclusive ? [generator] : [],
+    };
+    return result;
+  });
+  const latest = await readAntigravityHistoryWindow(f.backend, scope);
+  const earlier = await readAntigravityHistoryWindow(f.backend, scope, latest.page.before);
+  expect(earlier.trajectory).toMatchObject({ trajectoryId: 'record', generatorMetadataOffset: 0 });
+  expect(antigravityHistory(earlier.trajectory).find((event) => event.type === 'text')).toMatchObject({
+    id: 'agy-step-1',
+    responseModel: 'actual-first',
+  });
+  expect(f.update.mock.calls.at(-1)![0].initialGeneratorMetadatasPageBounds).toEqual({
+    startIndex: 0,
+    endIndexExclusive: 1,
+  });
 });

@@ -25,8 +25,8 @@ export type AgentEvent =
     }
   /** 用户消息（只出现在历史记录中，实时对话由前端自己显示） */
   | { type: 'user_message'; text: string; attachments?: MessageAttachment[]; nativeInputId?: string }
-  /** 助手文本增量 */
-  | { type: 'text'; delta: string; responseModel?: string }
+  /** 助手文本增量；id 只取原生回复身份，responseModel 只取原生响应报告。 */
+  | { type: 'text'; delta: string; id?: string; responseModel?: string }
   /** 思考过程增量 */
   | { type: 'reasoning'; delta: string }
   | { type: 'tool_call'; id: string; name: string; input: unknown }

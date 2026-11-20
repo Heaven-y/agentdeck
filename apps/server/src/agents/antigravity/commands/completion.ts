@@ -18,10 +18,18 @@ export type CompletionBoundary = {
   latestIndex: number;
   errorIndices: number[];
   rateLimitedResult: boolean;
+  resultError?: string;
 };
 export type TrajectoryReader = NonNullable<AntigravitySessionManagement['readTrajectory']>;
 export type CurrentTurnReview =
-  | { status: 'completed'; finalIndex: number; finalStep: ManagementRecord; verifiedCompletion: boolean }
+  | {
+      status: 'completed';
+      finalIndex: number;
+      finalStep: ManagementRecord;
+      verifiedCompletion: boolean;
+      recoveredRateLimit?: true;
+      historicalErrorMatch?: true;
+    }
   | { status: 'error'; message: string }
   | { status: 'unknown' };
 const DONE = 'CORTEX_STEP_STATUS_DONE';
@@ -204,6 +212,20 @@ function currentSteps(
   return current.some((step) => step.type === INPUT) ? undefined : current;
 }
 
+/** 同文只能证明旧记录存在，不能据此排除本轮再次失败。 */
+function matchesHistoricalError(trajectory: ManagementRecord, boundary: CompletionBoundary): boolean {
+  const message = boundary.resultError?.trim();
+  if (!message || !Array.isArray(trajectory.steps)) return false;
+  return trajectory.steps
+    .slice(0, boundary.inputIndex)
+    .map(object)
+    .some(
+      (step) =>
+        (step.type === ERROR_MESSAGE || definiteFailure(step)) &&
+        errorTexts(step).some((value) => value.trim() === message),
+    );
+}
+
 function currentTurn(trajectory: ManagementRecord, sessionId: string, boundary: CompletionBoundary): CurrentTurnReview {
   const current = currentSteps(trajectory, sessionId, boundary);
   if (!current) return { status: 'unknown' };
@@ -211,11 +233,14 @@ function currentTurn(trajectory: ManagementRecord, sessionId: string, boundary: 
   if (failure) return { status: 'error', message: currentErrorMessage(failure) };
   if (completedRound(current, false)) {
     const finalIndex = boundary.inputIndex + current.length;
+    const verifiedCompletion = completedTrajectory(trajectory, sessionId, boundary);
     return {
       status: 'completed',
       finalIndex,
       finalStep: current.at(-1)!,
-      verifiedCompletion: completedTrajectory(trajectory, sessionId, boundary),
+      verifiedCompletion,
+      ...(verifiedCompletion && current.some(rateLimitedStep) ? { recoveredRateLimit: true } : {}),
+      ...(matchesHistoricalError(trajectory, boundary) ? { historicalErrorMatch: true } : {}),
     };
   }
   const limited = current.findLast(rateLimitedStep);
@@ -253,7 +278,7 @@ async function withTrajectory<T>({
   }
 }
 
-/** 仅复核当前轮事实；完成答复不等于能够判定累计 result 的归属。 */
+/** 核对当前轮与输入前的错误记录；完整答复本身不能推翻原生 ERROR。 */
 export function reviewAntigravityCurrentTurn(
   read: TrajectoryReader,
   input: { sessionId: string; cwd: string; boundary: CompletionBoundary },

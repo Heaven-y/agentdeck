@@ -47,8 +47,6 @@ class AcpTurn {
   private sent = false;
   private accountImage = false;
   private ended = false;
-  /** 本轮已流出正文：原生服务在末尾报临时故障时不能再把这一轮说成什么都没产出。 */
-  private produced = false;
   private failed?: AcpError;
   private fallback?: TurnHandle;
   private prompts?: AcpPrompts;
@@ -154,10 +152,7 @@ class AcpTurn {
     }
     try {
       this.prompts?.echo(object(params.update));
-      for (const event of this.mapper.update(object(params.update))) {
-        if (event.type === 'text' && event.delta) this.produced = true;
-        this.input.emit(event);
-      }
+      for (const event of this.mapper.update(object(params.update))) this.input.emit(event);
     } catch {
       this.failed = protocolFailure();
       void this.interrupt();
@@ -207,27 +202,9 @@ class AcpTurn {
     await this.client?.close();
   }
 
-  /** 旧 API Key 路径维持原有收尾；账号发图失败时，正文和待发暂停都保留。 */
+  /** 当前 prompt 的失败不会因已流出部分正文而变成成功；正文保留，宿主暂停待发。 */
   private failTurn(error: unknown): void {
     const message = this.errorMessage(error);
-    if (
-      !this.accountImage &&
-      error instanceof AcpError &&
-      error.retryable &&
-      this.produced &&
-      !this.controller.signal.aborted
-    ) {
-      this.input.emit({
-        type: 'activity',
-        // 带上本轮身份：同一个会话再次超时时各轮保留自己的记录，不会被并进上一轮的位置。
-        id: this.input.clientMessageId ? `agy-service-retry:${this.input.clientMessageId}` : 'agy-service-retry',
-        name: '原生模型服务超时',
-        status: 'completed',
-        output: `${message}\n本轮已收到正文，但可能不完整；需要完整内容时可重新读取原生历史核对。`,
-      });
-      this.input.emit({ type: 'turn_end', isError: false });
-      return;
-    }
     this.input.emit({ type: 'error', message });
     this.input.emit({ type: 'turn_end', isError: true });
   }

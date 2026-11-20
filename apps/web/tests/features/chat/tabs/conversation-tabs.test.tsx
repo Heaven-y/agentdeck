@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
 import { ConversationTabs } from '../../../../src/features/chat/tabs/ConversationTabs';
+import { BackgroundConversations } from '../../../../src/features/chat/tabs/BackgroundConversations';
 import { sessionsApi } from '../../../../src/features/sessions/api';
 
 const projects = [
@@ -66,6 +67,29 @@ it('关闭最后一个运行标签只移出导航，后台任务仍可从原身�
   act(() => useChat.getState().openConversation(id));
   expect(screen.getAllByRole('tab')).toHaveLength(1);
   expect(useChat.getState()).toMatchObject({ conversationId: id, running: true, turnId: 'active-turn' });
+});
+
+it('已有会话仅附件草稿关闭标签后仍可从后台找回，只有参数时不占入口', () => {
+  useChat.getState().selectWorkspace('one');
+  useChat.getState().newSession('codex');
+  const id = useChat.getState().conversationId;
+  const file = new File(['fixture'], 'fixture.txt', { type: 'text/plain' });
+  useChat.setState({
+    sessionId: 'native-session',
+    title: '附件草稿',
+    modelOverrides: { claude: '', codex: 'selected-model', antigravity: '' },
+    draftAttachments: [{ id: 'file', name: file.name, file }],
+  });
+  useChat.getState().closeConversationTab(id);
+  render(<BackgroundConversations projects={projects} collapsed={false} />);
+  fireEvent.click(screen.getByRole('button', { name: '返回附件草稿（草稿）' }));
+  expect(useChat.getState()).toMatchObject({ conversationId: id, sessionId: 'native-session' });
+  expect(useChat.getState().draftAttachments[0]?.file).toBe(file);
+  act(() => {
+    useChat.getState().removeAttachment('file');
+    useChat.getState().closeConversationTab(id);
+  });
+  expect(screen.queryByRole('region', { name: '后台会话' })).toBeNull();
 });
 
 it('重排、归档及移除项目只改变对应标签，保留其他会话', async () => {

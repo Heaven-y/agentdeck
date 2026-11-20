@@ -14,7 +14,7 @@ it('会话请求和缓存按 Agent 隔离，历史读取传递取消信号', asy
   const controller = new AbortController();
   await sessionsApi.sessionEvents('w/1', 's 1', 'codex', controller.signal);
   expect(vi.mocked(fetch).mock.calls[2]).toEqual([
-    '/api/projects/w%2F1/sessions/codex/s%201',
+    '/api/projects/w%2F1/sessions/codex/s%201/history-page',
     expect.objectContaining({ cache: 'no-store', signal: controller.signal }),
   ]);
   expect(sessionsKeys.sessions('w/1', 'claude')).not.toEqual(sessionsKeys.sessions('w/1', 'codex'));

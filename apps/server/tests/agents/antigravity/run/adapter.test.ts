@@ -583,7 +583,9 @@ describe('Antigravity 原生对话运行器', () => {
     f.child.stdout.write(line.subarray(split));
     f.finish();
     await f.handle.done;
-    expect(f.events.filter((event) => event.type === 'text')).toEqual([{ type: 'text', delta: '你好' }]);
+    expect(f.events.filter((event) => event.type === 'text')).toEqual([
+      { type: 'text', id: 'agy-step-1', delta: '你好' },
+    ]);
   });
 
   it('工具按step身份去重，软拒有提示且不会伪造交互审批', async () => {

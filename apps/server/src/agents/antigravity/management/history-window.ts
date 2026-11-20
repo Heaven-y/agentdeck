@@ -190,11 +190,13 @@ function generatorOffsets(id: string, snapshot: NativeSnapshot, steps: unknown[]
   return steps.flatMap((step, offset) => {
     if (object(step).type !== 'CORTEX_STEP_TYPE_PLANNER_RESPONSE') return [];
     const source = object(object(object(step).metadata).sourceTrajectoryStepInfo);
-    return index(source.metadataIndex) &&
+    const metadataIndex = source.metadataIndex === undefined ? 0 : source.metadataIndex;
+    return index(metadataIndex) &&
       source.cascadeId === id &&
-      source.metadataIndex < snapshot.generators &&
+      source.trajectoryId === snapshot.trajectoryId &&
+      metadataIndex < snapshot.generators &&
       source.stepIndex === start + offset
-      ? [source.metadataIndex]
+      ? [metadataIndex]
       : [];
   });
 }
@@ -274,7 +276,7 @@ export async function readAntigravityHistoryWindow(
       : {};
   const partialEnd = !(ending.turnBoundary ?? (await verifyTurnBoundary(backend, scope, snapshot, end)));
   return {
-    trajectory: { cascadeId: scope.id, steps, ...metrics },
+    trajectory: { cascadeId: scope.id, trajectoryId: snapshot.trajectoryId, steps, ...metrics },
     page: { start, ...(start ? { before: cursor() } : {}) },
     partialStart: start !== 0 && !startsTurn,
     partialEnd,

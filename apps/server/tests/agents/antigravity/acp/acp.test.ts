@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AgentEvent } from '@agentdeck/shared/conversation';
+import type { AgentEvent, ServerMessage } from '@agentdeck/shared/conversation';
+import { TurnManager, type Socket } from '../../../../src/chat/turn-manager';
 import type { AgentTurnInput, TurnRunner } from '../../../../src/agents/contracts';
 import { createAntigravityAcpRunner } from '../../../../src/agents/antigravity/acp/runtime';
 import { AcpError } from '../../../../src/agents/antigravity/acp/types';
@@ -741,18 +742,18 @@ describe('AGY 原生服务临时故障', () => {
     'Antigravity 的模型服务响应超时（HTTP 524），本轮未完成。请稍后重试或检查原生模型服务。',
     true,
   );
-  it('本轮已产出正文时只留一条可折叠记录，不标记失败', async () => {
+  it('当前请求在输出正文后失败仍保留正文和失败终态，不换通道重发', async () => {
     const f = setup();
     const handle = f.run();
     await started(f.client);
     f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '已生成的正文' } });
     f.failPrompt(timeout);
     await handle.done;
-    expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
-    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
-    expect(f.events).toContainEqual(
-      expect.objectContaining({ type: 'activity', id: 'agy-service-retry', status: 'completed' }),
-    );
+    expect(f.events).toContainEqual({ type: 'text', delta: '已生成的正文' });
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([{ type: 'error', message: timeout.message }]);
+    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+    expect(f.headless).not.toHaveBeenCalled();
+    expect(vi.mocked(f.client.request).mock.calls.filter(([method]) => method === 'session/prompt')).toHaveLength(1);
   });
 
   it('没有任何正文时仍作为错误上报并标记失败', async () => {
@@ -776,20 +777,43 @@ describe('AGY 原生服务临时故障', () => {
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
   });
 
-  it('不同轮次的超时记录各自独立，不会合并到上一轮', async () => {
-    const ids = await Promise.all(
-      ['turn-a', 'turn-b'].map(async (clientMessageId) => {
-        const f = setup({ input: { clientMessageId } });
-        const handle = f.run();
-        await started(f.client);
-        f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '正文' } });
-        f.failPrompt(timeout);
-        await handle.done;
-        return f.events.find((event) => event.type === 'activity')?.id;
-      }),
-    );
-    expect(ids[0]).toContain('turn-a');
-    expect(ids[1]).toContain('turn-b');
-    expect(new Set(ids).size).toBe(2);
+  it('ACP 部分正文后的服务失败通过真实宿主暂停待发，不启动下一轮', async () => {
+    const f = setup();
+    const messages: ServerMessage[] = [];
+    const socket: Socket = { send: (message) => messages.push(message), isOpen: () => true };
+    const manager = new TurnManager({
+      getWorkspace: async () => f.input.workspace,
+      sessions: { assertBelongs: async () => {} },
+      runners: { antigravity: f.runner },
+    });
+    try {
+      await manager.handle(socket, {
+        type: 'chat.send',
+        workspaceId: 'p',
+        agent: 'antigravity',
+        sessionId: 'native-1',
+        text: '第一轮',
+        clientTurnId: 'first-turn',
+      });
+      await started(f.client);
+      const queueId = messages.find((message) => message.type === 'turn.started')!.queueId!;
+      await manager.handle(socket, {
+        type: 'chat.followup',
+        queueId,
+        clientMessageId: 'next-input',
+        mode: 'queue',
+        content: { text: '待发输入' },
+      });
+      f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '部分正文' } });
+      f.failPrompt(timeout);
+      await vi.waitFor(() => expect(messages.some((message) => message.type === 'turn.finished')).toBe(true));
+      expect(manager.followups.snapshots(socket)[0]).toMatchObject({
+        paused: true,
+        items: [{ status: 'queued' }],
+      });
+      expect(vi.mocked(f.client.request).mock.calls.filter(([method]) => method === 'session/prompt')).toHaveLength(1);
+    } finally {
+      await manager.dispose();
+    }
   });
 });

@@ -8,6 +8,7 @@ import type {
 import type { DraftAttachment } from '../composer/attachment-actions';
 import type { ChatState, ConversationView } from '../state/chat-state';
 import type { ChatItem } from '../../conversation/model/conversation-events';
+import { conversationById, conversationForSession } from '../state/conversations';
 export type DraftBackup = {
   id: string;
   text: string;
@@ -25,6 +26,22 @@ export type LocalFollowupQueue = {
 };
 export const pendingFollowups = (queue?: LocalFollowupQueue) =>
   queue?.snapshot.items.filter((item) => !['accepted', 'cancelled'].includes(item.status)) ?? [];
+/** 页面刷新可重建本地视图 ID；原生身份仍须同时匹配项目与 CLI。 */
+export function followupView(
+  state: ChatState,
+  snapshot: Pick<FollowupSnapshot, 'workspaceId' | 'agent' | 'conversationId' | 'sessionId'>,
+): ConversationView | undefined {
+  const direct = conversationById(state, snapshot.conversationId);
+  if (direct)
+    return direct.workspaceId === snapshot.workspaceId &&
+      direct.agent === snapshot.agent &&
+      (!direct.sessionId || !snapshot.sessionId || direct.sessionId === snapshot.sessionId)
+      ? direct
+      : undefined;
+  return snapshot.sessionId
+    ? conversationForSession(state, snapshot.workspaceId, { agent: snapshot.agent, sessionId: snapshot.sessionId })
+    : undefined;
+}
 /** 队列可能早于视图的 queueId 绑定，按会话身份兜底查找；两处判定共用同一口径。 */
 function findQueue(followups: ChatState['followups'], view: ConversationView) {
   return view.queueId

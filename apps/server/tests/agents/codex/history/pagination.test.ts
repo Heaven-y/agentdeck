@@ -1,10 +1,14 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import {
   readCodexHistoryItem,
   readCodexHistoryWindow,
   type CodexHistoryRpc,
 } from '../../../../src/agents/codex/history/history-window';
-import { CodexRpcLimit } from '../../../../src/agents/codex/run/types';
+import { CodexError, CodexRpcLimit, type RecordValue } from '../../../../src/agents/codex/run/types';
+import { CodexClient } from '../../../../src/agents/codex/run/client';
+import { readCodexMedia } from '../../../../src/agents/codex/history/sessions';
+
+afterEach(() => vi.restoreAllMocks());
 
 const threadId = 'root-history';
 const turn = (id: string) => ({
@@ -106,4 +110,76 @@ it('原生媒体只按已核实的轮次与排他锚点读目标，不把相邻�
   ]);
   read.mockResolvedValueOnce(result(previous)).mockResolvedValueOnce(result(previous));
   await expect(readCodexHistoryItem(read, threadId, turnId, image.id)).rejects.toMatchObject({ status: 404 });
+});
+
+it.each(['paged', 'legacy'] as const)('图片读取使用 %s 原生路径，旧版回退重新核实身份并关闭客户端', async (mode) => {
+  const dir = process.cwd();
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=';
+  const image = { id: 'image', type: 'userMessage', content: [{ type: 'image', url: `data:image/png;base64,${png}` }] };
+  const request = vi.fn(async (method: string, params: RecordValue) => {
+    if (method === 'thread/read')
+      return {
+        thread: {
+          id: threadId,
+          cwd: dir,
+          ...(params.includeTurns ? { turns: [{ ...turn('media-turn'), items: [image] }] } : {}),
+        },
+      };
+    if (mode === 'legacy') throw new CodexError('不支持分页', false, true);
+    return { data: params.sortDirection === 'desc' ? [] : [{ turnId: 'media-turn', item: image }], nextCursor: null };
+  });
+  const close = vi.fn(async () => {});
+  vi.spyOn(CodexClient, 'start').mockResolvedValue({
+    initialize: async () => {},
+    request,
+    close,
+  } as unknown as CodexClient);
+  const media = await readCodexMedia(threadId, dir, {
+    sessionId: threadId,
+    turnId: 'media-turn',
+    messageId: 'image',
+    index: 0,
+    kind: 'user',
+  });
+  expect(media.mimeType).toBe('image/png');
+  expect(media.data.toString('base64')).toBe(png);
+  expect(close).toHaveBeenCalledTimes(mode === 'legacy' ? 2 : 1);
+  const reads = request.mock.calls.filter(([method]) => method === 'thread/read').map(([, params]) => params);
+  expect(reads).toEqual(
+    mode === 'legacy'
+      ? [
+          { threadId, includeTurns: false },
+          { threadId, includeTurns: true },
+        ]
+      : [{ threadId, includeTurns: false }],
+  );
+  expect(request.mock.calls.some(([method]) => method === 'thread/resume' || method === 'turn/start')).toBe(false);
+});
+
+it('图片条目超预算时关闭只读实例并报告失败，不能重读全量或误取相邻图片', async () => {
+  const dir = process.cwd();
+  const request = vi.fn(async (method: string) => {
+    if (method === 'thread/read') return { thread: { id: threadId, cwd: dir } };
+    throw new CodexRpcLimit();
+  });
+  const close = vi.fn(async () => {});
+  vi.spyOn(CodexClient, 'start').mockResolvedValue({
+    initialize: async () => {},
+    request,
+    close,
+  } as unknown as CodexClient);
+  await expect(
+    readCodexMedia(threadId, dir, {
+      sessionId: threadId,
+      turnId: 'media-turn',
+      messageId: 'image',
+      index: 0,
+      kind: 'user',
+    }),
+  ).rejects.toMatchObject({
+    status: 503,
+    code: 'session_history_page_incomplete',
+  });
+  expect(close).toHaveBeenCalledOnce();
+  expect(request.mock.calls.map(([method]) => method)).toEqual(['thread/read', 'thread/items/list']);
 });

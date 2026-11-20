@@ -120,7 +120,6 @@ function TurnStatistics({
 export function ComposerStatus() {
   const items = useChat((state) => state.items);
   const running = useChat((state) => state.running || !!state.pendingClientTurnId);
-  const inspect = useChat((state) => state.inspectItem);
   const leadingFragment = useChat((state) => !!state.historyPage?.leading);
   const latest = latestComposerStatistics(items, running, leadingFragment);
   const previous =
@@ -131,16 +130,6 @@ export function ComposerStatus() {
   return (
     <div role="group" aria-label="会话统计" className="composer-status">
       <TurnStatistics key={displayed?.id ?? 'pending'} item={displayed} previous={!!previous} unconfirmed={!!status} />
-      {status && (
-        <button
-          type="button"
-          aria-label="查看本轮状态"
-          className="rounded-md px-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          onClick={() => inspect(status.id)}
-        >
-          结果待核实
-        </button>
-      )}
       <ContextStatus />
     </div>
   );

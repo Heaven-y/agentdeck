@@ -49,13 +49,17 @@ const fields = [
 
 export const conversationBusy = (view: Pick<ConversationView, 'running' | 'pendingClientTurnId'>) =>
   view.running || !!view.pendingClientTurnId;
-export const conversationHasDraft = (view: ConversationView) =>
+export const conversationHasInput = (view: ConversationView) =>
   !!(
     view.draft ||
     view.draftAttachments.length ||
     view.pendingAttachmentInput ||
     view.draftBackups.length ||
-    view.selectedCapability ||
+    view.selectedCapability
+  );
+export const conversationHasDraft = (view: ConversationView) =>
+  !!(
+    conversationHasInput(view) ||
     view.permission ||
     view.collaborationMode ||
     Object.values(view.modelOverrides).some(Boolean) ||

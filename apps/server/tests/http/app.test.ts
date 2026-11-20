@@ -180,9 +180,9 @@ describe('访问控制', () => {
 });
 
 describe('WebSocket 来源校验（真实监听）', () => {
-  function connect(port: number, origin: string, cookie?: string): Promise<boolean> {
+  function connect(port: number, origin: string, cookie?: string, endpoint = '/ws'): Promise<boolean> {
     return new Promise((resolve) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin, headers: cookie ? { cookie } : {} });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}${endpoint}`, { origin, headers: cookie ? { cookie } : {} });
       ws.once('open', () => {
         ws.close();
         resolve(true);
@@ -198,5 +198,14 @@ describe('WebSocket 来源校验（真实监听）', () => {
     expect(await connect(port, 'http://evil.com', COOKIE)).toBe(false);
     expect(await connect(port, `http://127.0.0.1:${port}`)).toBe(false);
     expect(await connect(port, `http://127.0.0.1:${port}`, COOKIE)).toBe(true);
+  });
+
+  it('编码后的 WebSocket 路径不能跳过 Cookie 校验', async () => {
+    const app = await make();
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const port = (app.server.address() as { port: number }).port;
+    const origin = `http://127.0.0.1:${port}`;
+    expect(await connect(port, origin, undefined, '/%77s')).toBe(false);
+    expect(await connect(port, origin, COOKIE, '/%77s')).toBe(true);
   });
 });

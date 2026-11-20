@@ -1309,6 +1309,47 @@ it('刷新重建本轮及全部后台回合，同一会话多轮按事件次序�
   });
 });
 
+it('恢复到来的旧回合不覆盖用户已经选择模型的新会话草稿', () => {
+  useChat.getState().selectWorkspace('current-project');
+  useChat.getState().setModel('chosen-model');
+  const currentId = useChat.getState().conversationId;
+  recovery({
+    type: 'connection.snapshot',
+    turns: [
+      {
+        message: {
+          type: 'chat.send',
+          workspaceId: 'original-project',
+          agent: 'codex',
+          sessionId: 'original-session',
+          conversationId: 'restored-view',
+          clientTurnId: 'restored-input',
+          text: '已发送消息',
+        },
+        sentAt: 1,
+      },
+    ],
+  });
+  emit({
+    type: 'turn.started',
+    turnId: 'restored-turn',
+    clientTurnId: 'restored-input',
+    workspaceId: 'original-project',
+    agent: 'codex',
+  });
+  expect(useChat.getState()).toMatchObject({
+    conversationId: currentId,
+    workspaceId: 'current-project',
+    modelOverrides: { claude: 'chosen-model' },
+  });
+  expect(useChat.getState().background['restored-view']).toMatchObject({
+    workspaceId: 'original-project',
+    sessionId: 'original-session',
+    turnId: 'restored-turn',
+  });
+  expect(sent).toEqual([]);
+});
+
 it('恢复握手确认未收到的发送时结束等待，不自动补发，也不伪造已执行', () => {
   useChat.getState().send('结果未知');
   status('connecting');

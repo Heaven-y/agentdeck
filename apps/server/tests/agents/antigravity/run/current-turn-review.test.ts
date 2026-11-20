@@ -116,6 +116,7 @@ it('已结束的纯429后有完整最终答复时，只确认答复完成', asyn
     finalIndex: 4,
     finalStep: f.trajectory.steps[4],
     verifiedCompletion: true,
+    recoveredRateLimit: true,
   });
 });
 

@@ -31,7 +31,7 @@
 | 专用代码审查 | **部分接入**：通过原生技能和普通对话审查；没有假造 Codex 式 review RPC | **已接入**：`review/start` inline，默认审查未提交改动，或使用明确目标；不伪装普通提示词发送 | **部分接入**：原生工具、技能和差异记录继续显示；未另造 IDE 专用审查面板。E09 |
 | 文件回退、历史回退与分叉 | **已接入**：原生文件 checkpoint 的 dryRun 预览与确认后 rewind；保留会话历史，部分恢复如实显示。分叉是独立会话操作 | **已接入**：持久普通 turn 的 `thread/revert` 预览/确认；删所选轮及以后历史，保留工作区文件。review展示turn没有可靠边界时不可回退 | **部分接入**：沿用已验证的原生会话管理动作；ACP压缩产生的 checkpoint 不等于可执行文件撤销。没有新增未经验证的回退按钮。E09 |
 | 工具执行、审批、压缩与用量 | **已接入**：原生工具/公开思考/批准、compact/context与范围明确的用量 | **已接入**：命令、文件、MCP、搜索、计划、协作活动及compact；未知统计不补造 | **已接入**：ACP工具/计划/批准与已验证的compact；headless/历史统计采用各自口径。详见[统计说明](cli-observability.md) |
-| 每条回复的实际响应模型 | **已接入**：取 `stream_event.message_start.message.model` 与历史助手 `message.model`；未知或合成占位不显示 | **协议限制**：公开 agentMessage/Turn 没有响应型号；Thread.model 明确是配置而非执行遥测，路由事件也不证明每条回复的服务端型号 | **协议限制**：ACP model配置与headless init.model是所选型号；历史modelUsage为内部枚举，metadata显示名不证明实际响应。E11 |
+| 每条回复的实际响应模型 | **已接入**：取 `stream_event.message_start.message.model` 与历史助手 `message.model`；未知或合成占位不显示 | **协议限制**：0.170.0 的 agentMessage/Turn 没有响应型号；Thread.model 是配置；model/rerouted 仅报告轮内首次不匹配且无回复身份，不能逐条配对 | **部分接入**：历史生成的 `chatModel.responseModel` 按轨迹、执行与步骤核实；headless 结束后补读对应回复。ACP 尚无已核实的实时回复身份，重读历史可恢复；配置及内部枚举不作替代。E11 |
 
 ## 原生配置与扩展管理
 
@@ -78,7 +78,7 @@
 | E08 | `p09-report.md`：真实隔离CLI插件管理、安装结果核对和未验证的第三方服务范围 |
 | E09 | `p10-implementation.md`、`p10-audit-report.md`与P10动态ACP目录/回退报告：本轮专用命令、模式、review与回退 |
 | E10 | `p10e-native-audit-report.json`、`p10e-goal-lifecycle-report.json`：Codex终端同实例控制；goal自动轮次、暂停/预算及active resume的实测顺序 |
-| E11 | `p10-response-model-report.json`、Claude响应模型生产验证、Codex本机experimental schema及AGY合成ACP轨迹 |
+| E11 | `p10-response-model-report.json` 保留早期核对；2026-11-20 补查 Codex 0.170.0 本机 experimental schema 与同版本官方源码。AGY 1.5.12 隔离原生轨迹取得生成响应型号，并以实际投影验证首条省略零索引、后续回复及分页配对；不代表所有服务报告型号或 ACP 实时字段已验证。 |
 | E12 | 三CLI正式runner事件、ACP协议与本机界面能力边界；没有外部编辑器或已登录浏览器控制凭据 |
 | E13 | Codex 0.166.0 app-server schema、Claude SDK类型及当前映射代码；没有MCP App资源加载/渲染闭环 |
 | E14 | Codex experimental schema中的`thread/realtime/*`方法及AGY `audio=false`真实ACP握手；未接音频设备 |

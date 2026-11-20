@@ -6,7 +6,7 @@ import { buttonClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
 import { conversationPermission, conversationPermissionError, permissionEditorPending } from '../state/chat-permission';
 
-const nativeDefault = { label: '跟随 CLI', description: '由 CLI 决定权限；手动选择也会用于该 CLI 的新会话' };
+const nativeDefault = { label: '选择权限', description: undefined };
 
 export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   const agent = useChat((state) => state.agent);

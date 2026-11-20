@@ -1,10 +1,12 @@
-﻿// @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ProductSettingsSchema } from '@agentdeck/shared/settings';
 import SettingsDialog from '../../../../src/features/settings/SettingsDialog';
 import { queryClient } from '../../../../src/lib/query-client';
+import { NativeMemorySettings } from '../../../../src/features/settings/resources/NativeMemorySettings';
+import { settingsApi } from '../../../../src/features/settings/api';
 
 afterEach(() => {
   cleanup();
@@ -115,6 +117,34 @@ it('记忆页只控制全局 Claude Auto Memory，其他 CLI 链接到原生文�
   expect(await screen.findByText(/没有确认可独立控制的自动记忆开关/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '打开原生文件' }));
   await screen.findByRole('heading', { name: '原生配置与扩展 · Codex' });
+});
+it('记忆首次读取失败后可以在本页重试', async () => {
+  const read = vi
+    .spyOn(settingsApi, 'readClaudeAutoMemory')
+    .mockRejectedValueOnce(new Error('读取失败'))
+    .mockResolvedValue({ enabled: false, override: false });
+  render(<NativeMemorySettings agent="claude" onOpenFiles={vi.fn()} />);
+  await screen.findByText('读取失败');
+  fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+  expect((await screen.findByLabelText<HTMLInputElement>('启用自动记忆')).checked).toBe(false);
+  expect(read).toHaveBeenCalledTimes(2);
+});
+it('记忆重新读取期间不使用旧值修改，读回后才允许保存', async () => {
+  let resolve!: (value: { enabled: boolean; override: boolean | null }) => void;
+  vi.spyOn(settingsApi, 'readClaudeAutoMemory')
+    .mockResolvedValueOnce({ enabled: true, override: null })
+    .mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+  const save = vi.spyOn(settingsApi, 'saveClaudeAutoMemory').mockResolvedValue({ enabled: true, override: true });
+  render(<NativeMemorySettings agent="claude" onOpenFiles={vi.fn()} />);
+  await screen.findByLabelText('启用自动记忆');
+  fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+  expect(screen.queryByLabelText('启用自动记忆')).toBeNull();
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '重新读取' }).disabled).toBe(true);
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => resolve({ enabled: false, override: false }));
+  fireEvent.click(screen.getByLabelText('启用自动记忆'));
+  await waitFor(() => expect(save).toHaveBeenCalledWith('enabled'));
+  expect(screen.getByLabelText<HTMLInputElement>('启用自动记忆').checked).toBe(true);
 });
 it('一级分类和返回工作台均保护未保存设置，确认后离开', async () => {
   mockApi();

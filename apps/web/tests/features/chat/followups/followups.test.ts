@@ -161,6 +161,55 @@ it('刷新恢复最新队列，后端拒绝只保留为失效备份且不重新�
   expect(useChat.getState().followups[queueId]?.invalid).toBe(true);
   expect(sent).toEqual([]);
 });
+it('旧回合缓存过期后仍恢复暂停待发，按原项目读取历史和权限且不自动发送', async () => {
+  const saved: FollowupSnapshot = {
+    ...snapshot([
+      {
+        clientMessageId: '00000000-0000-4000-8000-000000000002',
+        revision: 0,
+        mode: 'queue',
+        status: 'queued',
+        text: '等待人工核对',
+        content: { text: '等待人工核对', model: 'queued-model', permission: { agent: 'codex', mode: 'full-access' } },
+      },
+    ]),
+    conversationId: 'restored-queue',
+    workspaceId: 'original-project',
+    sessionId: 'original-session',
+    paused: true,
+    activeTurnId: undefined,
+  };
+  useChat.getState().newSession('claude');
+  useChat.getState().setDraft('当前项目的草稿');
+  const selected = useChat.getState().conversationId;
+  const history = vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue({
+    session: { agent: 'codex', sessionId: 'original-session', summary: '原会话', lastModified: 1 },
+    events: [{ type: 'user_message', text: '原生已保存消息' }],
+  });
+  const permission = vi.mocked(sessionsApi.sessionPermission).mockResolvedValue({
+    permission: { agent: 'codex', mode: 'ask' },
+  });
+  recover({ type: 'connection.snapshot', turns: [] });
+  recover({ type: 'connection.followups', snapshots: [saved] });
+  const restored = useChat.getState().background[saved.conversationId];
+  expect(restored).toMatchObject({
+    workspaceId: 'original-project',
+    agent: 'codex',
+    sessionId: 'original-session',
+    permissionLoading: true,
+    historyReloadNeeded: true,
+  });
+  expect(useChat.getState()).toMatchObject({ conversationId: selected, draft: '当前项目的草稿' });
+  expect(useChat.getState().followups[queueId]?.snapshot.items).toEqual(saved.items);
+  useChat.getState().openConversation(saved.conversationId);
+  await vi.waitFor(() => expect(useChat.getState().permissionLoading).toBe(false));
+  expect(history).toHaveBeenCalledWith('original-project', 'original-session', 'codex', expect.any(AbortSignal));
+  expect(permission).toHaveBeenCalledWith('original-project', 'original-session', 'codex', expect.any(AbortSignal));
+  expect(useChat.getState().permission).toEqual({ agent: 'codex', mode: 'ask' });
+  expect(useChat.getState().modelOverrides.codex).toBe('');
+  expect(useChat.getState().followups[queueId]?.snapshot.items).toEqual(saved.items);
+  expect(sent).toEqual([]);
+});
 it('刷新重建自动input再重放started不追加重复用户消息', () => {
   const input: Extract<ClientMessage, { type: 'chat.send' }> = {
     type: 'chat.send',
@@ -356,8 +405,28 @@ it('未知会话的队列快照不会在后台凭空造出草稿条目', () => {
   running();
   const before = Object.keys(useChat.getState().background);
   emit({ type: 'followup.state', snapshot: { ...snapshot(), conversationId: 'gone', sessionId: undefined } });
+  recover({
+    type: 'connection.followups',
+    snapshots: [{ ...snapshot(), conversationId: 'gone', sessionId: undefined }],
+  });
   expect(Object.keys(useChat.getState().background)).toEqual(before);
   expect(useChat.getState().queueId).toBe(queueId);
+});
+
+it('恢复快照的本地 ID 已被其他项目使用时拒绝覆盖视图或挂载队列', () => {
+  const current = useChat.getState();
+  recover({
+    type: 'connection.followups',
+    snapshots: [
+      {
+        ...snapshot([{ clientMessageId: 'one', revision: 0, mode: 'queue', status: 'queued', text: '其他项目待发' }]),
+        workspaceId: 'other-project',
+      },
+    ],
+  });
+  expect(useChat.getState().workspaceId).toBe(current.workspaceId);
+  expect(useChat.getState().background).toEqual(current.background);
+  expect(useChat.getState().followups[queueId]).toBeUndefined();
 });
 
 it('会话身份相同的快照挂回存活视图而不是另建一条', () => {

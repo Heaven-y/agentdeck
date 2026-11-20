@@ -2,6 +2,7 @@ import type { AgentEvent, SessionHistory } from '@agentdeck/shared/conversation'
 import type { ChatState, ConversationView } from '../state/chat-state';
 import { sessionsApi } from '../../sessions/api';
 import { conversationBusy, conversationById, updateConversation } from '../state/conversations';
+import { hasMissingResponseModels, refreshResponseModels } from './response-model-refresh';
 
 function unchanged(view: ConversationView | undefined, snapshot: ConversationView): view is ConversationView {
   return !!view && !conversationBusy(view) && !view.loadingHistory && sameRound(view, snapshot);
@@ -18,7 +19,13 @@ function sameRound(view: ConversationView, snapshot: ConversationView): boolean 
   );
 }
 
-/** 只补齐缺失的实时上下文；历史正文和其他元数据不进入当前时间线。 */
+function refreshedContext(events: AgentEvent[], preserve: boolean): Partial<ConversationView> | undefined {
+  if (preserve) return;
+  const event = events.findLast((entry) => entry.type === 'context');
+  return event?.type === 'context' ? { contextUsage: event.usage } : undefined;
+}
+
+/** 有界补齐缺失上下文和已核实的回复模型；不替换实时正文、会话参数与终态。 */
 export function createContextRefresh(get: () => ChatState, set: (patch: Partial<ChatState>) => void) {
   const requests = new Map<string, AbortController>();
   const reported = new Map<string, string | undefined>();
@@ -27,19 +34,21 @@ export function createContextRefresh(get: () => ChatState, set: (patch: Partial<
     requests.get(view.conversationId)?.abort();
     reported.delete(view.conversationId);
   }
-  function apply(history: SessionHistory | undefined, snapshot: ConversationView, controller: AbortController) {
-    if (!history || controller.signal.aborted) return;
+  function apply(history: SessionHistory | undefined, snapshot: ConversationView, preserveContext: boolean) {
+    if (!history) return;
     if (history.session.agent !== snapshot.agent || history.session.sessionId !== snapshot.sessionId) return;
     const state = get();
     const view = conversationById(state, snapshot.conversationId);
     if (!unchanged(view, snapshot)) return;
-    const context = history.events.findLast((event) => event.type === 'context');
-    if (context?.type === 'context') set(updateConversation(state, view, { contextUsage: context.usage }));
+    const context = refreshedContext(history.events, preserveContext);
+    const items = refreshResponseModels(view.items, history.events);
+    if (items !== view.items || context) set(updateConversation(state, view, { items, ...context }));
   }
   async function finished(snapshot: ConversationView) {
     const hasLiveContext = reported.get(snapshot.conversationId) === snapshot.turnId;
     reported.delete(snapshot.conversationId);
-    if (snapshot.agent !== 'antigravity' || !snapshot.workspaceId || !snapshot.sessionId || hasLiveContext) return;
+    if (snapshot.agent !== 'antigravity' || !snapshot.workspaceId || !snapshot.sessionId) return;
+    if (hasLiveContext && !hasMissingResponseModels(snapshot.items)) return;
     requests.get(snapshot.conversationId)?.abort();
     const controller = new AbortController();
     requests.set(snapshot.conversationId, controller);
@@ -54,7 +63,7 @@ export function createContextRefresh(get: () => ChatState, set: (patch: Partial<
         sessionsApi.sessionEvents(snapshot.workspaceId, snapshot.sessionId, snapshot.agent, controller.signal),
         cancelled,
       ]);
-      apply(history, snapshot, controller);
+      if (!controller.signal.aborted) apply(history, snapshot, hasLiveContext);
     } catch {
       // 补读不可用不代表回合失败；保留已有上下文和实时正文。
     } finally {

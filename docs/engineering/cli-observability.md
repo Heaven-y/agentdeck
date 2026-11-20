@@ -19,12 +19,13 @@ DSH 的生成速度同时依赖提供方输出 token 数与首个 token 至完�
 | 内容 | Claude Code | Codex | Antigravity |
 |---|---|---|---|
 | 当前上下文 | summary 原生估计、窗口及百分比 | 最近 tokenUsage.last 与窗口计算占比 | 用量取完整原生记录，缺实时报告时结束后补读；窗口按当前生效模型总容量，运行中保留启动快照 |
-| 输入、输出、缓存 token | 已接 result 主循环本轮统计 | 已接 total 累计快照的可靠本轮差分 | 已接 step_update 和历史模型回复的步骤用量，不混用累计 result |
+| 输入、输出、缓存 token | 已接 result 主循环本轮统计 | 已接 total 累计快照的可靠本轮差分 | 已接 step_update 和历史模型回复的步骤用量，不混用 result 的累计用量 |
 | tok/s | 已接本轮输出 / 宿主记录的整轮耗时 | 已接可靠增量 / 原生整轮耗时 | 公开步骤按同范围耗时计算；历史单次生成可靠对应时提供生成均速 |
 | 工具耗时 | 实时调用至结果的单调时钟，标记工作台计时；原生 progress 保留 | 原生 durationMs 或同条目的完整起止时间 | 实时 duration_seconds；历史步骤起止时间 |
 | 实时执行轨迹 | 主线程工具、审批、公开思考、压缩与工具进度 | 命令、文件、MCP、搜索、计划、动态工具、协作活动及图片读取 | 工具、文字、步骤统计和压缩；未知原生活动保留类型与状态 |
 | 原生历史轨迹 | SDK 主线程消息与工具；子代理独立按需分页查看 | 官方 thread/turn/item 与已核实的独立子线程，保留已有原生时间 | 已接内部轨迹 RPC 与已核实的独立子轨迹；隔离原生读回通过 |
 | 旧会话精确速度 | 历史不含完整流计时/result，不能保证恢复 | 当前 thread/read 不含每轮 tokenUsage，不能保证恢复 | 取决轨迹是否实际保存相匹配的用量与计时；未证明普遍可恢复 |
+| 回复响应型号 | 消息报告的 model | 当前无可靠逐回复字段 | 单步生成元数据报告的 responseModel；历史可读回，headless 可在结束后补齐，ACP 实时暂缺对应身份 |
 
 ## 计量规则
 
@@ -66,7 +67,7 @@ ACP 与 headless 使用不同运行路径。1.5.3 隔离验证中，ACP prompt �
 
 Antigravity 接入证据基线为 CLI 1.5.1。公开 headless result.usage 有 input_tokens、output_tokens、thinking_tokens、cache_read_tokens、total_tokens，另有 duration_seconds。step_update 在已知时可带 usage 和 duration_seconds，step_index 和状态可用于步骤归属。
 
-官方定义的 result 是累计口径；工作台每轮新进程续接时也不把其用量和耗时推定为本轮。现仅采用范围明确的步骤报告，避免将旧会话计数计入新回复。
+官方 headless 协议每轮发出一个 result，response 属于当前轮；累计字段是 num_turns、usage 和 duration_seconds，不包括整个结果。工作台每轮新进程续接时也不把累计用量和耗时推定为本轮，现仅采用范围明确的步骤报告，避免将旧会话计数计入新回复。
 
 历史回复的 token 分项取该步骤的 `metadata.modelUsage`。有有效模型用量的已完成回复，若 `createdAt` 至 `finishedGeneratingAt` 有效，则恢复步骤耗时；这与工具的 `startedAt` / `completedAt` 分开，本机核对的回复中，后两者都等于生成结束时刻，不能用于恢复生成耗时。回复时间缺失、非法、倒序或相等时不补零，也不拿流式生成时长替代步骤总耗时。无有效模型用量时不生成该步骤统计；有用量但时间不可用时，耗时和相应均速仍保持未知。
 
@@ -98,13 +99,13 @@ AGY 历史现可读取同次生成的 `timeToFirstToken` 和 `streamingDuration`
 
 原生结果成功与进程退出分开：结果后等待超时只触发清理，收到真实 close 才释放会话；未成功发出清理信号后的异常退出、协议错误和主动停止继续标失败。
 
-headless 将服务故障暂存，并按同一会话、目录和本轮输入边界复核原生轨迹。只有自然成功退出、同轮明确的纯 429 后有完整最终答复，或续接 `ERROR` 缺少错误正文且满足严格终态复核，才能确认恢复；混合故障、未知输入边界及矛盾的当前轮错误不能仅凭已有正文改判成功。仅累计结果包含归属不明的错误时，结束状态标记为未确认，不生成本轮错误条，待发仍暂停。确有本轮故障时保留相应失败提示；进程清理、外部非零退出和用户中断分别判断，规则见[原生对话](native-dialogue.md#4-接口与实现选择)。
+headless 将服务故障暂存，并按同一会话、目录和本轮输入边界复核原生轨迹。默认保留本轮 ERROR；只有可信本轮完整轨迹、输入前结构化同文故障、自然退出 0 且无明确当前失败时，才标记结果未确认并暂停待发。读取失败、缺边界、无旧错误、未完成或异常退出均保留失败。空错误正文不能仅凭完整答复改成功；严格同轮纯 429 后有完整最终答复且自然退出 0 仍可确认恢复，混合故障不适用。具体条件与进程清理、中断语义见[原生对话](native-dialogue.md#4-接口与实现选择)。
 
 AGY 生成终态报告明确的地区不支持时，显示脱敏的地区拒绝提示，而不是通用失败。后台探测的普通 403 不等于本轮生成失败；提示不判断代理是否命中或出口位于何处。
 
-未确认回合不显示未经核实的整轮统计。只有本轮最终公开回复步骤已确认完成且有对齐的原生用量时，页脚才可显示该步骤统计；平均速度还需要同一步骤的有效耗时，并按步骤口径解释。其他步骤仍可在轨迹中查看，不能拿累计 `result.usage` 或 `duration_seconds` 冒充该轮。缺少本轮回复证据时，不从累计 `result.response` 补正文。未确认状态仅存在于当前视图和有界恢复事件中；原生历史重读不承诺恢复工作台生成的状态。
+未确认回合不显示未经核实的整轮统计。只有本轮最终公开回复步骤已确认完成且有对齐的原生用量时，页脚才可显示该步骤统计；平均速度还需要同一步骤的有效耗时，并按步骤口径解释。其他步骤仍可在轨迹中查看，不能拿累计 `result.usage` 或 `duration_seconds` 冒充该轮。缺少本轮回复证据时，不从错误结果中的 `result.response` 补正文。未确认说明留在轮次详情，实际待发暂停时才在待发区提供原因入口；该状态仅存在于当前视图和有界恢复事件中，原生历史重读不承诺恢复工作台生成的状态。
 
-只读会话副本与本机响应对照显示：原生直播记录中的本轮回复已完成、本机模拟响应成功且进程退出 0 时，累计结果仍可包含与多条历史错误同文的 524。该产物没有保存完整 stderr 分类与本轮完整轨迹字段，不能排除所有其他来源，也不能将新反馈中的每条提示归于同一原因。此前的修订把诊断文案改为归属未确认，但后续回合再次返回累计错误时仍发出新的错误事件；本轮另用脱敏记录的步骤形状和合成事件离线重放历史错误、本轮故障及异常退出，不视作新的原生 CLI 或外部模型验收。
+较早只读会话副本与本机响应对照观察到完整回复和退出 0 后仍返回历史同文 524，但缺少完整 stderr 分类与本轮轨迹，不能证明唯一来源。2026-11-20 的 CLI 1.5.12 在新 profile、独立目录、占位密钥和本机 HTTP 模拟响应下，重现成功、524 失败、续接完整答复三轮；第三轮仍为同文 ERROR、退出 0 且 stderr 为空。离线反例另核对历史匹配、当前失败与异常退出。这些结果分别证明原生样本与适配器行为，不将本机模拟写成远端真实模型通过；范围见[复盘](incidents/antigravity-repeated-regressions.md#错误提示跟随续接回合)和[路线图](../roadmap.md)。
 
 本机固定响应服务还验证了自定义模型的请求路径：当前 CLI 把包含地址的 modelName 当成模型 ID，造成错误路由。表单将模型 ID、显示名称和原生选择项分别处理，URL 单独走启动环境，末尾重复版本段规范化；旧配置的读取与迁移规则见[模型连接说明](native-configuration.md#模型与服务连接)。
 
@@ -117,6 +118,6 @@ AGY 生成终态报告明确的地区不支持时，显示脱敏的地区拒绝�
 ## 证据入口
 
 - Claude：[SDK 用量](https://platform.claude.com/docs/en/agent-sdk/cost-tracking)、[类型参考](https://platform.claude.com/docs/en/agent-sdk/typescript)、[流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)，以及本机 SDK 类型与实现。
-- Codex：本机 `app-server generate-json-schema` 的 0.166.0 schema；字段依据来自生成协议；早期网页取证失败的记录仍保留在历史文档。
+- Codex：统计字段基线为本机 `app-server generate-json-schema` 的 0.166.0 schema；2026-11-20 另用 0.170.0 本机 schema 与同版本官方源码核查逐回复型号限制，见[能力矩阵 E11](native-capability-matrix.md#证据索引)。早期网页取证失败的记录仍保留在历史文档。
 - Antigravity：[headless](https://antigravity.google/docs/cli/headless/)、[statusLine](https://antigravity.google/docs/cli/statusline)、本机 protobuf 描述和隔离 GetCascadeTrajectory 读取。
 - 当前数据入口：[Claude 上下文](../../apps/server/src/agents/claude/run/query.ts)、[Antigravity 映射](../../apps/server/src/agents/antigravity/run/mapper.ts)、[前端上下文状态](../../apps/web/src/features/chat/models/ContextStatus.tsx)、[事件归并](../../apps/web/src/features/conversation/model/conversation-events.ts)。
