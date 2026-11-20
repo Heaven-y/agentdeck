@@ -36,7 +36,9 @@ nsis:
   artifactName: AgentDeck-${version}-${arch}-setup.${ext}
   oneClick: false
   perMachine: false
-  allowToChangeInstallationDirectory: true
+  # 目录页由自定义脚本提供：首次可选，更新沿用原目录。
+  include: assets/installer.nsh
+  allowToChangeInstallationDirectory: false
   runAfterFinish: false
   deleteAppDataOnUninstall: false
 portable:

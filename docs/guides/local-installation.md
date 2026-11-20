@@ -2,7 +2,7 @@
 
 支持 Windows x64 本地安装版和便携版。当前本地测试包为 **0.1.2**，构建于 2026-11-20，包含截至本轮的原生会话、配置、恢复与提示体验改进，进度见[路线图](../roadmap.md)。
 
-0.1.2 的解压应用与便携版已通过隔离首屏、预加载隔离、空初始数据、单实例、正常退出及端口释放检查。安装向导、覆盖升级、协议登记和卸载由本轮安装测试继续核对；本次没有替用户安装或卸载现有版本。
+0.1.2 的解压应用与便携版已通过隔离首屏、预加载隔离、空初始数据、单实例、正常退出及端口释放检查。本轮同版更新安装器，原生 NSIS 页面钩子的 11 项隔离回归通过，实际安装包已核对首次安装范围页和目录页。真实覆盖升级、协议登记和卸载由本轮安装测试继续核对；本次没有替用户安装或卸载现有版本。
 
 0.1.1 于 2026-11-05 完成本地构建，其首轮候选 NSIS 曾完成隔离安装、启动和卸载，后续重建未逐次重装。原记录见 `b053fe1:docs/guides/local-installation.md`；这些结果不代替 0.1.2 的安装测试。
 
@@ -10,7 +10,7 @@
 
 | 产物 | 使用方式 |
 |---|---|
-| `AgentDeck-0.1.2-x64-setup.exe` | NSIS 安装向导，可选择当前用户的安装目录；安装结束不自动启动 |
+| `AgentDeck-0.1.2-x64-setup.exe` | 首次安装选择用户范围和目录；已有一份有效安装时沿用原范围和目录更新；安装结束不自动启动 |
 | `AgentDeck-0.1.2-x64-portable.exe` | 直接运行，程序临时解压后启动，无需安装 |
 | `win-unpacked/` | 解压后的完整应用目录，用于本地验收；须保留整个目录一起移动 |
 
@@ -24,7 +24,9 @@
 
 同一用户正常只运行一个实例，再次启动会聚焦现有窗口。退出会停止本机服务并清理本应用持有的连接与子进程。卸载安装版保留工作台数据及 CLI 原生文件。
 
-更新时退出旧版本，再运行新安装包或替换便携包。签名、在线更新和公开发布渠道尚未启用。
+更新时退出旧版本，再运行新安装包。正常只有一份安装时，向导识别原程序后直接沿用安装范围和目录，无需重复选择；程序文件在原位置更新，工作台数据和 CLI 原生文件继续保留。当前用户与全机范围都已有安装时，先选择要更新的范围，再沿用对应目录。仅有登记、原程序已经不存在时保留安装选择。全机安装仍按 Windows 要求请求管理员权限。
+
+手动指定 `/currentuser`、`/allusers` 或 `/D=` 时继续遵循显式参数；`/D=` 必须放在最后，不加引号，目录可以包含空格。静默安装 `/S` 继续使用 electron-builder 的原生流程，本轮页面回归不代替静默升级验收。便携版更新只需替换便携包。签名、在线更新和公开发布渠道尚未启用。
 
 制作新包前确认变更范围和版本，规则见[开发指南](dev-environment.md#3-启动与隔离验证)。
 
@@ -39,7 +41,7 @@ npm.cmd run package:desktop
 
 脚本先构建网页和 Electron，再由 electron-builder 生成两种 exe；参数固定为 `--publish never`。首次构建需要下载锁定版本的 Electron 和打包工具。仅需要解压版时运行 `npm.cmd run package:desktop:dir`。
 
-产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。不同版本的 exe 可以保留在 `release/`；`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们。
+产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。本轮已按用户要求逐个清理 0.1.0、0.1.1 的旧安装版、便携版及 0.1.1 校验清单，历史验收记录保留。
 
 桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI，SSH 的可选原生加速模块采用 JavaScript 回退。
 
@@ -50,6 +52,8 @@ npm.cmd run package:desktop
 验收报告和截图写入 `release/verification/`。默认检查解压应用；追加 `--portable <exe路径>` 检查便携版，`--installed <应用目录>` 检查已安装版。NSIS 安装与卸载另查注册项、快捷方式和安装目录。
 
 Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/packaging/installer-smoke.ps1` 验证 NSIS。脚本选择 desktop 清单中的当前版本，发现已有安装、同名快捷方式或缓存时停止。每次交付按实际产物生成报告和摘要。
+
+仅检查安装页面逻辑时，在 PowerShell 7 中运行 `pwsh -NoProfile -File scripts/packaging/installer-pages-smoke.ps1`。脚本使用已缓存的 NSIS 工具执行生产页面钩子，覆盖首次安装、当前用户/全机更新、双范围、残留登记、显式范围和路径以及原生更新参数；中文、空格和非默认旧目录均需原样保留。测试不改真实安装登记，不安装或卸载应用，临时文件逐项清理；结果写入 `release/verification/installer-pages.json`。
 
 `node --import tsx scripts/packaging/record.ts` 核对包内版本、主进程、preload 和网页入口，记录源文件指纹、Git 提交和成品摘要。它检查 desktop 清单当前版本的两种 x64 exe，任一缺失时失败。结果写入 `release/SHA256SUMS.txt` 与 `release/verification/build-record.json`。
 
