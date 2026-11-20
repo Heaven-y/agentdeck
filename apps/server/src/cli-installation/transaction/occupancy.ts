@@ -97,7 +97,8 @@ async function systemRows(context: BackendContext, signal: AbortSignal): Promise
     : ['--disable-gems', '-e', darwinProbe];
   const result = await context.run(command, args, {
     signal,
-    timeoutMs: 10_000,
+    // Windows 的冷启动 CIM 查询与参数解析编译可超过 20 秒，仍受外层取消和事务期限约束。
+    timeoutMs: windows ? 45_000 : 10_000,
     outputCap: 4 * 1024 * 1024,
     env: installationEnvironment(process.env),
   });

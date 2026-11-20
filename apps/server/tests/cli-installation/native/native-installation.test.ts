@@ -34,13 +34,21 @@ async function fixture(agent: CliInstallation['agent']) {
   roots.push(root);
   const homeDir = path.join(root, 'home'),
     local = path.join(root, 'local');
-  const env = { USERPROFILE: homeDir, LOCALAPPDATA: local, SystemRoot: path.join(root, 'system'), PATH: '' };
   const entry =
     agent === 'claude'
       ? path.join(homeDir, '.local/bin/claude.exe')
       : agent === 'codex'
         ? path.join(local, 'Programs/OpenAI/Codex/bin/codex.exe')
         : path.join(local, 'agy/bin/agy.exe');
+  // 本组模拟 Windows 安装；显式入口避免宿主系统按自己的扩展名规则查找。
+  const env = {
+    USERPROFILE: homeDir,
+    LOCALAPPDATA: local,
+    SystemRoot: path.join(root, 'system'),
+    PATH: '',
+    CLAUDE_CODE_EXECUTABLE: agent === 'claude' ? entry : undefined,
+    AGENTDECK_CODEX: agent === 'codex' ? entry : undefined,
+  };
   const installation: CliInstallation = {
     agent,
     command: { command: entry, args: [] },

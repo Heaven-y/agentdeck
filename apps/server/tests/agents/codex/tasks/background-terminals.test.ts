@@ -183,6 +183,45 @@ it('clean只在空结果及完整空列表复核后成功', async () => {
   tasks.close();
 });
 
+it.each(['停止', '清理'])('%s 后重新读取，不能复用操作前仍在途的终端列表', async (action) => {
+  let listCalls = 0;
+  let release = (_value: Record<string, unknown>) => {};
+  const pending = new Promise<Record<string, unknown>>((resolve) => {
+    release = resolve;
+  });
+  let mutated = () => {};
+  const mutation = new Promise<void>((resolve) => {
+    mutated = resolve;
+  });
+  const tasks = new CodexBackgroundTerminals({
+    threadId: 'thread-a',
+    request: async (method) => {
+      if (method === 'thread/backgroundTerminals/list') {
+        listCalls += 1;
+        if (listCalls === 2) return pending;
+        return { data: listCalls === 1 ? [terminal('p1')] : [], nextCursor: null };
+      }
+      mutated();
+      return method === 'thread/backgroundTerminals/terminate' ? { terminated: true } : {};
+    },
+  });
+  try {
+    await tasks.refresh();
+    const refreshing = tasks.refresh();
+    const operation = action === '停止' ? tasks.stopTask('codex-terminal:p1') : tasks.clean();
+    const completed = expect(operation).resolves.toBeUndefined();
+    await mutation;
+    release({ data: [terminal('p1')], nextCursor: null });
+    await refreshing;
+    await completed;
+    expect(listCalls).toBe(3);
+    expect(tasks.snapshot()).toEqual([]);
+    expect(tasks.active).toBe(false);
+  } finally {
+    tasks.close();
+  }
+});
+
 it('cursor循环和关闭状态拒绝操作', async () => {
   const request = vi.fn(async () => ({ data: [terminal('p1')], nextCursor: 'same' }));
   const tasks = new CodexBackgroundTerminals({ threadId: 'thread-a', request });

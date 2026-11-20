@@ -144,7 +144,7 @@ export class CodexBackgroundTerminals {
         }),
       );
       if (result.terminated !== true) throw unavailable();
-      await this.refresh();
+      await this.refreshAfterMutation();
       if (this.terminals.has(entry.processId)) throw unavailable();
     } finally {
       this.stopping.delete(taskId);
@@ -157,8 +157,14 @@ export class CodexBackgroundTerminals {
       await this.options.request('thread/backgroundTerminals/clean', { threadId: this.options.threadId }),
     );
     if (Object.keys(result).length !== 0) throw unavailable();
-    await this.refresh();
+    await this.refreshAfterMutation();
     if (this.terminals.size !== 0) throw unavailable();
+  }
+
+  private async refreshAfterMutation(): Promise<void> {
+    // 操作前发出的列表可能仍在返回，等它结束后再读取操作后的完整状态。
+    await this.refreshing?.catch(() => undefined);
+    await this.refresh();
   }
 
   close(): void {
