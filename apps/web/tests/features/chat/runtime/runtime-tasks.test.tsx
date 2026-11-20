@@ -64,7 +64,7 @@ it('刷新可恢复后台快照，切到其他会话不显示或控制，恢复�
   expect(screen.getByText('合成子代理')).toBeTruthy();
   act(() => runtimeTaskRecovery({ type: 'connection.rejected', code: 'owner_missing', message: '连接已失效' }));
   expect(screen.queryByRole('button', { name: '停止任务 合成子代理' })).toBeNull();
-  expect(screen.getByText('状态未确认')).toBeTruthy();
+  expect(screen.getByText('状态不可用')).toBeTruthy();
   bindRuntimeTaskSender(vi.fn(() => true));
   expect(stopRuntimeTask(initial, 'child')).toBe(false);
 });

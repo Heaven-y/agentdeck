@@ -62,7 +62,7 @@ function MetadataMessage({ item }: { item: Extract<ChatItem, { kind: 'statistics
   if (item.kind === 'turn-status')
     return (
       <p role="status" className="text-sm leading-6 text-muted-foreground">
-        原生结果包含无法确认归属的错误。请核对本轮答复与原生记录；如有待发消息，列表会暂停等待确认。
+        CLI 返回的完成状态与本轮记录不一致，暂时无法确认是否完整完成。
       </p>
     );
   if (item.kind === 'statistics') return <StatisticsLine statistics={item} />;

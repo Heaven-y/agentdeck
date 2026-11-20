@@ -42,7 +42,7 @@ export function LocalSessionGate({ start, mountApp }: { start(): void; mountApp(
         ) : (
           <>
             <p role="alert" className="text-sm leading-6">
-              无法建立本机会话。请确认本机后端正在运行，并从本机访问页面。
+              无法连接本机服务，请启动 AgentDeck 并在本机重新打开页面。
             </p>
             <button
               type="button"

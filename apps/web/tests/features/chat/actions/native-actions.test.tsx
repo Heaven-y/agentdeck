@@ -107,7 +107,7 @@ it('协作模式按需读取，旧缓存不能开启模式，显式刷新只提�
   expect(read).not.toHaveBeenCalled();
   expect(refresh).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '协作模式' }));
-  await screen.findByText('尚未核实可用的协作模式，可刷新原生目录。');
+  await screen.findByText('暂无可选模式，请刷新列表。');
   expect(screen.queryByRole('menuitemradio', { name: '计划模式' })).toBeNull();
   expect(screen.queryByRole('menuitemradio', { name: '执行模式' })).toBeNull();
   expect(refresh).not.toHaveBeenCalled();

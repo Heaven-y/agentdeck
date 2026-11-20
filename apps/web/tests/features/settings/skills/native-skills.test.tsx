@@ -157,7 +157,7 @@ it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止�
   act(() => guardSettingsNavigation(guards, navigate));
   expect(navigate).not.toHaveBeenCalled();
   await act(async () => finish(Response.json({})));
-  await screen.findByText('已保存，下轮使用更新后的原生资源。');
+  await screen.findByText('已保存，下次对话生效。');
   act(() => guardSettingsNavigation(guards, navigate));
   expect(navigate).toHaveBeenCalledOnce();
 });

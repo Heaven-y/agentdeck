@@ -136,7 +136,7 @@ it('密码可编辑但仅确认保存才替换，发送清理，不把保存当�
   });
   await screen.findByRole('button', { name: '编辑服务器' });
   expect(screen.queryByText('服务器已连接')).toBeNull();
-  expect(screen.getByText(/保存不代表认证成功/)).toBeTruthy();
+  expect(screen.getByText('断开服务器会结束该服务器的所有终端。')).toBeTruthy();
   expect(sshApi.connectSsh).not.toHaveBeenCalled();
   expect(sshApi.probeHostKey).not.toHaveBeenCalled();
 });

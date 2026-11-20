@@ -11,9 +11,9 @@ const ERRORS = {
   unsupported: [409, '当前安装来源不支持此操作，请使用官方安装指南'],
   service_closed: [503, '服务正在关闭，请稍后重试'],
   check_failed: [502, '检查最新版本失败，请稍后重试'],
-  install_failed: [500, 'CLI 安装或更新失败，请检查本机状态后重试'],
-  verification_failed: [500, 'CLI 最终入口或版本验证未通过'],
-  incompatible: [500, '新版 CLI 的工作台接口验证未通过'],
+  install_failed: [500, 'CLI 安装或更新失败，请重新检查安装状态后重试'],
+  verification_failed: [500, '安装后的程序或版本与预期不符，请重新检查安装状态'],
+  incompatible: [500, '新版 CLI 暂时无法在工作台中使用'],
   internal_error: [500, '无法读取 CLI 安装状态，请稍后重试'],
 } as const;
 type FailureCode = keyof typeof ERRORS;

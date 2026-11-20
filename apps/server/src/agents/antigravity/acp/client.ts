@@ -33,7 +33,7 @@ export type AcpLaunchOptions = { cwd: string; env?: NodeJS.ProcessEnv; bypass?: 
 
 function nativeFailure(value: unknown): AcpError {
   const error = object(value);
-  if (error.code === -32601) return new AcpError('unavailable', '当前 Antigravity 版本不支持此 ACP 操作。');
+  if (error.code === -32601) return new AcpError('unavailable', '当前 Antigravity 版本不支持此操作。');
   const diagnostic = antigravityDiagnostic(text(error.message));
   return new AcpError(
     'native',
@@ -73,7 +73,7 @@ export class AntigravityAcpClient implements AcpConnection {
         } catch {
           /* 退出已使未完成请求失败。 */
         }
-        this.failAll(new AcpError('unavailable', 'Antigravity ACP 连接已结束。'));
+        this.failAll(new AcpError('unavailable', 'Antigravity 连接已结束。'));
         resolve();
       }),
     );
@@ -86,8 +86,8 @@ export class AntigravityAcpClient implements AcpConnection {
       }
     });
     this.child.stderr.resume();
-    this.child.stdin.on('error', () => this.failAll(new AcpError('unavailable', 'Antigravity ACP 未接收输入。')));
-    this.child.once('error', () => this.failAll(new AcpError('unavailable', '无法启动 Antigravity ACP。')));
+    this.child.stdin.on('error', () => this.failAll(new AcpError('unavailable', 'Antigravity 连接已断开。')));
+    this.child.once('error', () => this.failAll(new AcpError('unavailable', '无法启动 Antigravity。')));
   }
 
   static start(options: AcpLaunchOptions): Promise<AcpConnection> {
@@ -103,10 +103,7 @@ export class AntigravityAcpClient implements AcpConnection {
       const timeout = options.timeoutMs ?? 30_000;
       const timer =
         timeout > 0
-          ? setTimeout(
-              () => this.settle(id, new AcpError('native', 'Antigravity ACP 请求超时，请核对原生运行状态。')),
-              timeout,
-            )
+          ? setTimeout(() => this.settle(id, new AcpError('native', 'Antigravity 响应超时。')), timeout)
           : undefined;
       this.pending.set(id, {
         resolve,
@@ -179,7 +176,7 @@ export class AntigravityAcpClient implements AcpConnection {
     return this.closing;
   }
   private async shutdown(): Promise<void> {
-    this.failAll(new AcpError('unavailable', 'Antigravity ACP 已关闭。'));
+    this.failAll(new AcpError('unavailable', 'Antigravity 连接已关闭。'));
     if (this.child.exitCode !== null || !this.child.pid) return this.closed;
     // 关闭ACP必须覆盖其原生后端，不能仅留下退出的stdio父进程。
     if (process.platform === 'win32') {

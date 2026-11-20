@@ -50,6 +50,7 @@ async function fixture() {
 it('Codex 离线列表不用 plugin RPC 或联网 list，定点启停保留未知字段', async () => {
   const f = await fixture();
   const catalog = await f.service.read('codex');
+  expect(catalog.warnings).toEqual([]);
   const entry = catalog.entries[0]!;
   expect(entry.version).toBe('1.0.0');
   expect(entry.description).toHaveLength(4096);

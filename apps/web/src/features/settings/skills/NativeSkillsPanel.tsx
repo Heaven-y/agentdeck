@@ -22,7 +22,7 @@ const states: Record<NativeSkillState, string> = {
   off: '隐藏并停用',
   enabled: '已启用',
   disabled: '已禁用',
-  unknown: '未核实',
+  unknown: '—',
 };
 const origins = {
   owned: '自有目录',
@@ -67,6 +67,21 @@ function useSkillDraft(entry: NativeSkillEntry) {
     outdated: !!draft && draft.revision !== entry.revision,
   };
 }
+function SkillSummary({ entry }: { entry: NativeSkillEntry }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-medium">{entry.name}</h4>
+        <span className="text-xs text-muted-foreground">
+          {origins[entry.origin]} · {scopeLabel(entry.scope)} · {states[entry.state]}
+        </span>
+      </div>
+      <p className="break-all font-mono text-xs text-muted-foreground">{entry.source}</p>
+      {entry.description && <p className="text-sm leading-6 text-muted-foreground">{entry.description}</p>}
+      {entry.unavailableReason && <p className="text-sm text-muted-foreground">{entry.unavailableReason}</p>}
+    </>
+  );
+}
 function SkillRow({
   entry,
   context,
@@ -109,15 +124,7 @@ function SkillRow({
   }
   return (
     <li className="space-y-2 rounded-lg border border-border p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">{entry.name}</h4>
-        <span className="text-xs text-muted-foreground">
-          {origins[entry.origin]} · {scopeLabel(entry.scope)} · {states[entry.state]}
-        </span>
-      </div>
-      <p className="break-all font-mono text-xs text-muted-foreground">{entry.source}</p>
-      <p className="text-sm leading-6 text-muted-foreground">{entry.description}</p>
-      {entry.unavailableReason && <p className="text-sm text-muted-foreground">{entry.unavailableReason}</p>}
+      <SkillSummary entry={entry} />
       {entry.actions.states.length > 0 && (
         <div className="flex flex-wrap items-end gap-2">
           <label className="min-w-40 flex-1 space-y-1 text-sm">
@@ -200,7 +207,7 @@ function SkillRow({
       )}
       {saved && (
         <p role="status" className="text-sm text-muted-foreground">
-          已保存，下轮使用更新后的原生资源。
+          已保存，下次对话生效。
         </p>
       )}
     </li>
@@ -219,7 +226,7 @@ function DraftConflict({
   return (
     <div className="w-full space-y-2">
       <p role="status" className="text-sm text-muted-foreground">
-        原生设置已更新，已保留草稿及原修订；采用最新设置会放弃当前范围的草稿。
+        设置已在其他位置修改。你的草稿已保留，重新读取将放弃这些修改。
       </p>
       <button
         type="button"
@@ -272,10 +279,6 @@ export default function NativeSkillsPanel({
   };
   return (
     <section aria-label="Skills 管理" className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        按实际来源管理技能。更改在空闲时保存；显示本机配置与已核实的原生状态，最终可见性仍受 CLI
-        的托管策略与项目可信状态约束。
-      </p>
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}
@@ -283,7 +286,7 @@ export default function NativeSkillsPanel({
       )}
       {!catalog && !error && (
         <p role="status" className="text-sm text-muted-foreground">
-          正在读取技能与原生状态…
+          正在加载技能…
         </p>
       )}
       {catalog && (
@@ -293,6 +296,9 @@ export default function NativeSkillsPanel({
               {warning}
             </p>
           ))}
+          {agent === 'claude' && catalog.entries.some((entry) => entry.actions.states.length > 0) && (
+            <p className="text-xs text-muted-foreground">同名技能共用可见性设置。</p>
+          )}
           <div className="flex flex-wrap gap-2">
             {catalog.roots
               .filter((root) => root.editable)

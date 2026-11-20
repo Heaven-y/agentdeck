@@ -33,7 +33,7 @@ export class CodexRpcLimit extends CodexError {
   }
 }
 export function safeError(error: unknown): string {
-  return error instanceof CodexError ? error.message : 'Codex 运行失败，请检查本机运行时与配置。';
+  return error instanceof CodexError ? error.message : 'Codex 操作失败。';
 }
 export function cancelled(): CodexError {
   return new CodexError('Codex 操作已取消。');

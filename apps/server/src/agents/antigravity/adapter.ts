@@ -361,8 +361,8 @@ class AntigravityTurn {
     this.notice({
       type: 'error',
       message: result
-        ? 'Antigravity 未成功完成本轮，请检查原生 CLI 的运行状态与配置。'
-        : 'Antigravity 在返回完整结果前退出，请重新读取原生会话后核对。',
+        ? 'Antigravity 未能完成本轮。'
+        : 'Antigravity 提前退出，回复可能不完整。可重新读取会话查看已保存内容。',
     });
   }
 
@@ -420,7 +420,7 @@ class AntigravityTurn {
       this.notice(
         this.mapper.resultDiagnostic?.type === 'error'
           ? this.mapper.resultDiagnostic
-          : { type: 'error', message: 'Antigravity 原生会话记录了本轮错误，请核对原生会话。' },
+          : { type: 'error', message: 'Antigravity 本轮执行失败。' },
       );
     return true;
   }

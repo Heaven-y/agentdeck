@@ -201,9 +201,6 @@ export default function NativePluginsPanel({
   const visibleEntry = visibleDetail(detail, configuration);
   return (
     <section aria-label="原生插件管理" className="min-w-0 space-y-4">
-      <p className="text-sm text-muted-foreground">
-        这里管理各 CLI 的原生插件。关闭设置后操作仍继续，重新打开可查看；安装完成后核对启用与配置状态。
-      </p>
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}

@@ -230,14 +230,13 @@ export function createNativeMcpService(deps: Deps = {}) {
       const run = async () => {
         const c = await context(agent, project),
           { sources, entries } = await inventory(c);
-        const warnings = ['列表仅表示配置；原生信任、策略和同名来源覆盖在运行时决定。'];
+        const warnings: string[] = [];
         try {
           entries.push(...(await (deps.plugins ?? readMcpPlugins)(c)).map((p) => pluginEntry(c, p)));
         } catch {
-          warnings.push('插件 MCP 来源暂时无法核实，请从原生插件入口查看。');
+          warnings.push('未能读取插件中的 MCP，请在插件管理中查看。');
         }
         const adapter = adapters[agent];
-        if (adapter.warning) warnings.push(adapter.warning);
         return {
           agent,
           entries,

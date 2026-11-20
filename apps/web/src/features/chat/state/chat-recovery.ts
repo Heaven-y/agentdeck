@@ -54,7 +54,7 @@ function recoveredView(turn: RecoveryTurn, previous?: ConversationView): Convers
     permissionLoading: false,
     pendingClientTurnId: message.clientTurnId,
     lastSentAt: sentAt,
-    historyNotice: '已恢复缓存中的回合；更早的原生历史尚未读取，可在本轮结束后重新读取。',
+    historyNotice: '已恢复本轮消息。回合结束后可加载更早的记录。',
     historyReloadNeeded: true,
   };
 }
@@ -83,7 +83,7 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
     for (const view of conversationViews(get())) {
       if (view.pendingClientTurnId && !accepted.has(view.pendingClientTurnId)) {
         interrupts.delete(view.pendingClientTurnId);
-        fail(view, '后端未确认收到此消息，未自动重发。请重新读取原生历史，核对后再发送。');
+        fail(view, '这条消息可能已发出，请重新读取会话后再决定是否发送。');
       } else if (conversationBusy(view)) {
         // 未确认送达的审批允许用户再次选择；已收到的最终决策在重放中保留。
         set(
@@ -138,11 +138,20 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
           get().invalidateAttachmentIdentity();
           interrupts.clear();
           saved.clear();
-          set({ banner: notice.message, nativeInteractions: get().nativeInteractions.map(cancelInteraction) });
+          set({
+            banner: recoveryBanner(get(), notice),
+            nativeInteractions: get().nativeInteractions.map(cancelInteraction),
+          });
           for (const view of conversationViews(get()).filter(conversationBusy)) fail(view, notice.message);
       }
     },
   };
+}
+/** 正在恢复的会话就地显示错误；空闲连接更换身份不打扰，容量阻断仍保留入口。 */
+function recoveryBanner(state: ChatState, notice: Extract<RecoveryNotice, { type: 'connection.rejected' }>) {
+  if (conversationBusy(state)) return;
+  const pendingInteraction = state.nativeInteractions.some((item) => cancelInteraction(item) !== item);
+  return notice.code === 'capacity' || pendingInteraction ? notice.message : state.banner;
 }
 function cancelInteraction(item: ChatItem): ChatItem {
   if (item.kind !== 'interaction') return item;

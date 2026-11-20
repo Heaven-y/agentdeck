@@ -81,12 +81,12 @@ export function createNativeActionsService(deps: Deps) {
       try {
         result = await backend.execute(entry.preview.pointId);
       } catch {
-        result = { status: 'unknown', message: '原生操作结果未确认，请重新读取历史与文件；不会自动重试。' };
+        result = { status: 'unknown', message: '回退结果尚未确认，请重新读取会话并检查文件后再操作。' };
       }
       try {
         await deps.changed(entry.scope.agent);
       } catch {
-        return { status: 'partial', message: `${result.message} 运行实例刷新未完成，请结束其他任务后重新启动CLI。` };
+        return { status: 'partial', message: `${result.message} 会话运行环境未刷新，请结束其他任务后重新启动 CLI。` };
       }
       return result;
     });
@@ -99,7 +99,7 @@ export function createNativeActionsService(deps: Deps) {
           ...state,
           action: actionFor(scope.agent),
           available: state.candidates.length > 0,
-          reason: state.candidates.length ? undefined : '没有可验证的原生回退位置。',
+          reason: state.candidates.length ? undefined : '此会话没有可用的回退位置。',
         };
       });
     },

@@ -58,9 +58,7 @@ function MediaPreview({ attachment }: { attachment: MessageAttachment }) {
     <AttachmentImage
       src={result.url}
       name={attachment.name}
-      onError={() =>
-        setResult({ attachment, reader: readImage, error: '图片无法解码，原生记录可能损坏或格式不受支持。' })
-      }
+      onError={() => setResult({ attachment, reader: readImage, error: '图片无法显示，请重新加载或查看原文件。' })}
     />
   );
 }

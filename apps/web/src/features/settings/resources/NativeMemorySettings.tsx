@@ -64,13 +64,11 @@ function ExternalMemorySettings({ agent, onOpenFiles }: { agent: AgentKind; onOp
     <section className="max-w-3xl space-y-5">
       <div className="space-y-2 border-b border-border pb-5">
         <h2 className="text-base font-semibold">{agent === 'codex' ? 'Codex 持久上下文' : 'Antigravity 持久上下文'}</h2>
-        <p className="text-sm leading-6 text-muted-foreground">
-          AgentDeck 当前没有确认可独立控制的自动记忆开关。已发现的原生规则和指令文件可在原生文件中管理。
-        </p>
+        <p className="text-sm leading-6 text-muted-foreground">在规则和指令文件中保存项目约定，供后续对话使用。</p>
       </div>
       <button type="button" className={buttonClass('outline')} onClick={onOpenFiles}>
         <FileCode2 aria-hidden className="size-4" />
-        打开原生文件
+        管理规则与指令
       </button>
     </section>
   );
@@ -82,14 +80,12 @@ function ClaudeAutoMemorySettings() {
     <section className="max-w-3xl space-y-5">
       <div className="space-y-2 border-b border-border pb-5">
         <h2 className="text-base font-semibold">Claude Code 自动记忆</h2>
-        <p className="text-sm leading-6 text-muted-foreground">
-          自动记忆默认开启，内容按 Git 仓库保存在本机。查看或整理记忆内容请使用 Claude Code 的
-          /memory；此页只修改全局启用设置，不读取记忆正文。
-        </p>
-        <p className="text-xs leading-5 text-muted-foreground">
-          需要 Claude Code 2.1.234
-          或更新版本。项目级启用或关闭由各项目原生设置管理；环境变量或管理员策略也可能覆盖此配置。
-        </p>
+        <p className="text-sm leading-6 text-muted-foreground">在 Claude Code 中使用 /memory 查看和整理记忆。</p>
+        <details className="text-xs leading-6 text-muted-foreground">
+          <summary className="w-fit cursor-pointer">版本与生效范围</summary>
+          <p>需要 Claude Code 2.1.234 或更新版本。记忆按 Git 仓库保存在本机，此处设置适用于所有项目。</p>
+          <p>项目设置、环境变量或管理员策略可覆盖全局设置。</p>
+        </details>
       </div>
       <MemoryStatus memory={state.memory} error={state.error} />
       <MemoryControls {...state} />
@@ -125,7 +121,7 @@ function MemoryControls({
       {memory && <UserMemoryControl memory={memory} saving={saving} save={save} />}
       <div className="flex items-center justify-between gap-3">
         <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-          {memory && (saving ? '正在保存…' : '更改直接写入 Claude 原生设置。')}
+          {saving ? '正在保存…' : ''}
         </p>
         <button type="button" className={buttonClass('ghost')} disabled={saving || loading} onClick={refresh}>
           <RefreshCw aria-hidden className="size-4" />
@@ -146,11 +142,9 @@ function UserMemoryControl({
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-5">
       <div className="space-y-1">
-        <h3 className="text-sm font-medium">用户自动记忆</h3>
+        <h3 className="text-sm font-medium">全局自动记忆</h3>
         <p className="text-sm text-muted-foreground">
-          {memory.override === null
-            ? '用户设置未显式指定，当前按 Claude 默认值开启。'
-            : `用户设置已显式${memory.enabled ? '启用' : '关闭'}。`}
+          {memory.override === null ? '已启用（默认）' : memory.enabled ? '已启用' : '已关闭'}
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">

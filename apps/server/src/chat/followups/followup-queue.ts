@@ -147,8 +147,8 @@ export class FollowupQueue {
   ): FollowupItem {
     const group = this.group(owner, id),
       item = this.entry(group, messageId, change.revision);
-    if (item.mode === 'steer') throw failure('引导记录不能重新投递，请核对后移除记录，再显式排队发送。');
-    if (!['queued', 'failed'].includes(item.status)) throw failure('已投递或受理未确认的消息不能编辑或重发。');
+    if (item.mode === 'steer') throw failure('此引导不能直接重发，请先读取会话，再移除记录或恢复草稿。');
+    if (!['queued', 'failed'].includes(item.status)) throw failure('这条消息已发送或可能已发送，不能编辑或重发。');
     const next = FollowupContentSchema.parse(change.content);
     if (next.collaborationMode && group.context.agent !== 'codex') throw failure('协作模式仅用于Codex。');
     if (next.permission && next.permission.agent !== group.context.agent) throw failure('权限模式不属于此CLI。');
@@ -172,11 +172,7 @@ export class FollowupQueue {
     if (returnToDraft) item.returnedToDraft = true;
     if (item.status === 'dispatching' || item.status === 'accepted')
       throw failure('消息已投递，不能作为待发消息撤回。');
-    this.setResult(
-      item,
-      'cancelled',
-      item.status === 'unknown' ? '已移除记录；不撤销原生可能收到的内容，也不会重发。' : undefined,
-    );
+    this.setResult(item, 'cancelled', item.status === 'unknown' ? '记录已移除，但消息仍可能已发送。' : undefined);
     this.changed(group);
   }
   clear(owner: object, id: string): string[] {
@@ -265,7 +261,7 @@ export class FollowupQueue {
   resume(owner: object, id: string): void {
     const group = this.group(owner, id);
     if (group.items.some((item) => item.status === 'unknown'))
-      throw failure('仍有原生受理未确认的消息，请先核对并移除记录；不能自动重发。');
+      throw failure('列表中有可能已发送的消息。请先读取会话，再移除对应记录。');
     if (group.items.some((item) => item.status === 'failed')) throw failure('请先编辑或移除失败的待发消息。');
     group.paused = false;
     group.reason = undefined;

@@ -79,7 +79,7 @@ export function createMcpControlService(deps: {
               actions: { edit: false, delete: false, enable: false, disable: false },
             })),
             sources: catalog.sources.map((source) => ({ ...source, writable: false })),
-            warnings: [...catalog.warnings, '当前展示所选实例目录的配置；修改持久配置请切回项目配置与单次检查。'],
+            warnings: [...catalog.warnings, '当前为会话运行视图。修改配置请切回“项目配置与单次检查”。'],
           };
         });
       });

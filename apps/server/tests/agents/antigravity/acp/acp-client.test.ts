@@ -37,7 +37,7 @@ it('原生错误不回显诊断，非白名单方法不发送', async () => {
       "console.log(JSON.stringify({jsonrpc:'2.0',id:msg.id,error:{code:-32603,message:'token=private endpoint=https://private.invalid'}}));});",
   );
   await expect(client.request('authenticate', {})).rejects.toThrow('AGY 没有完成请求');
-  await expect(client.request('execute/arbitrary', {})).rejects.toThrow('协议数据');
+  await expect(client.request('execute/arbitrary', {})).rejects.toThrow('异常数据');
 });
 it('当前服务524保留安全说明，下一请求成功不携带旧错误', async () => {
   const client = await fixture(
@@ -61,7 +61,7 @@ it('取消等待和超时清理请求，迟到回复不串到下一请求', asyn
 });
 it('畸形输出结束未完成请求，不能无限保留占用', async () => {
   const client = await fixture(lines + "console.log('not-json');});");
-  await expect(client.request('initialize', {})).rejects.toThrow('协议数据');
+  await expect(client.request('initialize', {})).rejects.toThrow('异常数据');
   await client.closed;
 });
 it('原生通知与请求正常路由，答复仅返回原生ID，关闭释放悬挂请求', async () => {

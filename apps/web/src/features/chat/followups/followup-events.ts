@@ -120,7 +120,7 @@ export function invalidateFollowups(get: Get, set: Set) {
     ...queue,
     invalid: true,
     returning: undefined,
-    error: '恢复身份已失效；请核对历史后恢复到草稿，不会自动重发。',
+    error: '待发列表已暂停，请先重新读取会话，再取回需要发送的内容。',
     drafts: Object.fromEntries(
       Object.entries(queue.drafts).map(([id, draft]) => [
         id,
@@ -131,7 +131,7 @@ export function invalidateFollowups(get: Get, set: Set) {
             asset: undefined,
             assetOwner: undefined,
             assetScope: undefined,
-            error: '连接身份已失效，请重试上传。',
+            error: '附件上传已失效，请重新上传。',
           })),
         },
       ]),

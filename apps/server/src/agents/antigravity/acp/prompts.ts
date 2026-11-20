@@ -32,7 +32,7 @@ export class AcpPrompts {
       finish = resolve;
     });
     const timer = setTimeout(
-      () => finish({ status: 'unknown', message: '原生受理尚未确认，请核对历史；不会自动重发。' }),
+      () => finish({ status: 'unknown', message: '这条消息可能已发送，请先重新读取会话。' }),
       30_000,
     );
     timer.unref();
@@ -59,11 +59,13 @@ export class AcpPrompts {
     );
     void entry.result.then(
       () => this.accept(entry),
-      (error: unknown) =>
+      (error: unknown) => {
+        const rejected = error instanceof AcpError && error.code === 'native';
         entry.resolve({
-          status: error instanceof AcpError && error.code === 'native' ? 'rejected' : 'unknown',
-          message: '原生未确认此输入，请核对历史；不会自动重发。',
-        }),
+          status: rejected ? 'rejected' : 'unknown',
+          message: rejected ? 'Antigravity 未完成这条消息，请查看本轮错误。' : '这条消息可能已发送，请先重新读取会话。',
+        });
+      },
     );
     return entry;
   }
@@ -106,7 +108,8 @@ export class AcpPrompts {
   close(): void {
     this.accepting = false;
     for (const entry of this.entries)
-      if (!entry.accepted) entry.resolve({ status: 'unknown', message: '原生连接已结束，输入受理未确认。' });
+      if (!entry.accepted)
+        entry.resolve({ status: 'unknown', message: '连接已断开，这条消息可能已发送。请重新读取会话。' });
   }
 }
 export function firstAcpInput(input: AgentTurnInput, content: string): NativeSteerInput {

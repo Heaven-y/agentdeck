@@ -10,7 +10,6 @@ export const codexMcp: McpAdapter = {
   headerField: 'http_headers',
   bearerField: 'bearer_token_env_var',
   enabledField: 'enabled',
-  warning: '离线列表读取原生配置及已核实安装缓存；插件内的 MCP 由所属插件管理，不自动访问市场。',
 };
 // Codex 按字段推断传输，不读取 type。另一种传输的专属字段即使为空也会使配置无效。
 const stdioFields = ['command', 'args', 'env', 'env_vars', 'cwd'];

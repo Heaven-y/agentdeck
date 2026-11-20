@@ -6,7 +6,7 @@ import { PermissionSelectionSchema } from './permissions';
 import { InteractionSpecSchema } from './interaction';
 
 /** 暂停文案同时用于定位对应轮次的原因入口，避免把断线等暂停指向旧结果。 */
-export const FOLLOWUP_UNCONFIRMED_REASON = '本轮原生结果未确认，待发列表已暂停。';
+export const FOLLOWUP_UNCONFIRMED_REASON = '本轮结果尚未确认，待发已暂停。';
 
 export const FOLLOWUP_LIMITS = {
   perConversation: 10,

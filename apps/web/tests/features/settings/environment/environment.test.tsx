@@ -2,10 +2,13 @@
 import { settingsApi } from '../../../../src/features/settings/api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { EnvironmentReport, EnvironmentSummary } from '../../../../src/features/settings/environment/EnvironmentReport';
 import { cliInstallationApi } from '../../../../src/features/settings/installation/cli-installation-api';
+import { useChat } from '../../../../src/features/chat/state/chat-store';
+
+beforeEach(() => useChat.setState(useChat.getInitialState(), true));
 
 afterEach(() => {
   cleanup();
@@ -50,7 +53,10 @@ it('启动摘要与设置共享GET报告，缺失有官方指引，未知版本�
       <EnvironmentReport disabled={false} />
     </QueryClientProvider>,
   );
-  await screen.findByText(/缺少或不可用：Antigravity/);
+  await screen.findByRole('region', { name: 'Antigravity 安装与更新' });
+  expect(screen.queryByRole('region', { name: '启动环境摘要' })).toBeNull();
+  act(() => useChat.setState({ agent: 'antigravity' }));
+  await screen.findByText('Antigravity 暂不可用');
   expect(screen.getAllByText('版本未知').length).toBe(2);
   const antigravity = within(screen.getByRole('region', { name: 'Antigravity 安装与更新' }));
   expect(antigravity.getByRole('link', { name: '官方安装指南' }).getAttribute('href')).toContain('antigravity');
@@ -68,7 +74,7 @@ it('启动摘要与设置共享GET报告，缺失有官方指引，未知版本�
   client.clear();
 });
 
-it('读取中保留简短状态，全部工具可用后不渲染摘要或占位条', async () => {
+it('后台读取环境和当前工具可用时不渲染摘要或占位条', async () => {
   let resolve!: (report: Awaited<ReturnType<typeof settingsApi.readEnvironment>>) => void;
   const read = vi.spyOn(settingsApi, 'readEnvironment').mockImplementation(
     () =>
@@ -83,7 +89,7 @@ it('读取中保留简短状态，全部工具可用后不渲染摘要或占位�
       <EnvironmentSummary onOpenSettings={vi.fn()} />
     </QueryClientProvider>,
   );
-  expect(screen.getByRole('status').textContent).toMatch(/正在读取.*环境/);
+  expect(container.childElementCount).toBe(0);
   await act(async () => {
     resolve({
       checkedAt: 1,

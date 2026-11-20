@@ -120,7 +120,7 @@ async function plugin(
     config,
     raw: [record, config.revision, installed.roots, installed.manifest?.revision, policy],
     actions: allowed ? ['enable', 'disable', ...(config.scope === 'user' ? ['uninstall' as const] : [])] : [],
-    reason: allowed ? undefined : '原生策略、信任或安装目录尚不能核实为可写；请使用原生入口检查。',
+    reason: allowed ? undefined : '此插件暂不能在此修改，请在 Codex 中管理。',
   };
 }
 export async function codexPlugins(c: PluginContext): Promise<PluginInventory> {
@@ -138,8 +138,6 @@ export async function codexPlugins(c: PluginContext): Promise<PluginInventory> {
     plugins,
     marketplaces,
     revisions: [...configs.map((s) => s.revision), policy],
-    warnings: [
-      '离线读取原生配置及安装缓存；托管策略、信任与覆盖仍由原生决定。没有独立单插件更新命令，刷新市场不会表示插件已更新。',
-    ],
+    warnings: [],
   };
 }

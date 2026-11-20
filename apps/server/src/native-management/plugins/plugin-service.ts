@@ -121,7 +121,7 @@ export function createNativePluginService(deps: Deps = {}) {
       task.catalog = (await inventory(task.context)).catalog;
       return true;
     } catch {
-      task.view.message = '原生状态暂时无法重读，请稍后刷新核对。';
+      task.view.message = '插件列表刷新失败，请稍后重试。';
       return false;
     }
   }
@@ -152,7 +152,7 @@ export function createNativePluginService(deps: Deps = {}) {
       const waitingRevision = (await inventory(task.context)).catalog.revision;
       if (task.abort.signal.aborted) return null;
       task.view.shownCommand = shown;
-      touch(task, 'awaiting-confirmation', '原生要求确认以下确切命令后才能继续。');
+      touch(task, 'awaiting-confirmation');
       confirmation = await new Promise<string | undefined>((resolve) => {
         const timer = setTimeout(
           () => {
@@ -195,15 +195,13 @@ export function createNativePluginService(deps: Deps = {}) {
     const reread = await refresh(task),
       verified = code === 0 && reread && (await confirmed(task, before));
     if (task.abort.signal.aborted) {
-      touch(task, 'cancelled', '已停止原生进程；可能留下部分结果，请核对列表。');
+      touch(task, 'cancelled', '已取消，部分修改可能已完成。请刷新列表查看。');
       return;
     }
     touch(
       task,
       verified ? 'succeeded' : 'unknown',
-      verified
-        ? '原生操作已完成并重新读取状态；请核对启用与配置状态。'
-        : '原生可能已部分修改，已重新读取状态，请勿重复安装。',
+      verified ? undefined : '插件可能已发生变化，操作结果尚未确认。请刷新列表后再操作。',
     );
   }
   async function runTask(task: Task, ready: (error?: unknown) => void) {
@@ -247,9 +245,7 @@ export function createNativePluginService(deps: Deps = {}) {
     touch(
       task,
       task.abort.signal.aborted ? 'cancelled' : status,
-      started
-        ? '操作结果未确认，请核对重新读取的原生状态；请勿重复安装。'
-        : '操作未开始，请检查原生来源、版本或 CLI 忙碌状态。',
+      started ? '插件可能已发生变化，操作结果尚未确认。请刷新列表后再操作。' : '操作未开始，请刷新列表后重试。',
     );
   }
   function prune() {
@@ -280,7 +276,7 @@ export function createNativePluginService(deps: Deps = {}) {
       projectId: c.project?.id,
       action: input.action,
       ...descriptor,
-      impact: impact(input.action),
+      impact: impact(input.action, c.agent),
       status: 'prepared',
       createdAt: now,
       updatedAt: now,
@@ -346,7 +342,7 @@ export function createNativePluginService(deps: Deps = {}) {
         return {
           ...structuredClone(running.catalog),
           operations: list(agent, project),
-          warnings: [...running.catalog.warnings, '插件操作进行中，当前展示开始前的目录；完成后重新读取。'],
+          warnings: running.catalog.warnings,
         };
       const run = async () => {
         const c = await context(agent, project);
@@ -421,11 +417,18 @@ function describe(input: NativePluginPrepareInput, plugin?: PluginRecord, market
   if (market) return { target: market.name, source: market.source, scope: market.scope };
   return { target: input.source!, source: input.source!, scope: input.scope ?? 'user' };
 }
-function impact(action: NativePluginPrepareInput['action']) {
-  const text: Partial<Record<typeof action, string>> = {
-    uninstall: '移除此范围的原生插件；Claude 保留插件数据。',
-    configure: '保存此原生插件的配置值；未填写项保留。',
-    'marketplace-refresh': '仅刷新指定市场来源，可能访问网络，不等同于插件更新。',
+function impact(action: NativePluginPrepareInput['action'], agent: AgentKind) {
+  const text: Record<typeof action, string> = {
+    install: '从所选来源安装插件。',
+    uninstall: agent === 'claude' ? '卸载所选范围的插件，保留插件数据。' : '卸载所选范围的插件。',
+    enable: '启用所选插件，下次对话生效。',
+    disable: '停用所选插件，下次对话生效。',
+    update: '更新所选插件，下次对话生效。',
+    validate: '检查所选插件。',
+    configure: '保存插件配置，未填写的项保留原值。',
+    'marketplace-add': '添加所选插件市场来源。',
+    'marketplace-remove': '移除所选插件市场来源。',
+    'marketplace-refresh': '获取所选市场的最新目录。',
   };
-  return text[action] ?? '修改所选原生插件或市场，可能执行安装过程；下一次实例启动读取。';
+  return text[action];
 }

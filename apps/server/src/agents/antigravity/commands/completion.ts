@@ -174,7 +174,7 @@ function currentErrorMessage(step: ManagementRecord): string {
     if (!diagnostic.limited) return diagnostic.message;
     limited = diagnostic.message;
   }
-  return limited ?? 'Antigravity 原生会话记录了本轮错误，请核对原生会话。';
+  return limited ?? 'Antigravity 本轮执行失败。';
 }
 
 function validBoundary(boundary: CompletionBoundary, sessionId: string): boolean {

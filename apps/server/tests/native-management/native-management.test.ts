@@ -58,6 +58,7 @@ it('Claude 同名来源身份独立，四态设置明确写入所选作用域，
   const list = await service.readSkills('claude', project);
   expect(new Set(list.entries.map((e) => e.id)).size).toBe(2);
   const entry = list.entries.find((e) => e.scope === 'project')!;
+  expect(entry.description).toBe('');
   expect(entry.actions.states).toEqual(['inherit', 'on', 'name-only', 'user-invocable-only', 'off']);
   await service.changeSkill(
     'claude',

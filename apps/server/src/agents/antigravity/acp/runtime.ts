@@ -161,7 +161,7 @@ class AcpTurn {
 
   private async useHeadless(): Promise<void> {
     if (this.input.invocation?.kind === 'acp-command')
-      throw new AcpError('selection', '所选模型或权限使用兼容通道，不能执行ACP专用命令。');
+      throw new AcpError('selection', '当前模型或权限下无法使用此命令。');
     if (this.input.attachments?.some((file) => file.kind === 'image'))
       throw new AcpError('selection', '当前 AGY 会话不能直接发图，可移除图片后继续。');
     await this.client?.close();

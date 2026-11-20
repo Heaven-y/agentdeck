@@ -155,7 +155,6 @@ function matchesWrittenManifest(manifests: NativeConfigSource[], target: Manifes
 }
 
 export const antigravitySkills: SkillAdapter = {
-  description: '标准目录的原生清单按目录名排除；其他自有技能只提供文件操作。',
   readNative,
   readConfig: readManifests,
   verifyVersion: (context) => verifiedSkillVersion(context, '1.5.3', (env) => resolveLocalCommand('agy', env)),

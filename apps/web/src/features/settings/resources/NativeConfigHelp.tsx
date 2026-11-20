@@ -21,9 +21,7 @@ export function NativeConfigHelp({
     <div className="space-y-3 text-sm leading-6">
       {document?.content.trim() === '' && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
-          <p className="min-w-0 flex-1 basis-72 text-muted-foreground">
-            可沿用原生登录或环境变量。模板只填入草稿，保存后写入本机。
-          </p>
+          <p className="min-w-0 flex-1 basis-72 text-muted-foreground">需要手动配置时，可从模板开始填写。</p>
           <button
             type="button"
             className={buttonClass('outline')}

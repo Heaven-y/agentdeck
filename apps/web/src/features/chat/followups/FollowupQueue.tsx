@@ -14,9 +14,9 @@ import {
 import { buttonClass } from '../../../ui/styles';
 export const followupStatusLabels: Record<FollowupStatus, string> = {
   queued: '已排队',
-  dispatching: '正在投递',
+  dispatching: '正在发送',
   accepted: '已受理',
-  unknown: '受理未确认',
+  unknown: '可能已发送',
   failed: '未发送',
   cancelled: '已移除',
 };
@@ -70,7 +70,7 @@ function EntryActions({ item, queue, focusComposer }: EntryProps) {
       {canRemove &&
         (confirm ? (
           <button type="button" className={buttonClass('ghost')} disabled={busy} onClick={remove}>
-            确认仅移除记录
+            确认移除（不撤回消息）
           </button>
         ) : (
           <button
@@ -118,9 +118,8 @@ function QueueEntry({ item, queue, focusComposer }: EntryProps) {
         )}
         <EntryActions key={item.revision} item={item} queue={queue} focusComposer={focusComposer} />
       </div>
-      {item.reason && <p className="break-words leading-5 text-warning">{item.reason}</p>}
-      {item.status === 'unknown' && (
-        <p className="leading-5 text-warning">移除记录不会撤回原生输入；重发前请核对历史。</p>
+      {item.reason && item.reason !== queue.snapshot.reason && (
+        <p className="break-words leading-5 text-warning">{item.reason}</p>
       )}
     </li>
   );
@@ -136,7 +135,7 @@ function QueueDraft({ draft, queue }: { draft: FollowupDraft; queue: LocalFollow
   return (
     <li className="space-y-1 rounded-lg border border-border p-2 text-xs">
       <p className="truncate">{draft.text || '附件消息'}</p>
-      <p className="text-warning">{draft.error ?? '等待追加消息回执'}</p>
+      <p className="text-warning">{draft.error ?? (queue.invalid ? '待发内容已保留' : '正在确认发送状态')}</p>
       {(draft.error || queue.invalid) && (
         <div className="flex flex-wrap">
           <button type="button" className={buttonClass('ghost')} onClick={() => restore(id, draft.id)}>
@@ -186,7 +185,7 @@ function QueueReason({ queue }: { queue: LocalFollowupQueue }) {
     return state.items.slice(start + 1).findLast((item) => item.kind === 'turn-status');
   });
   const reason = queue.snapshot.reason;
-  if (!reason) return null;
+  if (!reason || queue.invalid) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
       <p role="status">{reason}</p>
@@ -220,7 +219,9 @@ function QueuePanel({ queue, focusComposer }: Omit<EntryProps, 'item'>) {
         </p>
       )}
       <QueueReason queue={queue} />
-      {queue.invalid && <p className="text-xs leading-5 text-warning">列表已失效，保留本页备份。</p>}
+      {queue.invalid && !queue.error && (
+        <p className="text-xs leading-5 text-warning">待发内容已保留，可取回到草稿。</p>
+      )}
       <ul className="space-y-1">
         {unresolved.map((item) => (
           <QueueEntry key={item.clientMessageId} item={item} queue={queue} focusComposer={focusComposer} />

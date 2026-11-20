@@ -201,8 +201,8 @@ function restoreRestriction(queue: LocalFollowupQueue, id: string) {
   if (queue.invalid) return;
   const item = queue.snapshot.items.find((item) => item.clientMessageId === id);
   if (item && ['queued', 'dispatching', 'accepted'].includes(item.status))
-    return '该消息仍在列表或已受理，请使用列表编辑；不要重复发送。';
-  if (!item && !queue.drafts[id]?.error) return '仍在等待追加消息回执，请核对列表后再恢复。';
+    return '这条消息仍在发送列表中或已发出，暂时不能取回。';
+  if (!item && !queue.drafts[id]?.error) return '正在确认发送状态，请稍候。';
 }
 function restoreEntry(queue: LocalFollowupQueue, id: string, selected?: DraftBackup['selection']) {
   const local = queue.drafts[id],
@@ -221,7 +221,7 @@ function restoreEntry(queue: LocalFollowupQueue, id: string, selected?: DraftBac
 }
 function recoveryBlocked(backup: NonNullable<ReturnType<typeof restoreEntry>>) {
   if (backup.content.selection && !backup.selection) return `请重新选择原生命令 /${backup.content.selection.id}。`;
-  if (backup.missingFiles) return '当前页面没有原文件备份，无法取回附件。';
+  if (backup.missingFiles) return '无法取回附件，请重新选择文件。';
 }
 function restoredSelection(id: string | undefined, local?: FollowupDraft, selected?: DraftBackup['selection']) {
   return local?.selection ?? (selected?.id === id ? selected : undefined);
@@ -252,7 +252,7 @@ export function followupRestriction(state: ChatState, text: string, mode: Follow
   if (!queue || queue.invalid) return '正在准备待发列表或连接身份已失效，请保留草稿。';
   const capacity = followupCapacity(queue);
   if (capacity) return capacity;
-  if (mode === 'steer' && !steerAvailable(state)) return '当前不能引导本轮，请核对运行状态和本轮模型、强度及权限。';
+  if (mode === 'steer' && !steerAvailable(state)) return '当前无法引导本轮，可加入待发列表。';
   return selectionRestriction(state.selectedCapability, state.sessionId, text);
 }
 function managementBusy(state: ChatState) {

@@ -135,6 +135,7 @@ it('恢复身份失效会关闭回合外卡片，新连接不能继续发送旧�
   recovery({ type: 'connection.rejected', code: 'owner_missing', message: '恢复失败' });
   recovery({ type: 'connection.ready', sequence: 0, acceptedClientTurnIds: [] });
   expect(useChat.getState().nativeInteractions[0]).toMatchObject({ resolved: 'cancelled', responding: false });
+  expect(useChat.getState().banner).toBe('恢复失败');
   expect(useChat.getState().respondInteraction(id, { action: 'submit', values: {} })).toBe(false);
   expect(sent).toHaveLength(0);
 });
@@ -1303,10 +1304,29 @@ it('刷新重建本轮及全部后台回合，同一会话多轮按事件次序�
   expect(sent).toHaveLength(0);
   recovery({ type: 'connection.rejected', code: 'owner_missing', message: '恢复失败，请重新读取历史' });
   expect(useChat.getState()).toMatchObject({ running: false, historyError: '恢复失败，请重新读取历史' });
+  expect(useChat.getState().banner).toBeUndefined();
   expect(useChat.getState().background['view-b']).toMatchObject({
     running: false,
     items: [{ kind: 'user' }, { kind: 'permission', resolved: 'cancelled' }],
   });
+});
+
+it('后台恢复失败只在对应会话显示，空闲重连不打扰，容量阻断仍提示', () => {
+  useChat.getState().send('后台任务');
+  const backgroundId = useChat.getState().conversationId;
+  useChat.getState().newSession('codex');
+  recovery({ type: 'connection.rejected', code: 'owner_missing', message: '恢复失败，请重新读取会话' });
+  expect(useChat.getState().background[backgroundId]).toMatchObject({
+    running: false,
+    historyError: '恢复失败，请重新读取会话',
+  });
+  expect(useChat.getState().historyError).toBeUndefined();
+  expect(useChat.getState().banner).toBeUndefined();
+  recovery({ type: 'connection.rejected', code: 'owner_missing', message: '旧连接已过期' });
+  expect(useChat.getState().banner).toBeUndefined();
+  recovery({ type: 'connection.rejected', code: 'capacity', message: '连接数量已达上限' });
+  expect(useChat.getState().banner).toBe('连接数量已达上限');
+  expect(sent).toHaveLength(1);
 });
 
 it('恢复到来的旧回合不覆盖用户已经选择模型的新会话草稿', () => {

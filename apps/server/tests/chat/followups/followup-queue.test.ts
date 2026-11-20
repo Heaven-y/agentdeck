@@ -73,7 +73,7 @@ it('每会话最多十条，未知受理暂停且不能重试；编辑、删除�
   const claimed = f.queue.next(f.owner, f.context.queueId)!;
   f.queue.result(f.owner, f.context.queueId, claimed.clientMessageId, { status: 'unknown', reason: '原生受理未确认' });
   expect(f.queue.next(f.owner, f.context.queueId)).toBeUndefined();
-  expect(() => f.queue.resume(f.owner, f.context.queueId)).toThrow('未确认');
+  expect(() => f.queue.resume(f.owner, f.context.queueId)).toThrow('可能已发送');
   expect(() =>
     f.queue.edit(f.owner, f.context.queueId, claimed.clientMessageId, {
       revision: claimed.revision,

@@ -3,8 +3,7 @@ import { stripVTControlCharacters } from 'node:util';
 
 type DiagnosticEvent = Extract<AgentEvent, { type: 'error' | 'activity' }>;
 
-export const ANTIGRAVITY_PERMISSION_NOTICE =
-  'Antigravity 拒绝了需要确认的工具操作；无交互模式无法完成这次确认。请检查原生权限（permissions）规则，本应用不会自动放行。';
+export const ANTIGRAVITY_PERMISSION_NOTICE = 'Antigravity 未获准执行此工具。可调整权限后重新发送。';
 
 function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
   if (source === 'run' && rateLimitFailure(line))

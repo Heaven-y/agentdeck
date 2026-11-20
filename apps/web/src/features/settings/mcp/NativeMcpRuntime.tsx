@@ -16,20 +16,25 @@ const states = {
   authenticationRequired: '需要授权',
   failed: '连接失败',
   cancelled: '已取消',
-  disabled: '运行时已停用',
-  unknown: '无法核实运行状态',
+  disabled: '已停用',
+  unknown: '暂时无法获取状态',
 };
 type RuntimeButton = { action: string; label: string; cursor?: string };
 function instanceButtons(agent: NativeManagementContext['agent'], status: NativeMcpStatus): RuntimeButton[] {
   const buttons: RuntimeButton[] = [];
   if (status.canReconnect)
-    buttons.push({ action: 'reconnect', label: agent === 'codex' ? '重载实例 MCP 配置' : '重连当前服务' });
+    buttons.push({ action: 'reconnect', label: agent === 'codex' ? '重载所选会话的 MCP' : '重新连接' });
   if (status.canToggle)
     buttons.push({
       action: status.state === 'disabled' ? 'runtime-enable' : 'runtime-disable',
-      label: status.state === 'disabled' ? '在本实例启用' : '在本实例停用',
+      label: status.state === 'disabled' ? '在所选会话启用' : '在所选会话停用',
     });
   return buttons;
+}
+function runtimeLabel(status: NativeMcpStatus | undefined, instanceId?: string) {
+  if (!status) return '尚未检查连接';
+  if (instanceId) return `${states[status.state]} · 所选会话`;
+  return status.state === 'connected' ? '连接检查通过' : `上次检查：${states[status.state]}`;
 }
 function RuntimeButtons({
   context,
@@ -48,8 +53,7 @@ function RuntimeButtons({
 }) {
   const buttons: RuntimeButton[] = [{ action: 'check', label: `检查 ${entry.name} 连接` }];
   if (status && instanceId) buttons.push(...instanceButtons(context.agent, status));
-  if (context.agent === 'codex' && entry.transport === 'http')
-    buttons.push({ action: 'login', label: '原生 OAuth 授权' });
+  if (context.agent === 'codex' && entry.transport === 'http') buttons.push({ action: 'login', label: '授权登录' });
   if (status?.nextCursor) buttons.push({ action: 'check', label: '读取下一页', cursor: status.nextCursor });
   return (
     <div className="flex flex-wrap gap-2">
@@ -104,8 +108,8 @@ export function McpOAuthCard({ context, initial }: { context: NativeManagementCo
         {
           {
             running: '正在启动',
-            waiting: '等待原生授权完成',
-            completed: '原生已确认完成',
+            waiting: '等待授权完成',
+            completed: '已完成',
             failed: '授权失败',
             cancelled: '已取消',
             expired: '已过期',
@@ -114,10 +118,9 @@ export function McpOAuthCard({ context, initial }: { context: NativeManagementCo
       </p>
       {operation.authorizationUrl && (
         <a className="underline" href={operation.authorizationUrl} target="_blank" rel="noreferrer noopener">
-          打开原生授权页面
+          打开授权页面
         </a>
       )}
-      {waiting && <p className="text-muted-foreground">完成浏览器授权后，仍需等待原生确认。</p>}
       {waiting && (
         <button type="button" className={buttonClass('outline')} onClick={() => void cancel()}>
           取消授权
@@ -162,20 +165,22 @@ export default function NativeMcpRuntime({
   if (context.agent === 'antigravity' || entry.owner) return null;
   return (
     <div className="space-y-2 border-t border-border pt-3 text-sm">
-      <p>
-        {status ? states[status.state] : '尚未检查连接'}
-        {instanceId ? ' · 当前原生实例的有效同名服务' : ' · 单次显式检查'}
-      </p>
+      <p>{runtimeLabel(status, instanceId)}</p>
       <RuntimeButtons context={context} entry={entry} instanceId={instanceId} status={status} busy={busy} act={act} />
       {context.agent === 'claude' && (
-        <p className="text-muted-foreground">
-          持久服务 OAuth 登录需要在原生交互终端运行 claude mcp login。对话内的原生授权链接仍在问题卡片处理。
-        </p>
+        <details className="text-xs leading-6 text-muted-foreground">
+          <summary className="w-fit cursor-pointer">如何登录 MCP 服务</summary>
+          <p>
+            在终端运行 <code>claude mcp login</code>。对话中收到授权链接时，按卡片提示操作。
+          </p>
+        </details>
       )}
       {status && (
-        <p className="break-words text-muted-foreground">
-          认证：{status.auth}；工具：{status.tools.join('、') || '未返回工具'}。检查不执行工具。
-        </p>
+        <details className="break-words text-xs leading-6 text-muted-foreground">
+          <summary className="w-fit cursor-pointer">连接详情</summary>
+          <p>认证：{status.auth}</p>
+          <p>{status.tools.join('、') || '暂无工具列表'}</p>
+        </details>
       )}
       {operation && <McpOAuthCard key={operation.id} context={context} initial={operation} />}
       {error && (

@@ -23,8 +23,7 @@ export type ManagementBackend = {
 export const managementObject = (value: unknown): ManagementRecord =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as ManagementRecord) : {};
 export const managementText = (value: unknown) => (typeof value === 'string' ? value : '');
-export const managementFailure = () =>
-  new SessionError(503, 'session_runtime_failed', 'Antigravity 原生管理请求失败，请核对 CLI 版本与本机配置。');
+export const managementFailure = () => new SessionError(503, 'session_runtime_failed', 'Antigravity 操作失败。');
 const MIB = 1024 * 1024;
 export const managementByteLimit = (budget?: ManagementBudget) =>
   (budget === 'history' ? 64 : budget === 'page' ? 4 : 32) * MIB;

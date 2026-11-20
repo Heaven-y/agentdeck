@@ -472,7 +472,7 @@ it('旧版 Antigravity 历史不可回放仍可续聊，不常驻防御性说明
   );
   await useChat.getState().openSession({ agent: 'antigravity', sessionId: 'agy-native' });
   showChat();
-  expect(screen.getByText(/Antigravity 的原生历史暂不能回放/)).toBeTruthy();
+  expect(screen.getByText('暂时无法读取历史消息，可以继续此会话。')).toBeTruthy();
   expect(screen.queryByText(/权限由 Antigravity 原生配置决定/)).toBeNull();
   expect(screen.queryByRole('button', { name: /允许|批准/ })).toBeNull();
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '继续处理' } });
@@ -497,7 +497,7 @@ it('历史读取失败保留可编辑草稿，重读成功才恢复发送', asyn
   });
   fireEvent.click(screen.getByRole('button', { name: '重新读取历史' }));
   await waitFor(() => expect(useChat.getState().historyError).toBeUndefined());
-  expect(screen.getByRole('heading', { name: '继续原生会话' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '继续会话' })).toBeTruthy();
   expect(screen.getByLabelText<HTMLTextAreaElement>('输入消息').value).toBe('待发送');
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '发送' }).disabled).toBe(false);
 });
@@ -513,11 +513,11 @@ it('恢复回合明确提示较早历史未读取，Codex 运行结束后可重�
     running: true,
     turnId: 'restored',
     items: [{ kind: 'user', id: 'cached', text: '缓存中的本轮消息' }],
-    historyNotice: '已恢复缓存中的回合；更早的原生历史尚未读取，可在本轮结束后重新读取。',
+    historyNotice: '已恢复本轮消息。回合结束后可加载更早的记录。',
     historyReloadNeeded: true,
   });
   showChat();
-  expect(screen.getByText(/更早的原生历史尚未读取/)).toBeTruthy();
+  expect(screen.getByText('已恢复本轮消息。回合结束后可加载更早的记录。')).toBeTruthy();
   const button = screen.getByRole<HTMLButtonElement>('button', { name: '重新读取最近记录' });
   expect(button.disabled).toBe(true);
   act(() => useChat.setState({ running: false, turnId: undefined }));
@@ -927,7 +927,7 @@ it('手填模型不把空白或默认占位符发送为型号，恢复原生必�
   expect(apply.disabled).toBe(true);
   fireEvent.change(field, { target: { value: '默认' } });
   expect(apply.disabled).toBe(true);
-  expect(screen.getByRole('alert').textContent).toContain('模型名称或标识');
+  expect(screen.getByRole('alert').textContent).toBe('请输入具体模型名称或 ID。');
   fireEvent.click(apply);
   expect(useChat.getState().modelOverrides.claude).toBe('');
   expect(sent).toHaveLength(0);

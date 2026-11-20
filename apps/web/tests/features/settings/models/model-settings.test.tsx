@@ -131,7 +131,7 @@ it('常用模型表单只发送修改字段，空密码保留且显式清除使�
   expect(secret.value).toBe('');
   expect(secret.placeholder).toBe('••••••••');
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '显示API Key' }).disabled).toBe(false);
-  expect(screen.getByText('URL 和 Key 保存后，下次发送生效')).toBeTruthy();
+  expect(screen.queryByText('URL 和 Key 保存后，下次发送生效')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '更换API Key' }));
   expect(globalThis.document.activeElement).toBe(secret);
   fireEvent.change(model, { target: { value: 'custom-model' } });

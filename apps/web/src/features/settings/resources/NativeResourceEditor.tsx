@@ -154,7 +154,7 @@ function EditorFooter({ state }: { state: EditorState }) {
   const { dirty, saving, loading, editable, save } = state;
   return (
     <>
-      <p className="text-xs text-muted-foreground">{dirty ? '有未保存修改' : '完整原生文件 · 关闭后清除编辑内容'}</p>
+      <p className="text-xs text-muted-foreground">{dirty ? '有未保存修改' : ''}</p>
       <button
         type="button"
         className={buttonClass('primary')}
@@ -187,9 +187,7 @@ function EditorContent({ state, resource }: { state: EditorState; resource: Nati
       )}
       {document && (
         <>
-          {!document.resource.exists && (
-            <p className="text-sm text-muted-foreground">文件尚未创建，明确保存后才会写入。</p>
-          )}
+          {!document.resource.exists && <p className="text-sm text-muted-foreground">保存后创建此文件。</p>}
           <ConfigHelp document={document} content={content} disabled={saving || !editable} insert={edit} />
           <div className="min-w-0 overflow-hidden rounded-md border border-border-strong">
             <CodeEditor

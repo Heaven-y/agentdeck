@@ -20,7 +20,6 @@ export type McpAdapter = {
   headerField: string;
   bearerField: string | null;
   enabledField: 'enabled' | 'disabled' | null;
-  warning?: string;
 };
 export type McpPlugin = {
   name: string;

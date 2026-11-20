@@ -31,13 +31,13 @@ export async function antigravityPlugins(c: PluginContext): Promise<PluginInvent
           : [],
       ),
       actions: writable ? ['enable', 'disable', 'uninstall', 'validate'] : [],
-      reason: writable ? undefined : '目录或未知来源仅支持从原生入口管理。',
+      reason: writable ? undefined : '此插件需在 Antigravity 中管理。',
     };
   });
   return {
     plugins,
     marketplaces: [],
     revisions: [],
-    warnings: ['Antigravity 没有独立插件更新或自定义市场管理命令；需要变量的插件可能保持禁用，请在原生插件面板配置。'],
+    warnings: [],
   };
 }

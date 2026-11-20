@@ -181,12 +181,12 @@ export default function NativeMcpEditor({
       }}
     >
       <p className="text-sm text-muted-foreground">
-        {source.label}。已有参数、地址和秘密不回填；未修改的字段保持原值。
+        {source.label}
+        {entry ? ' · 未修改的字段保留原值' : ''}
       </p>
       {!source.secretInput && (
         <p className="text-sm text-muted-foreground">
-          此作用域只通过原生命令维护不含参数或秘密的 stdio 配置。地址、命令参数与凭据请使用 Claude 原生入口；项目
-          .mcp.json 支持完整表单。
+          此位置仅支持配置启动程序。需要填写参数、地址或凭据时，请使用 Claude Code 或项目的 .mcp.json。
         </p>
       )}
       <label className="block space-y-1 text-sm">

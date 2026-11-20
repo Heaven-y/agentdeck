@@ -60,7 +60,7 @@ function InteractionPrompt({
     <>
       {spec.kind === 'url' ? (
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground break-words">请在原生服务页面完成操作后确认。</p>
+          <p className="text-xs text-muted-foreground break-words">在打开的页面完成操作后，点击“已完成此步骤”。</p>
           <a className={`${buttonClass('outline')} break-all`} href={spec.url} target="_blank" rel="noreferrer">
             打开 {new URL(spec.url).hostname}
           </a>
@@ -156,9 +156,8 @@ export function InteractionCard({ item, onAnswer, initialAnswer, disabled }: Pro
   );
 }
 function resolutionText(item: Props['item']) {
-  if (item.resolved === 'completed') return '原生服务已确认完成';
-  if (item.resolved === 'submitted')
-    return item.interaction.kind === 'url' ? '已提交，授权结果以原生反馈为准。' : '已提交回答';
+  if (item.resolved === 'completed') return '已完成';
+  if (item.resolved === 'submitted') return item.interaction.kind === 'url' ? '已提交，等待授权结果' : '已提交回答';
   return item.resolved === 'declined' ? '已拒绝' : '已取消或结束';
 }
 function PendingInteraction({ item, onAnswer, initialAnswer, disabled: externallyDisabled }: Props) {

@@ -28,4 +28,4 @@ export class AcpError extends Error {
   }
 }
 export const cancelled = () => new AcpError('cancelled', '本轮已中断。');
-export const protocolFailure = () => new AcpError('protocol', 'Antigravity ACP 返回了无法确认的协议数据，已停止本轮。');
+export const protocolFailure = () => new AcpError('protocol', 'Antigravity 返回了异常数据，本轮已停止。');

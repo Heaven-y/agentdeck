@@ -42,7 +42,7 @@ export function ManualModelDialog({
         </p>
         {invalid && (
           <p id={`${id}-error`} role="alert" className="text-sm text-destructive-foreground">
-            请填写有效的原生模型名称或标识，不要填写“默认”等占位词。
+            请输入具体模型名称或 ID。
           </p>
         )}
         <div className="flex justify-end gap-2">

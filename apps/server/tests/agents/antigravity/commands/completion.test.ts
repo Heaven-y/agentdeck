@@ -135,7 +135,7 @@ it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时不�
   f.child.emit('close', 0);
   await f.handle.done;
   expect(read).toHaveBeenCalledWith('native-resumed', cwd, expect.any(AbortSignal));
-  expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('未成功完成本轮') });
+  expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('未能完成本轮') });
   expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
 });
 

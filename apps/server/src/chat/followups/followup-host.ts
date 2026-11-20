@@ -348,8 +348,8 @@ export class FollowupHost {
             : {
                 status: outcome.attempted ? 'unknown' : 'failed',
                 reason: outcome.unconfirmed
-                  ? '本轮原生结果未确认，请核对历史；待发列表已暂停。'
-                  : '本轮未完成，请核对历史；待发列表已暂停。',
+                  ? '本轮结果尚未确认，请先重新读取会话。'
+                  : '本轮未完成，请先查看错误或停止状态。',
               },
         );
       group.leases.get(id)?.release();
@@ -407,7 +407,7 @@ export class FollowupHost {
       type: 'followup.error',
       queueId: message.queueId,
       ...('clientMessageId' in message ? { clientMessageId: message.clientMessageId } : {}),
-      message: error instanceof SessionError ? error.message : '追加消息未受理，请保留输入并核对当前状态。',
+      message: error instanceof SessionError ? error.message : '未能添加这条消息，输入已保留。',
     });
   }
   private async action(group: FollowupGroup, message: Action): Promise<void> {
@@ -493,7 +493,7 @@ export class FollowupHost {
   }
   private assertSteer(group: FollowupGroup, message: Extract<Action, { type: 'chat.followup' }>): void {
     if (this.queue.snapshot(group.owner, group.context.queueId).paused)
-      throw conflict('待发列表已暂停，请先核对后继续。');
+      throw conflict('待发已暂停，请先处理暂停原因，再继续列表。');
     this.assertSteerTarget(group, message.turnId);
     this.assertSteerChoices(group, message.content);
   }
@@ -530,7 +530,7 @@ export class FollowupHost {
     if (!group.context.sessionId) {
       this.queue.result(group.owner, group.context.queueId, item.clientMessageId, {
         status: 'failed',
-        reason: '原生会话尚未创建，请核对后重新发送。',
+        reason: '会话未能创建，这条消息未发送。可取回草稿后重新发送。',
       });
       return;
     }

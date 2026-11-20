@@ -7,12 +7,16 @@ export const claudePermissions: PermissionChoice[] = [
     description: '自动接受文件编辑，其他请求仍按原生规则处理',
     selection: { agent: 'claude', mode: 'acceptEdits' },
   },
-  { label: '自动审查', description: 'Claude auto，由原生分类器审查操作', selection: { agent: 'claude', mode: 'auto' } },
+  {
+    label: '自动审查',
+    description: '由 Claude 自动审查操作是否可以执行',
+    selection: { agent: 'claude', mode: 'auto' },
+  },
   { label: '计划模式', description: '探索与规划，不直接编辑源文件', selection: { agent: 'claude', mode: 'plan' } },
-  { label: '不询问', description: '需要询问的操作由原生拒绝', selection: { agent: 'claude', mode: 'dontAsk' } },
+  { label: '不询问', description: '拒绝需要你批准的操作', selection: { agent: 'claude', mode: 'dontAsk' } },
   {
     label: '跳过权限检查',
-    description: '使用原生 bypassPermissions 模式',
+    description: '自动允许工具操作，不再询问权限',
     selection: { agent: 'claude', mode: 'bypassPermissions' },
   },
 ];

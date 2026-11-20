@@ -112,7 +112,10 @@ it('停止失败发布可核对状态且不释放工作区，未知owner/项目�
     await expect(host.stop(owner, { ...message, workspaceId: 'other' })).rejects.toThrow();
     await host.stop(owner, message);
     expect(JSON.stringify(sent)).not.toContain('private');
-    expect(sent.at(-1)).toMatchObject({ type: 'tasks.state', state: { error: expect.stringContaining('尚未确认') } });
+    expect(sent.at(-1)).toMatchObject({
+      type: 'tasks.state',
+      state: { error: expect.stringContaining('可能仍在运行') },
+    });
     await expect(activity.withIdle('project', async () => {})).rejects.toThrow();
     await close();
     expect(host.busy('claude')).toBe(false);

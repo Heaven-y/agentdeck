@@ -77,8 +77,8 @@ export async function createCodexHistoryBackend(
       await client.request('thread/revert', { threadId: sessionId, beforeTurnId: pointId });
       const after = await load();
       if (after.some((turn) => turn.id === pointId))
-        return { status: 'unknown', message: '原生未确认历史回退结果，请重新读取会话。' };
-      return { status: 'completed', message: '原生会话历史已回退，工作区文件保留。' };
+        return { status: 'unknown', message: '历史回退结果尚未确认，请重新读取会话。' };
+      return { status: 'completed', message: '会话历史已回退，工作区文件保留。' };
     },
     close: () => client.close(),
   };

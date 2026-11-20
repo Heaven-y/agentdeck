@@ -14,8 +14,7 @@ export const DEFAULT_REASONING_EFFORTS: Record<AgentKind, string> = {
 export const EMPTY_MODEL_OVERRIDES: Record<AgentKind, string> = { claude: '', codex: '', antigravity: '' };
 export function historyFailure(agent: AgentKind, error: unknown): Pick<ChatState, 'historyError' | 'historyNotice'> {
   const notReplayable = agent === 'antigravity' && error instanceof ApiError && error.code === 'session_not_replayable';
-  if (notReplayable)
-    return { historyNotice: 'Antigravity 的原生历史暂不能回放；可以继续此会话，本次收到的内容会显示在这里。' };
+  if (notReplayable) return { historyNotice: '暂时无法读取历史消息，可以继续此会话。' };
   return { historyError: `加载会话失败：${error instanceof Error ? error.message : '请重试'}` };
 }
 

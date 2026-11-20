@@ -86,9 +86,9 @@ it('读取失败时显示原因并可重试，不与不可回放混为一谈', (
   expect(retry).toHaveBeenCalledTimes(1);
 });
 
-it('只读历史有明确说明且不提供输入框', () => {
+it('只读历史不提供输入框，也不重复显示常驻说明', () => {
   render(<SessionTimeline events={[userEvent]} />);
-  expect(screen.getByText(/只读浏览原生会话记录/)).toBeTruthy();
+  expect(screen.queryByText(/只读浏览原生会话记录/)).toBeNull();
   expect(screen.queryByRole('textbox')).toBeNull();
 });
 

@@ -21,7 +21,7 @@ function publicPlugin(c: PluginContext, p: PluginRecord, revisions: unknown[], s
     description: p.description ?? '',
     components: p.components ?? [],
     actions: p.actions,
-    reason: supported ? p.reason : '当前 CLI 版本未核实，仅展示原生状态。',
+    reason: supported ? p.reason : undefined,
   };
 }
 function publicMarket(c: PluginContext, m: PluginMarketplace, supported: boolean) {
@@ -61,7 +61,7 @@ export async function readPluginInventory(c: PluginContext, operations: NativePl
     installScopes:
       supported && adapter.verbs.install ? adapter.installScopes.filter((scope) => c.project || scope === 'user') : [],
     canAddMarketplace: supported && !!adapter.verbs['marketplace-add'],
-    warnings: [...native.warnings, ...(!supported ? ['当前 CLI 版本未核实，操作已停用。'] : [])],
+    warnings: [...native.warnings, ...(!supported ? ['当前版本暂不能在此管理插件，请在 CLI 中操作。'] : [])],
   };
   return { native, catalog };
 }

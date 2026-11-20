@@ -151,6 +151,19 @@ function CatalogBody({
     </>
   );
 }
+function McpGuidance({ agent }: { agent: NativeManagementContext['agent'] }) {
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">配置更改在下次启动会话时生效。</p>
+      {agent === 'antigravity' && (
+        <details className="text-xs leading-6 text-muted-foreground">
+          <summary className="w-fit cursor-pointer">连接与授权帮助</summary>
+          <p>连接、授权和缺少的变量请在 Antigravity 的 MCP 面板中管理。</p>
+        </details>
+      )}
+    </>
+  );
+}
 export default function NativeMcpPanel({
   context,
   reload,
@@ -177,9 +190,7 @@ export default function NativeMcpPanel({
           />
         )}
       </SessionToolsPanel>
-      <p className="text-sm text-muted-foreground">
-        持久配置与本次运行分别管理。刷新列表不会启动或连接 MCP；修改配置在下一次原生实例启动时加载。
-      </p>
+      <McpGuidance agent={context.agent} />
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}

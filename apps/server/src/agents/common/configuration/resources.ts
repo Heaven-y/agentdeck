@@ -62,7 +62,7 @@ export function makeResourceTarget(
     label: details.label ?? relative,
     displayPath: location.displayPath,
     format,
-    description: details.description ?? '保存原生文件；加载时机、信任与权限由 CLI 决定。',
+    description: details.description ?? '',
     file: location.directory,
     ...(base.readOnly ? { readOnly: true } : {}),
   };

@@ -339,7 +339,7 @@ it('未知送达保留可见恢复入口并要求核对历史，恢复和上传�
   useChat.getState().setDraft('新草稿');
   recovery({ type: 'connection.ready', sequence: 0, acceptedClientTurnIds: [] });
   render(<ComposerAttachments />);
-  expect(screen.getByRole('status').textContent).toContain('核对');
+  expect(screen.getByRole('status').textContent).toBe('这条消息可能已发出，请先重新读取会话。');
   fireEvent.click(screen.getByRole('button', { name: '恢复上一条文字与附件' }));
   expect(useChat.getState().draftAttachments[0]?.file).toBe(file);
   fireEvent.click(screen.getByRole('button', { name: '放弃暂存输入' }));

@@ -51,8 +51,8 @@ export function createNativeManagementService(deps: Deps = {}) {
       adapter.verifyVersion(current),
     ]);
     const warnings = discovered.warnings;
-    if (!native.available) warnings.push('原生状态暂时无法核实；仍可编辑已安全发现的本地文件。');
-    if (!config.available) warnings.push('技能配置无法解析；请先从原文入口修复配置。');
+    if (!native.available) warnings.push('技能状态读取失败，请重新读取。');
+    if (!config.available) warnings.push('技能配置读取失败，请打开配置文件检查。');
     const records: SkillRecord[] = [];
     const foundPaths = new Set<string>();
     const byPath = indexNativeSkillPaths(native.rows);
@@ -78,7 +78,7 @@ export function createNativeManagementService(deps: Deps = {}) {
     for (const skill of native.rows) {
       const key = nativeSkillPathKey(skill.path);
       if (key && foundPaths.has(key)) continue;
-      records.push(nativeSkillEntry(adapter, current, skill));
+      records.push(nativeSkillEntry(current, skill));
     }
     adapter.restrictConflicts?.(records);
     applyVersion(records, verified, warnings);
@@ -179,6 +179,6 @@ function applyVersion(records: SkillRecord[], verified: boolean, warnings: strin
     entry.actions.stateScopes = [];
     entry.state = 'unknown';
   }
-  warnings.push('当前 CLI 版本尚未核实技能状态写入；可继续编辑自有文件或使用原生入口。');
+  warnings.push('当前版本暂不能在此修改技能启用状态，可编辑技能文件或在 CLI 中管理。');
 }
 export type NativeManagementService = ReturnType<typeof createNativeManagementService>;

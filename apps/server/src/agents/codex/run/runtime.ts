@@ -345,7 +345,7 @@ export class CodexTurn {
         input: items,
       });
       if (response.turnId !== this.turnId)
-        return { status: 'unknown', message: '原生未确认引导所属轮次，请核对历史；不会自动重发。' };
+        return { status: 'unknown', message: '这条消息可能已发送，请先重新读取会话。' };
       this.acknowledge(input.clientMessageId);
       return { status: 'accepted' };
     } catch (error) {
@@ -545,8 +545,7 @@ export class CodexTurn {
     for (const event of this.mapper.finishCompaction(text(turn.status))) this.input.emit(event);
     if (this.manualCompaction && turn.status === 'completed' && !this.mapper.compactionConfirmed())
       throw new CodexError('Codex 未确认本次压缩完成，请重新读取会话状态。');
-    if (turn.status === 'failed')
-      this.input.emit({ type: 'error', message: 'Codex 本轮执行失败，请检查本机模型与工具配置。' });
+    if (turn.status === 'failed') this.input.emit({ type: 'error', message: 'Codex 本轮执行失败。' });
     if (turn.status === 'completed') {
       await markEmbedded(this.input, ['image']);
       await this.storeSteerImages();
@@ -689,6 +688,6 @@ function steerItems(input: NativeSteerInput): RecordValue[] {
 }
 function steerFailure(error: unknown): NativeInputResult {
   return error instanceof CodexError && error.nativeRejected
-    ? { status: 'rejected', message: 'Codex未受理本次引导，请核对本轮状态；输入已保留。' }
-    : { status: 'unknown', message: '引导投递结果未确认，请核对原生历史；不会自动重发。' };
+    ? { status: 'rejected', message: 'Codex 拒绝了本次引导，输入已保留。' }
+    : { status: 'unknown', message: '这条消息可能已发送，请先重新读取会话。' };
 }

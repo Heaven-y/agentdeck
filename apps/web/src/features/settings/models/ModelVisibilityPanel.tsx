@@ -41,7 +41,7 @@ export function ModelVisibilityPanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-[13px] font-medium">对话菜单中的模型</h4>
         <span role="status" className="text-xs text-muted-foreground">
-          {draft.dirty ? '保存设置后生效' : '当前已保存'}
+          {draft.dirty ? '保存设置后生效' : ''}
         </span>
       </div>
       <p className="text-xs leading-5 text-muted-foreground">

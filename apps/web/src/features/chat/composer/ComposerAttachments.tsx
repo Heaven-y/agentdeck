@@ -105,7 +105,7 @@ function DraftAttachments() {
       {rejected && (
         <div className="space-y-1">
           <p role="status" className="text-xs text-muted-foreground">
-            {uncertain ? '发送状态未确认，请先重新读取原生历史核对。恢复不会自动发送。' : '恢复时会暂存当前草稿。'}
+            {uncertain ? '这条消息可能已发出，请先重新读取会话。' : '恢复时会暂存当前草稿。'}
           </p>
           <button type="button" disabled={busy} className={buttonClass('outline')} onClick={restore}>
             恢复上一条文字与附件

@@ -7,12 +7,12 @@ import {
   type ResourceContext,
 } from '../../common/configuration/resources';
 function agyCustomizations(base: Base, output: Builder) {
-  output.file(base, 'mcp_config.json', 'mcp', 'Antigravity 原生 MCP 配置；连接与启停由 CLI 管理。');
+  output.file(base, 'mcp_config.json', 'mcp', 'Antigravity MCP 配置。');
   output.file(base, 'hooks.json', 'hooks');
-  output.file(base, 'rules.json', 'rules', '原生规则发现清单；继承、排除和外部路径由 CLI 解析。');
-  output.file(base, 'skills.json', 'skills', '原生 Skills 发现清单；继承、排除和外部路径由 CLI 解析。');
-  output.file(base, 'plugins.json', 'plugins', '原生插件发现清单；这里不执行安装或启停。');
-  output.file(base, 'agents.json', 'agents', '原生代理发现清单；继承与外部路径由 CLI 解析。');
+  output.file(base, 'rules.json', 'rules', '规则目录与排除配置。');
+  output.file(base, 'skills.json', 'skills', 'Skills 目录与排除配置。');
+  output.file(base, 'plugins.json', 'plugins', '插件目录配置。');
+  output.file(base, 'agents.json', 'agents', '代理目录配置。');
   output.scan(base, 'rules', 'rules', true);
   output.scan(base, 'skills', 'skills', true);
   output.scan(base, 'agents', 'agents', true);
@@ -20,16 +20,11 @@ function agyCustomizations(base: Base, output: Builder) {
 
 export function antigravityPlan(context: ResourceContext, output: Builder) {
   const user = userBase(context, '.gemini');
-  output.file(
-    user,
-    'antigravity-cli/settings.json',
-    'settings',
-    'Antigravity CLI 全局设置；不创建未经原生支持的项目 settings 层。',
-  );
+  output.file(user, 'antigravity-cli/settings.json', 'settings', 'Antigravity 全局设置。');
   for (const name of ['AGENTS.md', 'GEMINI.md', 'config/AGENTS.md', 'config/GEMINI.md'])
     output.file(user, name, 'rules');
   agyCustomizations(at(user, 'config'), output);
-  output.file(user, 'config/config.json', 'plugins', '原生插件启停等用户选择；实际加载由 CLI 决定。');
+  output.file(user, 'config/config.json', 'plugins', '插件启停设置。');
   output.scan(user, 'antigravity-cli/skills', 'skills');
   output.scan(user, 'skills', 'skills');
   const project = projectBase(context);

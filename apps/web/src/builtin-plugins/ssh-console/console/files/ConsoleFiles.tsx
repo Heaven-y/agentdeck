@@ -18,7 +18,7 @@ export function ConsoleFiles({
   return (
     <section aria-label="只读服务器文件" className="flex min-h-0 flex-1 flex-col">
       <ConsoleFileNavigation browser={browser} disabled={!active} />
-      <p className="shrink-0 px-5 py-2 text-xs text-muted-foreground">只读浏览 · 文本预览最多 256 KiB</p>
+      <p className="shrink-0 px-5 py-2 text-xs text-muted-foreground">只读浏览</p>
       {browser.error && (
         <p role="alert" className="px-5 py-2 text-sm text-destructive-foreground">
           {browser.error}

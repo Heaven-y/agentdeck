@@ -8,7 +8,7 @@ import {
 import path from 'node:path';
 export function claudePlan(context: ResourceContext, output: Builder) {
   const user = userBase(context, '.claude', context.env.CLAUDE_CONFIG_DIR);
-  output.file(user, 'settings.json', 'settings', 'Claude 用户设置，含权限、环境和原生插件选择；保留未知字段。');
+  output.file(user, 'settings.json', 'settings', 'Claude 用户设置：权限、环境变量和插件。');
   output.file(user, 'CLAUDE.md', 'rules');
   output.scan(user, 'rules', 'rules', true);
   output.scan(user, 'skills', 'skills', true);
@@ -27,27 +27,27 @@ export function claudePlan(context: ResourceContext, output: Builder) {
   };
   output.scan(managed, '.claude/skills', 'skills');
   output.scan(managed, '.claude/agents', 'agents');
-  output.file(managed, 'managed-settings.json', 'settings', '管理员下发的原生策略，仅显示原文，不覆盖托管配置。');
+  output.file(managed, 'managed-settings.json', 'settings', '管理员策略，只读。');
   output.scan(user, 'agents', 'agents', true);
-  output.file(user, 'settings.json', 'hooks', 'Claude Hooks 位于此原生设置的 hooks 字段；保存不执行命令。');
+  output.file(user, 'settings.json', 'hooks', 'Hooks 配置位于 hooks 字段。');
   const project = projectBase(context);
   if (project) {
     const local: Base = { ...project, scope: 'local' };
-    output.file(project, '.claude/settings.json', 'settings', '项目共享设置；原生 user、project、local 层保持独立。');
+    output.file(project, '.claude/settings.json', 'settings', '项目共享设置。');
     output.file(local, '.claude/settings.local.json', 'settings', '仅本机使用的项目设置，通常不提交版本控制。');
     for (const name of ['CLAUDE.md', '.claude/CLAUDE.md']) output.file(project, name, 'rules');
-    output.file(local, 'CLAUDE.local.md', 'rules', '个人项目规则，保留 Claude 原生 local 作用域。');
+    output.file(local, 'CLAUDE.local.md', 'rules', '仅本机使用的项目规则。');
     output.file(
       project,
       'AGENTS.md',
       'rules',
       '新版本 Claude 的条件回退入口；是否加载由原生版本与已有 CLAUDE 文件决定。',
     );
-    output.file(project, '.mcp.json', 'mcp', '项目 MCP 配置；是否启动或批准服务器仍由 Claude 决定。');
+    output.file(project, '.mcp.json', 'mcp', '项目 MCP 配置。');
     output.scan(project, '.claude/rules', 'rules', true);
     output.scan(project, '.claude/skills', 'skills', true);
     output.scan(project, '.claude/agents', 'agents', true);
-    output.file(project, '.claude/settings.json', 'hooks', '项目 Hooks 原文入口；执行、权限与加载由 Claude 决定。');
+    output.file(project, '.claude/settings.json', 'hooks', '项目 Hooks 配置。');
     output.file(local, '.claude/settings.local.json', 'hooks', '个人项目 Hooks 原文入口。');
   }
   output.plan.guidance.push(

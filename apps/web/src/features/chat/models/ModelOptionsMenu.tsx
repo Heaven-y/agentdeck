@@ -51,7 +51,7 @@ function CatalogStatus({ catalog }: { catalog: ReturnType<typeof useAgentCapabil
 }
 function catalogWarning(data?: AgentCapabilities) {
   if (data?.agent === 'antigravity' && !data.antigravityConnection)
-    return data.modelWarning || '无法确认当前的 AGY 连接方式，请核对原生配置。';
+    return data.modelWarning || '无法读取 AGY 连接方式，请在模型设置中重新读取配置。';
   return data?.discovered ? (data.modelWarning ?? data.warnings[0]) : undefined;
 }
 function useModelVisibility(catalog?: AgentCapabilities) {

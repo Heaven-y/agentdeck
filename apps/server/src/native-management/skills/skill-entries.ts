@@ -49,9 +49,6 @@ async function localSnapshot(file: string) {
   }
 }
 
-function description(adapter: SkillAdapter, origin: NativeSkillEntry['origin']) {
-  return origin === 'plugin' ? '此技能随所属原生插件启停，请在插件管理中操作。' : adapter.description;
-}
 const readOnlyActions = (): NativeSkillEntry['actions'] => ({
   edit: false,
   delete: false,
@@ -84,7 +81,7 @@ function localAccess(
       origin,
       state: 'unknown',
       actions: readOnlyActions(),
-      unavailableReason: '此路径对应多个原生技能来源，无法确认归属；请使用原生入口核对。',
+      unavailableReason: '此目录对应多个技能来源，暂不能修改。请在 CLI 中管理。',
     };
   const { resource, nativeSkill } = local;
   const reason = resource.unavailableReason ?? snapshotReason;
@@ -126,7 +123,7 @@ export async function localSkillEntry(
         ]),
       ),
     ),
-    description: description(adapter, access.origin),
+    description: '',
   };
   return { entry, file, treeRevision: snapshot.treeRevision, nativeSkill };
 }
@@ -137,7 +134,7 @@ function nativeSourceId(context: SkillContext, skill: NativeSkill) {
     `skill-source:${skill.nativeScope ?? skill.scope ?? 'unknown'}:${skill.source ?? ''}`,
   );
 }
-export function nativeSkillEntry(adapter: SkillAdapter, context: SkillContext, skill: NativeSkill): SkillRecord {
+export function nativeSkillEntry(context: SkillContext, skill: NativeSkill): SkillRecord {
   const origin = skill.origin ?? (skill.path ? 'external' : 'builtin');
   return {
     entry: {
@@ -148,9 +145,9 @@ export function nativeSkillEntry(adapter: SkillAdapter, context: SkillContext, s
       source: skill.source ?? skill.path ?? 'CLI 内置技能',
       state: enabledState(skill),
       revision: contentRevision(Buffer.from(JSON.stringify(skill))),
-      description: description(adapter, origin),
+      description: '',
       actions: readOnlyActions(),
-      unavailableReason: origin === 'plugin' ? '请通过所属插件管理。' : '此来源由原生 CLI 管理，仅显示状态。',
+      unavailableReason: origin === 'plugin' ? '请在所属插件中管理。' : '此技能只能在 CLI 中管理。',
     },
     nativeSkill: skill,
   };

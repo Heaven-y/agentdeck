@@ -12,9 +12,9 @@ const terminal = (processId: string, itemId = `item-${processId}`) => ({
 });
 
 it.each([
-  'Codex 请求失败，请检查本机配置、登录状态或会话是否仍存在。',
+  'Codex 请求失败。',
   'Codex 未接受所选权限模式，请检查当前版本和原生权限策略。',
-  'Codex 当前原生版本不支持此实验性接口。',
+  '当前 Codex 版本不支持此操作。',
 ])('无method-not-found标记的原生读取拒绝保留终端与租约：%s', async (message) => {
   let nativeError: Error | undefined,
     listed = [terminal('p1')],
@@ -71,7 +71,7 @@ it('仅明确的原生method-not-found分类关闭后台终端能力', async () 
   const tasks = new CodexBackgroundTerminals({
     threadId: 'thread-a',
     request: async () => {
-      if (unsupported) throw new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
+      if (unsupported) throw new CodexError('当前 Codex 版本不支持此操作。', true, true);
       return { data: [terminal('p1')], nextCursor: null };
     },
   });

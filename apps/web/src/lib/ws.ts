@@ -87,7 +87,7 @@ export function connectChat(handlers: Handlers): ChatSocket {
       failed({
         type: 'connection.rejected',
         code: 'owner_missing',
-        message: '连接长时间未恢复，本轮已超出保留期限。请重新读取原生历史；消息不会自动重发。',
+        message: '连接长时间中断，无法恢复本轮。请重新读取会话查看已保存的消息。',
       });
     }, 95_000);
   }

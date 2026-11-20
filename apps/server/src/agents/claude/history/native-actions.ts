@@ -70,8 +70,8 @@ export function createClaudeRewindBackend(
       const value = await rewind(pointId, false);
       if (value.canRewind !== true) throw failure();
       return typeof value.skippedLinks === 'number' && value.skippedLinks > 0
-        ? { status: 'partial', message: '原生已执行文件回退，但跳过了部分链接文件，请核对工作区。' }
-        : { status: 'completed', message: '原生文件回退已完成，会话历史保留。' };
+        ? { status: 'partial', message: '文件已回退，但部分链接文件未恢复。请检查这些文件。' }
+        : { status: 'completed', message: '文件已回退，会话历史保留。' };
     },
     async close() {
       stream?.close();

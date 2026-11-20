@@ -68,7 +68,7 @@ export class AcpCommands {
       };
       const timer = setTimeout(() => {
         cleanup();
-        reject(new AcpError('selection', '尚未收到原生ACP命令目录，请稍后重试。'));
+        reject(new AcpError('selection', 'Antigravity 命令列表尚未就绪，请稍后重试。'));
       }, 5000);
       this.listeners.add(check);
       signal?.addEventListener('abort', abort, { once: true });

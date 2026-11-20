@@ -120,7 +120,7 @@ export default function NativeResourceCreate({ context, root, embedded, onBack, 
 function CreateFooter({ state, editable }: { state: CreateState; editable: boolean }) {
   return (
     <>
-      <p className="text-xs text-muted-foreground">{state.dirty ? '有未保存修改' : '只在所选原生目录创建文件'}</p>
+      <p className="text-xs text-muted-foreground">{state.dirty ? '有未保存修改' : ''}</p>
       <button
         type="button"
         className={buttonClass('primary')}

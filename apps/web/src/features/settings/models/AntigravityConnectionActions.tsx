@@ -18,7 +18,7 @@ function ManualLogin() {
 }
 
 function LoginFeedback({ status }: { status: LoginStatus }) {
-  if (status === 'idle') return null;
+  if (status === 'idle' || status === 'completed') return null;
   if (status === 'failed') {
     return (
       <p role="alert" className="text-xs leading-5 text-destructive-foreground">
@@ -29,7 +29,6 @@ function LoginFeedback({ status }: { status: LoginStatus }) {
   }
   const messages = {
     pending: '请在登录终端完成 Google 登录。如果浏览器给出授权码，请粘贴回该终端。',
-    completed: '登录命令已正常结束，可以返回会话重试。',
     'not-completed': '登录未完成。可以重新打开终端再试。',
   };
   return (
@@ -58,8 +57,8 @@ export function AntigravityConnectionActions({ disabled }: { disabled: boolean }
       : account.isFetching
         ? '正在读取账号…'
         : account.isError
-          ? '未能确认当前账号'
-          : (account.data?.email ?? '未能确认当前账号');
+          ? '账号信息读取失败'
+          : (account.data?.email ?? '暂无账号信息');
   const openLogin = async () => {
     if (!launch || status === 'pending') return;
     setStatus('pending');

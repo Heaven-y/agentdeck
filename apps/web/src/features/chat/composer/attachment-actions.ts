@@ -94,7 +94,7 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
       asset: undefined,
       assetOwner: undefined,
       assetScope: undefined,
-      error: '页面连接身份已变化，请重试上传。',
+      error: '附件上传已失效，请重新上传。',
     });
     for (const view of conversationViews(get())) {
       update(view.conversationId, (current) => ({
@@ -113,7 +113,7 @@ export function createAttachmentActions(get: () => ChatState, set: SetState, ide
           {
             ...queue,
             invalid: true,
-            error: '连接身份已变化，请核对历史后恢复草稿，不会自动重发。',
+            error: '待发列表已暂停，请先重新读取会话，再取回需要发送的内容。',
             drafts: Object.fromEntries(
               Object.entries(queue.drafts).map(([key, draft]) => [
                 key,

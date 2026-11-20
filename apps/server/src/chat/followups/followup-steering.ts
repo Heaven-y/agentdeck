@@ -111,6 +111,6 @@ function releaseRunning(group: FollowupGroup, lease: AttachmentLease): void {
   group.runningAssets = group.runningAssets.filter((value) => value !== lease);
 }
 function failureMessage(error: unknown, attempted: boolean): string {
-  if (attempted) return '无法确认原生是否收到引导，请先核对历史；不会自动重发。';
+  if (attempted) return '这条消息可能已发送，请先重新读取会话。';
   return error instanceof SessionError ? error.message : '引导准备失败，输入已保留。';
 }

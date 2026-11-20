@@ -58,7 +58,6 @@ export function NativePluginInstall({
           autoComplete="off"
         />
       </label>
-      <p className="text-xs text-muted-foreground">先预览来源和影响，点击开始后执行。安装与刷新来源可能访问网络。</p>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-sm">
           <span className="shrink-0 whitespace-nowrap">安装范围</span>

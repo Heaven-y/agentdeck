@@ -73,9 +73,7 @@ function ModeCatalogStatus({ catalog }: { catalog: ReturnType<typeof useAgentCap
       </p>
     );
   if (!catalog.data?.collaborationModes?.length)
-    return (
-      <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">尚未核实可用的协作模式，可刷新原生目录。</p>
-    );
+    return <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">暂无可选模式，请刷新列表。</p>;
   return null;
 }
 

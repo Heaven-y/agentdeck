@@ -133,7 +133,7 @@ it('原生结果未确认时保持待发消息并给出中性暂停原因', asyn
     expect(f.inputs).toHaveLength(1);
     expect(f.manager.followups.snapshots(f.socket)[0]).toMatchObject({
       paused: true,
-      reason: '本轮原生结果未确认，待发列表已暂停。',
+      reason: '本轮结果尚未确认，待发已暂停。',
       items: [{ status: 'queued' }],
     });
     await f.manager.handle(f.socket, { type: 'followup.resume', queueId });

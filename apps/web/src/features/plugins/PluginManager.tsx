@@ -88,9 +88,7 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
   return (
     <DetailDialog title="工作台插件" busy={busy} onClose={onClose}>
       <div className="space-y-4">
-        <p className="text-sm leading-6 text-muted-foreground">
-          在这里增加工作台页面。CLI 自己的插件请在对应原生配置中管理。
-        </p>
+        <p className="text-sm leading-6 text-muted-foreground">安装 AgentDeck 插件，为工作台添加工具页面。</p>
         <form
           className="space-y-2"
           onSubmit={(event) => {
@@ -111,7 +109,7 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
           <button type="submit" className={buttonClass('primary')} disabled={busy || !directory.trim()}>
             安装本地插件
           </button>
-          <p className="text-xs text-muted-foreground">安装后默认停用，可查看权限再启用。支持 AgentDeck 插件格式。</p>
+          <p className="text-xs text-muted-foreground">安装后，选择“启用”开始使用。</p>
         </form>
         {(error || query.error) && (
           <p role="alert" className="text-sm text-destructive-foreground">

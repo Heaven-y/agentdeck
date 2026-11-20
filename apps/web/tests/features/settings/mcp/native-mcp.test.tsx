@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 import NativeMcpPanel from '../../../../src/features/settings/mcp/NativeMcpPanel';
 import NativeMcpEditor from '../../../../src/features/settings/mcp/NativeMcpEditor';
+import NativeMcpRuntime from '../../../../src/features/settings/mcp/NativeMcpRuntime';
+import { nativeMcpApi } from '../../../../src/features/settings/mcp/native-mcp-api';
 import {
   guardSettingsNavigation,
   SettingsNavigationContext,
@@ -115,6 +117,38 @@ it('列表不隐式检查连接，秘密为空白，保存冲突保留草稿和�
     config: { headers: { Authorization: { action: 'replace', value: 'new-secret' } } },
   });
 });
+it('单次 MCP 检查成功不冒充持续连接，未知结果不显示为零工具', async () => {
+  vi.spyOn(nativeMcpApi, 'control')
+    .mockResolvedValueOnce({
+      instanceId: 'single-check',
+      name: 'demo',
+      state: 'connected',
+      tools: [],
+      auth: 'unknown',
+      canReconnect: false,
+      canToggle: false,
+      canLogin: false,
+    })
+    .mockResolvedValueOnce({
+      instanceId: 'single-check',
+      name: 'demo',
+      state: 'unknown',
+      tools: [],
+      auth: 'unknown',
+      canReconnect: false,
+      canToggle: false,
+      canLogin: false,
+    });
+  render(<NativeMcpRuntime context={{ agent: 'claude' }} entry={catalog.entries[0]!} />);
+  fireEvent.click(screen.getByRole('button', { name: '检查 demo 连接' }));
+  await screen.findByText('连接检查通过');
+  expect(screen.queryByText('已连接', { exact: true })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '检查 demo 连接' }));
+  await screen.findByText('上次检查：暂时无法获取状态');
+  expect(screen.getByText('连接详情')).toBeTruthy();
+  expect(screen.queryByText(/0 个工具/)).toBeNull();
+});
+
 it('选择子目录实例先保护草稿，再重读对应目录并绑定控制', async () => {
   const guards: SettingsNavigation = new Map();
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -131,7 +165,7 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
         name: 'child-only',
         state: 'connected',
         tools: [],
-        canReconnect: false,
+        canReconnect: true,
         canToggle: false,
         canLogin: false,
       });
@@ -171,8 +205,10 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
   expect(screen.queryByText('root-only')).toBeNull();
   expect(screen.queryByRole('button', { name: '编辑 child-only' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '检查 child-only 连接' }));
-  await screen.findByText(/已连接/);
+  await screen.findByText('已连接 · 所选会话');
   expect(calls.find((call) => call.url.includes('/control'))?.body).toMatchObject({ id: 'child-entry', instanceId });
+  fireEvent.click(screen.getByRole('button', { name: '重载所选会话的 MCP' }));
+  await waitFor(() => expect(calls.at(-1)?.body).toMatchObject({ action: 'reconnect', instanceId }));
 });
 it('专用开关与 MCP 目录双向刷新，自有配置不重复展示且同名项目配置仍可管理', async () => {
   let enabled = true;

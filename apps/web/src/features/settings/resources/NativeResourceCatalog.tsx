@@ -16,7 +16,7 @@ function ResourceRow({ resource, open }: { resource: NativeResource; open(): voi
         </span>
       </div>
       <p className="break-all font-mono text-xs text-muted-foreground">{resource.displayPath}</p>
-      <p className="text-sm leading-6 text-muted-foreground">{resource.description}</p>
+      {resource.description && <p className="text-sm leading-6 text-muted-foreground">{resource.description}</p>}
       <button
         type="button"
         className={buttonClass('outline')}
@@ -90,8 +90,8 @@ export function NativeResourceCatalog({
       ))}
       {scopes.length === 0 && <p className="text-sm text-muted-foreground">当前没有可浏览的原生文件。</p>}
       {catalog.guidance.length > 0 && (
-        <section aria-label="CLI 原生能力说明" className="space-y-3 border-t border-border pt-4">
-          <h3 className="text-sm font-semibold">CLI 原生能力</h3>
+        <details aria-label="CLI 原生能力说明" className="space-y-3 border-t border-border pt-4">
+          <summary className="w-fit cursor-pointer text-sm font-medium">文件与能力说明</summary>
           {catalog.guidance.map((item) => (
             <div key={item.label} className="space-y-1">
               <h4 className="text-sm font-medium">{item.label}</h4>
@@ -99,7 +99,7 @@ export function NativeResourceCatalog({
               {item.command && <code className="block break-all rounded bg-muted p-2 text-xs">{item.command}</code>}
             </div>
           ))}
-        </section>
+        </details>
       )}
     </div>
   );

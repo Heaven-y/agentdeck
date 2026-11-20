@@ -59,8 +59,7 @@ export function sessionHistoryFailure(error: unknown): SessionHistoryFailure {
     return { kind: 'failed', message: error.message || `原生会话读取失败（${error.status}）` };
   }
   // fetch 只在网络层失败时抛 TypeError；HTTP 错误一律是 ApiError。
-  if (error instanceof TypeError)
-    return { kind: 'network', message: '无法连接本机服务，请确认 AgentDeck 后端仍在运行后重试。' };
+  if (error instanceof TypeError) return { kind: 'network', message: '无法连接本机服务，请启动 AgentDeck 后重试。' };
   if (error instanceof Error) return { kind: 'failed', message: error.message };
   return { kind: 'failed', message: '原生会话读取失败，请重试。' };
 }

@@ -267,7 +267,7 @@ function LaunchVariables({
         </details>
       )}
       {variables.length === 0 && (
-        <p className="text-sm text-muted-foreground">当前 CLI 没有已接入的附加启动变量，请使用其原生登录和配置入口。</p>
+        <p className="text-sm text-muted-foreground">此 CLI 的环境变量请在终端或配置文件中设置。</p>
       )}
     </div>
   );

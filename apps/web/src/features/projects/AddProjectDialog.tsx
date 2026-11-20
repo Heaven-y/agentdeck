@@ -70,9 +70,7 @@ export function AddProjectDialog({
           void submit();
         }}
       >
-        <p className="text-xs leading-5 text-muted-foreground">
-          项目就是本机一条绝对路径；加入只写本工具的配置，不动磁盘上的任何文件，也不动 CLI 的原生会话。
-        </p>
+        <p className="text-xs leading-5 text-muted-foreground">选择本机项目文件夹，即可查看会话并开始工作。</p>
         <div className="space-y-2">
           <label htmlFor={`${ids}-dir`} className="block text-sm font-medium">
             项目目录
@@ -99,7 +97,7 @@ export function AddProjectDialog({
             className={inputClass}
             disabled={busy || blocked}
           />
-          <p className="text-xs text-muted-foreground">留空时取目录最后一段。</p>
+          <p className="text-xs text-muted-foreground">留空时使用文件夹名称。</p>
         </div>
         {error && (
           <p role="alert" className="text-sm leading-6 text-destructive-foreground">

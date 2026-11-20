@@ -163,7 +163,7 @@ it('待答会话阻止派发，继续需要明确操作；引导拒绝改模型�
     await host.handle(owner, { type: 'followup.resume', queueId });
     expect(host.snapshots(owner)[0]!.items[0]).toMatchObject({
       status: 'failed',
-      reason: expect.stringContaining('尚未创建'),
+      reason: expect.stringContaining('未能创建'),
     });
     expect(dispatch).not.toHaveBeenCalled();
   } finally {

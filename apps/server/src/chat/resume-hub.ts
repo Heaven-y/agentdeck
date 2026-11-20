@@ -43,11 +43,11 @@ type Owner = {
   events: SavedEvent[];
 };
 const messages: Record<RecoveryFailureCode, string> = {
-  owner_missing: '恢复记录已过期或后端已重启。本轮输出可能不完整，请重新读取原生历史；消息不会自动重发。',
-  owner_connected: '此恢复身份正在另一页面使用，不能接管其回合。此页面将使用新的连接身份。',
-  cache_expired: '恢复缓存已过期，无法完整补收。请重新读取原生历史；消息不会自动重发。',
-  capacity: '恢复缓存已达到上限，已停止此连接的回合。请重新读取原生历史；消息不会自动重发。',
-  server_closed: '后端已关闭，本轮已停止。请重新读取原生历史。',
+  owner_missing: '本轮回复未能完整恢复，请重新读取会话。消息不会自动重发。',
+  owner_connected: '原窗口仍在使用此连接，本窗口将重新连接。',
+  cache_expired: '本轮回复未能完整恢复，请重新读取会话。消息不会自动重发。',
+  capacity: '恢复记录已满，本连接的任务已停止。请重新读取会话。',
+  server_closed: '服务已关闭，本轮已停止。重新连接后可读取会话。',
 };
 const sizeOf = (data: string) => data.length * 2 + 128;
 function messageClientId(owner: Owner, message: ServerMessage): string | undefined {

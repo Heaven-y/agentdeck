@@ -56,7 +56,7 @@ it('结果未确认只留在过程详情，两轮回复不插入红条且普通�
   render(<ConversationTimeline items={items} running={false} />);
   expect(screen.getByText('第一条回复')).toBeTruthy();
   expect(screen.getByText('第二条回复')).toBeTruthy();
-  expect(screen.queryByText(/原生结果包含无法确认归属的错误/)).toBeNull();
+  expect(screen.queryByText(/CLI 返回的完成状态与本轮记录不一致/)).toBeNull();
   expect(screen.getAllByRole('alert')).toHaveLength(1);
   expect(screen.getByText('本轮明确错误')).toBeTruthy();
 });

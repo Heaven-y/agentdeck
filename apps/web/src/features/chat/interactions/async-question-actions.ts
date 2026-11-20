@@ -68,7 +68,7 @@ function verifiedAnswer(native: Extract<AgentEvent, { type: 'async_question' }>)
     status: native.answered ? ('accepted' as const) : ('open' as const),
     recovery: undefined,
     responding: false,
-    error: native.answered ? undefined : '原生历史尚未确认回答；已保留答案，可显式提交，服务端仍会核对去重。',
+    error: native.answered ? undefined : '暂未找到回答记录，填写内容已保留。',
   };
 }
 
@@ -79,7 +79,7 @@ function recordVerificationFailure(
   change: (question: AsyncQuestion, patch: Partial<Extract<ChatItem, { kind: 'async-question' }>>) => void,
 ) {
   if (isCurrentVerification(get, question, id))
-    change(question, { recovery: { id }, error: '未能核对原生问题，请保留答案并重试核对。' });
+    change(question, { recovery: { id }, error: '发送结果读取失败，回答已保留，请重试。' });
 }
 
 async function readNativeQuestion(question: AsyncQuestion, workspaceId: string) {
@@ -178,7 +178,7 @@ export function invalidateAsyncQuestions(get: Get, set: Set) {
             status: 'open' as const,
             responding: false,
             recovery: { id: crypto.randomUUID() },
-            error: '答复受理尚未确认；请先核对原生历史，答案已保留，不会自动重发。',
+            error: '回答可能已发出，内容已保留。请先检查发送结果。',
           }
         : item,
     );

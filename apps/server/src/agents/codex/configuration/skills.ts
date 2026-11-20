@@ -97,7 +97,6 @@ export function createCodexSkills(
 }
 
 export const codexSkills: SkillAdapter = {
-  description: '启停按原生技能文件路径保存到 Codex 用户配置；项目可信状态仍由 Codex 决定。',
   readNative: ({ env, project, homeDir }) => createCodexSkills({ env }).read(project?.dir ?? homeDir),
   async readConfig({ env, project, homeDir }) {
     const sources = [

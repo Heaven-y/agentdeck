@@ -105,7 +105,7 @@ async function idleTrajectory(result: ManagementRecord, id: string, dir: string)
 }
 
 function unstableTurnTrajectory(): never {
-  throw new SessionError(503, 'session_history_incomplete', 'Antigravity 本轮轨迹未完整读取，请核对原生会话。');
+  throw new SessionError(503, 'session_history_incomplete', 'Antigravity 本轮记录未完整读取，请重新读取会话。');
 }
 
 async function recheckTurnPages(
@@ -169,7 +169,7 @@ async function awaitSummary(id: string, ready: (id: string) => boolean) {
   const deadline = Date.now() + 2000;
   while (!ready(id)) {
     if (Date.now() >= deadline)
-      throw new SessionError(503, 'session_runtime_failed', '原生分支已创建，摘要尚未就绪；稍后重新读取列表核对。');
+      throw new SessionError(503, 'session_runtime_failed', '分支已创建，暂未显示在列表中。请稍后刷新列表。');
     await delay(40);
   }
 }
@@ -181,7 +181,7 @@ async function clearSummary(backend: ManagementBackend, id: string, ready: (id: 
     await delay(40);
     if (!ready(id)) return;
   } while (Date.now() < deadline);
-  throw new SessionError(503, 'session_runtime_failed', '原生会话已删除，摘要清理尚未确认；请重试删除以完成清理。');
+  throw new SessionError(503, 'session_runtime_failed', '会话已删除，但列表记录尚未清理。请再次删除以完成清理。');
 }
 
 function forkIndex(total: number, requested?: string): number {

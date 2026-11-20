@@ -124,7 +124,7 @@ it('原生命令确认只批准展示的摘要，重复 start 不重复安装', 
   });
   const approved = { ...input, confirmation: sha };
   await Promise.all([f.service.start('claude', approved), f.service.start('claude', approved)]);
-  expect((await settled(f.service, task.operationId)).status).toBe('succeeded');
+  expect(await settled(f.service, task.operationId)).toMatchObject({ status: 'succeeded', message: undefined });
   await f.service.start('claude', approved);
   expect(executed).toBe(1);
   expect(f.commands.flat()).not.toContain('--yes');

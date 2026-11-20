@@ -71,7 +71,7 @@ it('勾选模型只改草稿，点保存配置才写入显示范围', async () =
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0]![0].settings.modelVisibility).toEqual({ claude: ['one'] });
   await waitFor(() => expect(useChat.getState().defaults.modelVisibility).toEqual({ claude: ['one'] }));
-  expect(await screen.findByText('当前已保存')).toBeTruthy();
+  await waitFor(() => expect(screen.queryByText('保存设置后生效')).toBeNull());
 });
 
 it('恢复全部模型保存时删除该 CLI 的范围，不影响其他 CLI', async () => {

@@ -9,7 +9,7 @@ export function AsyncQuestionCard({ item }: { item: Item }) {
   const dismiss = useChat((state) => state.dismissAsyncQuestion);
   const connected = useChat((state) => state.connection === 'open');
   const verify = useChat((state) => state.verifyAsyncQuestion);
-  if (item.dismissed) return <p className="text-xs text-muted-foreground">已关闭此非阻塞问题</p>;
+  if (item.dismissed) return <p className="text-xs text-muted-foreground">已关闭此问题</p>;
   const interaction = {
     ...item.question.spec,
     id: item.id,
@@ -17,7 +17,9 @@ export function AsyncQuestionCard({ item }: { item: Item }) {
   };
   return (
     <div className="space-y-2">
-      <p className="text-xs leading-5 text-muted-foreground">非阻塞问题，回答将排队发送；本轮结束后仍可回答。</p>
+      {item.status === 'open' && (
+        <p className="text-xs leading-5 text-muted-foreground">可稍后回答，回答将加入待发列表。</p>
+      )}
       {item.status !== 'open' ? (
         <section aria-label={interaction.title} className="rounded-xl border border-border bg-card p-4">
           <p className="text-sm font-medium">{interaction.title}</p>
@@ -48,7 +50,7 @@ export function AsyncQuestionCard({ item }: { item: Item }) {
             void verify(item.question);
           }}
         >
-          {item.recovery.checking ? '正在核对原生历史…' : '核对原生历史'}
+          {item.recovery.checking ? '正在检查发送结果…' : '检查发送结果'}
         </button>
       )}
       {item.error && (

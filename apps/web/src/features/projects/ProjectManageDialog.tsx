@@ -118,7 +118,7 @@ export function ProjectManageDialog(props: Props) {
         )}
         {state.blocked && (
           <p role="status" className="text-sm text-muted-foreground">
-            会话正在运行、准备发送或执行管理操作，请结束后再修改项目。
+            项目正在使用中，请等待当前操作结束后再修改。
           </p>
         )}
         {state.error && (
@@ -190,8 +190,8 @@ function ProjectField({
       )}
       <p className="break-all text-xs leading-5 text-muted-foreground">
         {directory
-          ? `当前目录：${project.dir}。保存后重新发现会话，并清除当前项目已打开的旧会话及参数。磁盘文件不移动。`
-          : '仅修改列表中的显示名称。目录离线时也可改名。'}
+          ? `当前目录：${project.dir}。更换后将关闭此项目已打开的会话，重新加载新目录的会话；不会移动文件。`
+          : '修改项目在列表中的名称。'}
       </p>
     </div>
   );

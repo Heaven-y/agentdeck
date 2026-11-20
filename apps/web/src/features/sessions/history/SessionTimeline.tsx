@@ -19,9 +19,7 @@ function NotReplayable() {
       <div className="max-w-md space-y-2">
         <ShieldQuestion aria-hidden className="mx-auto size-7 text-muted-foreground" />
         <h2 className="text-sm font-medium">此会话的历史无法读取</h2>
-        <p className="text-xs leading-5 text-muted-foreground">
-          当前原生接口未提供可回放的对话正文。可以继续查看会话摘要，缺失的内容不会被补造。
-        </p>
+        <p className="text-xs leading-5 text-muted-foreground">此 CLI 未提供消息正文，可返回会话列表查看摘要。</p>
       </div>
     </Centered>
   );
@@ -51,8 +49,7 @@ function EmptyHistory() {
     <Centered>
       <div className="max-w-md space-y-2">
         <History aria-hidden className="mx-auto size-7 text-muted-foreground" />
-        <h2 className="text-sm font-medium">这条会话没有可显示的历史记录</h2>
-        <p className="text-xs leading-5 text-muted-foreground">CLI 的原生存储里还没有消息，或者这一段记录已被清理。</p>
+        <h2 className="text-sm font-medium">暂无历史消息</h2>
       </div>
     </Centered>
   );
@@ -165,10 +162,6 @@ export function SessionTimeline({
           />
         </RecordedConversationSurface>
       </div>
-      <footer className="flex shrink-0 items-center gap-2 border-t border-border/70 px-4 py-2 text-xs text-muted-foreground sm:px-6">
-        <History aria-hidden className="size-3.5" />
-        只读浏览原生会话记录。
-      </footer>
     </div>
   );
 }

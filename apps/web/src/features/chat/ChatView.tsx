@@ -119,11 +119,9 @@ function useHistoryPagination(): HistoryPagination | undefined {
 function EmptyConversation({ hasSession, notice }: { hasSession: boolean; notice?: string }) {
   return (
     <div className="m-auto max-w-lg px-6 py-12 text-center">
-      <h2 className="text-[26px] font-medium leading-8 tracking-tight">
-        {hasSession ? '继续原生会话' : '从一条消息开始'}
-      </h2>
+      <h2 className="text-[26px] font-medium leading-8 tracking-tight">{hasSession ? '继续会话' : '从一条消息开始'}</h2>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {notice ?? (hasSession ? '原生记录中没有可显示的消息，可以继续发送。' : '描述你想完成的任务。')}
+        {notice ?? (hasSession ? '暂无历史消息，可以继续发送。' : '描述你想完成的任务。')}
       </p>
     </div>
   );

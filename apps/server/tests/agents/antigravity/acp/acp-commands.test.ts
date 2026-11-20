@@ -84,7 +84,7 @@ it('目录缺失等待有界，取消立即关闭等待且不能借外会话目�
   vi.useFakeTimers();
   try {
     const commands = new AcpCommands();
-    const failed = expect(commands.ready('missing')).rejects.toThrow('目录');
+    const failed = expect(commands.ready('missing')).rejects.toThrow('列表尚未就绪');
     await vi.advanceTimersByTimeAsync(5000);
     await failed;
     const controller = new AbortController();

@@ -22,7 +22,6 @@ export function ProductSettingsForm(props: Props) {
     <section className="space-y-4">
       <div className="space-y-1">
         <h3 className="font-medium">新会话默认值</h3>
-        <p className="text-sm leading-6 text-muted-foreground">用于新会话，已有会话和当前轮次保持原设置。</p>
       </div>
       <label htmlFor={`${id}-agent`} className="flex max-w-xs flex-col gap-1.5 text-sm">
         默认 Agent
@@ -45,7 +44,6 @@ export function ProductSettingsForm(props: Props) {
       <section className="space-y-3 border-t border-border pt-4">
         <div className="space-y-1">
           <h3 className="font-medium">对话与侧栏</h3>
-          <p className="text-sm leading-6 text-muted-foreground">影响界面的显示密度；侧栏拖拽宽度仍由本机记住。</p>
         </div>
         <label htmlFor={`${id}-limit`} className="flex max-w-xs flex-col gap-1.5 text-sm">
           每个项目显示的会话条数

@@ -22,13 +22,13 @@ type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 function requestFailure(error: unknown): CodexError {
   const native = record(error);
   if (native.code === -32600 && record(native.data).type === 'modelProviderMismatch')
-    return new CodexError('该 Codex 会话仍可查看历史。继续发送须使用它原本的原生服务商。', true);
-  if (native.code === -32601) return new CodexError('Codex 当前原生版本不支持此实验性接口。', true, true);
+    return new CodexError('继续此会话需切回原来的模型服务商。', true);
+  if (native.code === -32601) return new CodexError('当前 Codex 版本不支持此操作。', true, true);
   const message = text(native.message);
   // 只识别权限字段并返回固定说明，不把服务端错误中的配置值或路径透给网页。
   if (/approvals?[ _]?(reviewer|policy)|auto_review|guardian_subagent|sandbox|permission.?profile/i.test(message))
     return new CodexError('Codex 未接受所选权限模式，请检查当前版本和原生权限策略。', true);
-  return new CodexError('Codex 请求失败，请检查本机配置、登录状态或会话是否仍存在。', true);
+  return new CodexError('Codex 请求失败。', true);
 }
 
 /** app-server 的 stdio 仅接受逐行 JSON-RPC；stderr 持续排空而不泄露诊断原文。 */
@@ -65,7 +65,7 @@ export class CodexClient {
     });
     this.child.stdout.on('data', (chunk: Buffer) => this.receive(chunk));
     this.child.stderr.resume();
-    this.child.stdin.on('error', () => this.terminate(new CodexError('Codex 通信管道已关闭。')));
+    this.child.stdin.on('error', () => this.terminate(new CodexError('Codex 连接已断开。')));
     this.child.on('error', () => this.terminate(new CodexError('无法启动 Codex，请检查安装与可执行文件路径。')));
     this.child.on('close', () => {
       this.fail(this.failure ?? new CodexError('Codex 进程意外退出。'));
@@ -98,7 +98,7 @@ export class CodexClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new CodexError('Codex 请求超时，请检查本机运行时状态。'));
+        reject(new CodexError('Codex 响应超时。'));
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer, media: mediaHistory(method, params) });
       // 即使本轮没有上传图片，工具仍可返回媒体；解析后按具体事件再次执行8/32 MiB限制。

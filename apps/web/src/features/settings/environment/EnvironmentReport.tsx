@@ -8,28 +8,22 @@ import { useCancelableRequest } from '../../../lib/use-cancelable-request';
 import { agentTool, useEnvironment } from './use-environment';
 import { CliInstallationPanel } from '../installation/CliInstallationPanel';
 import { cliInstallationKey } from '../installation/cli-installation-api';
+import { useChat } from '../../chat/state/chat-store';
 
 export function EnvironmentSummary({ onOpenSettings }: { onOpenSettings(): void }) {
   const query = useEnvironment();
-  const missing = query.data?.tools.filter((tool) => !tool.available) ?? [];
-  if (query.isSuccess && missing.length === 0) return null;
+  const agent = useChat((state) => state.agent);
+  const tool = agentTool(query.data, agent);
+  if (query.isPending || (!query.isError && tool?.available !== false)) return null;
   return (
     <section
       aria-label="启动环境摘要"
       className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border px-4 py-1 text-xs leading-6"
     >
-      <p role="status">
-        {query.isPending
-          ? '正在读取环境…'
-          : query.isError
-            ? '环境读取失败'
-            : `缺少或不可用：${missing.map((tool) => tool.name).join('、')}`}
-      </p>
-      {(query.isError || !!missing.length) && (
-        <button type="button" className={`${buttonClass('ghost')} text-xs`} onClick={onOpenSettings}>
-          查看设置
-        </button>
-      )}
+      <p role="status">{query.isError ? '环境读取失败' : `${tool!.name} 暂不可用`}</p>
+      <button type="button" className={`${buttonClass('ghost')} text-xs`} onClick={onOpenSettings}>
+        查看设置
+      </button>
     </section>
   );
 }
@@ -62,9 +56,6 @@ export function EnvironmentReport({ disabled }: { disabled: boolean }) {
           {request.busy ? '正在检测…' : '重新检测'}
         </button>
       </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        “重新检测”检查本机 CLI 是否可用；各卡片的“检查更新”联网查询官方最新版本。
-      </p>
       {query.isPending && <p role="status">正在读取环境…</p>}
       {(request.error || query.error) && (
         <p role="alert" className="text-sm text-destructive-foreground">

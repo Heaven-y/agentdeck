@@ -70,7 +70,7 @@ export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem 
           )}
         </span>
         <span
-          title={item.status === 'incomplete' ? '需核对实际执行状态' : undefined}
+          title={item.status === 'incomplete' ? '未收到执行结果' : undefined}
           className="shrink-0 whitespace-nowrap text-xs"
         >
           <StatusLabel item={item} />
@@ -91,7 +91,7 @@ export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem 
       <div className="mt-1 mr-2 mb-2 ml-3.5 flex min-w-0 flex-col gap-3 border-l border-border py-1 pl-4">
         <ToolDescription item={item} />
         <MessageAttachments attachments={item.attachments} />
-        {item.status === 'incomplete' && <p className="text-xs text-warning">需核对实际执行状态</p>}
+        {item.status === 'incomplete' && <p className="text-xs text-warning">未收到执行结果</p>}
         {item.usage && <StatisticsLine statistics={{ ...item, scope: 'step' }} />}
         <div className="min-w-0">
           <p className="mb-1 text-xs text-muted-foreground">输入</p>

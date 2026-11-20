@@ -60,7 +60,7 @@ export function NativeSkillImport({
     <details className="space-y-3 rounded-lg border border-dashed border-border-strong p-3">
       <summary className="cursor-pointer text-sm font-medium">导入本地技能目录</summary>
       <p className="text-sm text-muted-foreground">
-        选择包含 SKILL.md 的完整目录，保留脚本、参考资料与图片；导入时不会运行文件。最多 128 个文件、6 层、8 MiB。
+        选择包含 SKILL.md 的技能文件夹。最多 128 个文件、6 层目录，共 8 MiB。
       </p>
       <label className="block space-y-1 text-sm">
         保存位置

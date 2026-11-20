@@ -58,7 +58,7 @@ export function NativePluginDetails({
           关闭详情
         </button>
       </div>
-      <p className="whitespace-pre-wrap break-words text-sm">{entry.description || '原生插件未提供描述。'}</p>
+      {entry.description && <p className="whitespace-pre-wrap break-words text-sm">{entry.description}</p>}
       {entry.components.length > 0 && (
         <ul className="space-y-1 text-xs text-muted-foreground">
           {entry.components.map((item) => (
@@ -88,9 +88,7 @@ export function NativePluginDetails({
             });
           }}
         >
-          <p className="text-sm text-muted-foreground">
-            不回填已保存值；空白项保留原值。配置值仅用于此次原生配置操作。
-          </p>
+          <p className="text-sm text-muted-foreground">留空可保留已保存的值。</p>
           {options.map((option) => (
             <div key={option.key} className="space-y-1">
               <label className="block text-sm" htmlFor={`plugin-option-${option.key}`}>

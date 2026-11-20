@@ -50,7 +50,6 @@ export type SkillStateChange = {
   value: NativeSkillState;
 };
 export type SkillAdapter = {
-  description: string;
   readNative(context: SkillContext): Promise<NativeSkill[]>;
   readConfig(context: SkillContext): Promise<NativeConfigSource[]>;
   verifyVersion(context: SkillContext): Promise<boolean>;

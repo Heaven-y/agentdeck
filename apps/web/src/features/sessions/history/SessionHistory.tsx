@@ -14,9 +14,7 @@ function SelectSession() {
     <div className="m-auto max-w-md px-6 py-12 text-center">
       <MessagesSquare aria-hidden className="mx-auto size-8 text-muted-foreground" />
       <h2 className="mt-3 text-base font-medium">选择一条会话查看历史</h2>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-        左栏按项目与 CLI 列出原生会话。M1 只读：读历史，不发消息。
-      </p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">从左侧项目中选择会话。</p>
     </div>
   );
 }

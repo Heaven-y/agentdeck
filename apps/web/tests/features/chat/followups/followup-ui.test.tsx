@@ -81,12 +81,12 @@ it('待发因结果冲突暂停时就地查看原因，清空后不留下页脚�
     snapshot: {
       ...state([{ clientMessageId: 'queued-next', revision: 0, mode: 'queue', status: 'queued', text: '下一条' }]),
       paused: true,
-      reason: '本轮原生结果未确认，待发列表已暂停。',
+      reason: '本轮结果尚未确认，待发已暂停。',
     },
   });
   mount();
   const queue = screen.getByRole('region', { name: '待发列表' });
-  expect(within(queue).getByText('本轮原生结果未确认，待发列表已暂停。')).toBeTruthy();
+  expect(within(queue).getByText('本轮结果尚未确认，待发已暂停。')).toBeTruthy();
   fireEvent.click(within(queue).getByRole('button', { name: '查看待发暂停原因' }));
   expect(useChat.getState().inspectedItemId).toBe(items.find((item) => item.kind === 'turn-status')!.id);
   expect(sent).toEqual([]);
@@ -253,20 +253,47 @@ it('待发项收到取回确认才回到输入框，保留已有草稿；未知�
     emit({
       type: 'followup.state',
       snapshot: {
-        ...state([{ clientMessageId: 'unknown', mode: 'steer', revision: 5, status: 'unknown', text: '未确认' }]),
+        ...state([
+          {
+            clientMessageId: 'unknown',
+            mode: 'steer',
+            revision: 5,
+            status: 'unknown',
+            text: '未确认',
+            reason: '连接中断，发送结果未知。',
+          },
+        ]),
         revision: 3,
         paused: true,
+        reason: '连接中断，发送结果未知。',
       },
     }),
   );
   expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '继续列表' }).disabled).toBe(true);
+  expect(screen.getByText('可能已发送')).toBeTruthy();
+  expect(screen.getAllByText('连接中断，发送结果未知。')).toHaveLength(1);
   const count = sent.length;
   fireEvent.click(screen.getByRole('button', { name: '移除' }));
   expect(sent).toHaveLength(count);
-  expect(screen.getByText(/移除记录不会撤回/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '确认仅移除记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认移除（不撤回消息）' }));
   expect(sent.at(-1)).toMatchObject({ type: 'followup.cancel', revision: 5 });
+  const existing = useChat.getState().followups[queueId]!;
+  act(() =>
+    useChat.setState({
+      followups: {
+        [queueId]: {
+          ...existing,
+          invalid: true,
+          error: '待发列表已暂停，请先重新读取会话，再取回需要发送的内容。',
+          snapshot: { ...existing.snapshot, items: [] },
+        },
+      },
+    }),
+  );
+  expect(screen.getByRole('alert').textContent).toBe('待发列表已暂停，请先重新读取会话，再取回需要发送的内容。');
+  expect(screen.queryByText('连接中断，发送结果未知。')).toBeNull();
+  expect(screen.queryByText('待发内容已保留，可取回到草稿。')).toBeNull();
 });
 it('异步问题复用表单，明确非阻塞并保留错误后的回答输入', () => {
   const question: AsyncQuestion = {
@@ -282,7 +309,7 @@ it('异步问题复用表单，明确非阻塞并保留错误后的回答输入'
   const item = { kind: 'async-question' as const, id: 'question', question, status: 'open' as const };
   useChat.setState({ items: [item], running: false });
   const component = render(<AsyncQuestionCard item={item} />);
-  expect(screen.getByText(/非阻塞问题/)).toBeTruthy();
+  expect(screen.getByText('可稍后回答，回答将加入待发列表。')).toBeTruthy();
   fireEvent.change(screen.getByLabelText('范围'), { target: { value: '核心代码' } });
   fireEvent.click(screen.getByRole('button', { name: '提交回答' }));
   expect(sent.at(-1)).toMatchObject({ type: 'question.respond' });

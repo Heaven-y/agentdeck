@@ -227,7 +227,7 @@ it('重开恢复原生命令确认，页面卸载不取消任务，确认发送�
   const view = render(<NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />);
   await screen.findByText('fixture-tool plugin-path');
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '确认并继续' }).disabled).toBe(true);
-  fireEvent.click(screen.getByLabelText('我已核对上述原生命令'));
+  fireEvent.click(screen.getByLabelText('允许执行以上命令'));
   fireEvent.click(screen.getByRole('button', { name: '确认并继续' }));
   await vi.waitFor(() => expect(calls.some((c) => c.url.includes('/start'))).toBe(true));
   expect(calls.find((c) => c.url.includes('/start'))!.body).toEqual({

@@ -110,7 +110,6 @@ async function readClaudeInstalledSkills(context: SkillContext): Promise<NativeS
 }
 
 export const claudeSkills: SkillAdapter = {
-  description: '可见性按原生技能名应用，同名用户与项目技能共享该设置；默认继承保留原生配置。',
   readNative: readClaudeInstalledSkills,
   readConfig: claudeSkillConfig,
   verifyVersion: (context) => verifiedSkillVersion(context, '2.1.317', (env) => resolveLocalCommand('claude', env)),

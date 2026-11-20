@@ -20,7 +20,7 @@ type Entry = {
   stopping: Set<string>;
   error?: string;
 };
-const unavailable = () => new SessionError(409, 'task_unavailable', '此任务不属于当前页面的活动实例，或已结束。');
+const unavailable = () => new SessionError(409, 'task_unavailable', '此任务已结束或无法从当前页面操作。');
 function boundedTasks(control: RuntimeControl): RuntimeTaskSnapshot[] {
   return control
     .tasks()
@@ -126,8 +126,8 @@ export class RuntimeTasks {
       entry.state.error = undefined;
       this.changed(entry);
     } catch {
-      entry.error = '原生尚未确认任务停止，请核对任务状态后重试。';
-      entry.state = { ...entry.state, error: '原生尚未确认任务停止，请核对任务状态后重试。' };
+      entry.error = '任务可能仍在运行，请稍后重试停止。';
+      entry.state = { ...entry.state, error: entry.error };
       this.deps.send(owner, { type: 'tasks.state', state: entry.state });
     } finally {
       entry.stopping.delete(message.taskId);

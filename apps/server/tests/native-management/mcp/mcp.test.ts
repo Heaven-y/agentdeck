@@ -28,7 +28,9 @@ it('Claude 原生命令补默认参数后仍确认成功，混合状态未知字
     return { exitCode: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   });
   const service = createNativeMcpService({ homeDir: f.homeDir, env: {}, run, plugins: async () => [] });
-  const source = (await service.readMcp('claude')).sources[0]!;
+  const catalog = await service.readMcp('claude');
+  expect(catalog.warnings).toEqual([]);
+  const source = catalog.sources[0]!;
   await expect(
     service.saveMcp('claude', {
       sourceId: source.id,

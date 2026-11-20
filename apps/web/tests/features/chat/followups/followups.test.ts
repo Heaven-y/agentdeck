@@ -279,7 +279,7 @@ it('仍在排队的条目不能复制回草稿形成第二次投递', () => {
   useChat.getState().setDraft('当前草稿');
   useChat.getState().restoreFollowup(queueId, 'queued');
   expect(useChat.getState().draft).toBe('当前草稿');
-  expect(useChat.getState().banner).toContain('仍在列表');
+  expect(useChat.getState().banner).toContain('仍在发送列表');
 });
 it('刷新后没有技能详情时不静默丢弃原生选择', () => {
   emit({
@@ -367,7 +367,7 @@ it('服务器恢复的附件缺少原File时拒绝恢复，未确认错误备份
     ]),
   });
   useChat.getState().restoreFollowup(queueId, 'failed');
-  expect(useChat.getState().banner).toContain('原文件备份');
+  expect(useChat.getState().banner).toBe('无法取回附件，请重新选择文件。');
   useChat.getState().setDraft('追加错误');
   useChat.getState().sendFollowup('追加错误', 'queue');
   const message = sent.at(-1) as Extract<ClientMessage, { type: 'chat.followup' }>;

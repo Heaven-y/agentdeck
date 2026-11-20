@@ -1,6 +1,6 @@
 import { Popover, PopoverDisclosure, usePopoverStore } from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import type { AgentKind, CompactionState } from '@agentdeck/shared/conversation';
+import type { CompactionState } from '@agentdeck/shared/conversation';
 import { useChat } from '../state/chat-store';
 import { useContextWindow } from './use-context-window';
 
@@ -35,14 +35,10 @@ function ContextMeter({ percentage }: { percentage: number }) {
     </span>
   );
 }
-/** Antigravity 只在原生给出 usage_update 或历史 metadata 时才有用量；说明清楚避免误判成没接上。 */
-const emptyUsageMessage = (agent: AgentKind): string =>
-  agent === 'antigravity'
-    ? 'Antigravity 尚未报告上下文用量与窗口大小；原生给出用量后这里会自动更新。'
-    : '此会话尚无可用的上下文用量与窗口报告。';
+const emptyUsageMessage = '暂无上下文用量。';
 
-function usageTitle(usage: ContextUsage | null | undefined, summary: string | undefined, agent: AgentKind) {
-  if (!usage) return emptyUsageMessage(agent);
+function usageTitle(usage: ContextUsage | null | undefined, summary: string | undefined) {
+  if (!usage) return emptyUsageMessage;
   return summary ? `${usageSource(usage)} · ${summary} tokens` : usageSource(usage);
 }
 
@@ -72,7 +68,6 @@ function ContextLabel({
 export function ContextStatus() {
   const popover = usePopoverStore({ placement: 'top-end' });
   const usage = useContextWindow();
-  const agent = useChat((state) => state.agent);
   const actualModel = useChat((state) => state.actualModel);
   const compaction = useChat((state) => state.compaction);
   const running = useChat((state) => state.running);
@@ -84,7 +79,7 @@ export function ContextStatus() {
         store={popover}
         render={<button type="button" />}
         aria-label="上下文用量"
-        title={usageTitle(usage, summary, agent)}
+        title={usageTitle(usage, summary)}
         className="composer-statistic inline-flex min-h-6 min-w-0 max-w-full flex-wrap items-center gap-1 rounded-md px-1 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
       >
         <ContextLabel usage={usage} compaction={compaction} incomplete={incomplete} />
@@ -97,7 +92,7 @@ export function ContextStatus() {
         aria-label="上下文用量详情"
         className="z-50 max-h-[min(360px,var(--popover-available-height))] w-80 max-w-[calc(100vw-32px)] space-y-2 overflow-y-auto rounded-2xl border border-border bg-card p-3 text-[13px] leading-6 text-muted-foreground shadow-lg"
       >
-        {usage ? <UsageDetails usage={usage} model={actualModel} /> : <p>{emptyUsageMessage(agent)}</p>}
+        {usage ? <UsageDetails usage={usage} model={actualModel} /> : <p>{emptyUsageMessage}</p>}
         {compaction && compaction.status !== 'completed' && (
           <CompactionStatus state={compaction} incomplete={incomplete} />
         )}

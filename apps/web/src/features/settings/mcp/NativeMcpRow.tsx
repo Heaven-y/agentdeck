@@ -12,7 +12,7 @@ type Props = {
   change(action: 'enable' | 'disable' | 'delete'): void;
 };
 function persistentLabel(enabled: boolean | null) {
-  return enabled === null ? '由原生加载与批准决定' : enabled ? '已启用' : '已禁用';
+  return enabled === null ? '由 CLI 管理' : enabled ? '已启用' : '已禁用';
 }
 function RowActions({ entry, busy, editing, edit, change }: Props) {
   return (
@@ -35,7 +35,7 @@ function RowActions({ entry, busy, editing, edit, change }: Props) {
           disabled={busy}
           onClick={() => change(entry.enabled ? 'disable' : 'enable')}
         >
-          {entry.enabled ? '持久禁用' : '持久启用'}
+          {entry.enabled ? '禁用配置' : '启用配置'}
         </button>
       )}
       {entry.actions.delete && (
@@ -63,7 +63,7 @@ export function NativeMcpRow(props: Props) {
         </p>
       </div>
       <p className="break-all text-sm">
-        持久配置：{persistentLabel(entry.enabled)}
+        配置：{persistentLabel(entry.enabled)}
         {entry.config.urlOrigin ? ` · ${entry.config.urlOrigin}` : ''}
         {entry.config.command ? ` · ${entry.config.command}` : ''}
       </p>

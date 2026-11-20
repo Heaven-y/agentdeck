@@ -219,7 +219,7 @@ export class TurnManager {
         type: 'task.error',
         runtimeId: message.runtimeId,
         taskId: message.taskId,
-        message: '任务已结束或不属于当前页面的活动实例，请刷新状态后核对。',
+        message: '此任务已结束或无法从当前页面操作。',
       });
     }
   }
@@ -266,7 +266,7 @@ export class TurnManager {
         agent: msg.agent,
         sessionId: msg.sessionId,
         messageId: msg.messageId,
-        message: error instanceof SessionError ? error.message : '未能提交回答，请保留内容并核对原生会话。',
+        message: error instanceof SessionError ? error.message : '回答提交结果不明，请重新读取会话后再操作。',
       });
     }
   }

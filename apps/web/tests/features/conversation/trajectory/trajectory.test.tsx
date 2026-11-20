@@ -92,7 +92,7 @@ it('没有回复正文时，未确认的结果仍能从本轮轨迹打开详情'
   render(<Fixture />);
   fireEvent.click(screen.getByRole('button', { name: '查看步骤 1：状态 本轮结果待核实' }));
   expect(await screen.findByRole('heading', { name: '步骤详情' })).toBeTruthy();
-  expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
+  expect(screen.getByText(/CLI 返回的完成状态与本轮记录不一致/)).toBeTruthy();
 });
 
 it('没有回复正文的恢复状态仍可从待发暂停处打开本轮详情', async () => {
@@ -116,7 +116,7 @@ it('没有回复正文的恢复状态仍可从待发暂停处打开本轮详情'
           revision: 1,
           paused: true,
           canSteer: false,
-          reason: '本轮原生结果未确认，待发列表已暂停。',
+          reason: '本轮结果尚未确认，待发已暂停。',
           items: [{ clientMessageId: 'next', revision: 0, mode: 'queue', status: 'queued', text: '下一条' }],
         },
       },
@@ -126,7 +126,7 @@ it('没有回复正文的恢复状态仍可从待发暂停处打开本轮详情'
   expect(screen.queryByRole('button', { name: '查看本轮状态' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看待发暂停原因' }));
   expect(await screen.findByRole('heading', { name: '步骤详情' })).toBeTruthy();
-  expect(screen.getByText(/原生结果包含无法确认归属的错误/)).toBeTruthy();
+  expect(screen.getByText(/CLI 返回的完成状态与本轮记录不一致/)).toBeTruthy();
 });
 
 it('速度只配对同范围数据，未知耗时、失败、非有限 token 均隐藏', () => {

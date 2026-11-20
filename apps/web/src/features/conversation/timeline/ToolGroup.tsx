@@ -30,7 +30,7 @@ export function ToolGroup({
           <span className="flex min-w-0 gap-x-2 overflow-hidden text-xs">
             {counts.failed > 0 && <span className="text-destructive-foreground">失败 {counts.failed}</span>}
             {counts.incomplete > 0 && (
-              <span title="需核对实际执行状态" className="text-warning">
+              <span title="未收到执行结果" className="text-warning">
                 结果未返回 {counts.incomplete}
               </span>
             )}

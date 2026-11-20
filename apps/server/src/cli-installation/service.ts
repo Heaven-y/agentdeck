@@ -365,7 +365,7 @@ class InstallationService implements CliInstallationService {
     const cacheNotice = await this.finish(operation, failure);
     notice ??= cacheNotice;
     entry.phase = failure ? 'failed' : 'succeeded';
-    entry.message = failure?.message ?? notice ?? 'CLI 安装已验证完成';
+    entry.message = failure?.message ?? notice ?? null;
   }
 
   private async finish(operation: Operation, failure: CliInstallationError | undefined): Promise<string | undefined> {

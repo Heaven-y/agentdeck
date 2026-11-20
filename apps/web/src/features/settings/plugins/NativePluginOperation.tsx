@@ -8,11 +8,11 @@ const labels: Record<Operation['status'], string> = {
   prepared: '待开始',
   running: '执行中',
   'awaiting-confirmation': '等待命令确认',
-  cancelling: '正在停止原生进程',
+  cancelling: '正在停止',
   cancelled: '已取消',
   succeeded: '已完成',
   failed: '未开始',
-  unknown: '结果待核对',
+  unknown: '未能确认完成',
 };
 export const pluginTaskActive = (status: Operation['status']) =>
   ['running', 'awaiting-confirmation', 'cancelling'].includes(status);
@@ -47,14 +47,17 @@ export function NativePluginOperation({
       {operation.message && <p className="text-sm">{operation.message}</p>}
       {waiting && operation.shownCommand && (
         <div className="space-y-2">
-          <p className="text-sm">该命令将在本机执行，请核对：</p>
+          <p className="text-sm">插件请求在本机执行以下命令：</p>
           <pre className="whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">
             {operation.shownCommand.command}
           </pre>
-          <p className="break-all font-mono text-xs text-muted-foreground">SHA-256：{operation.shownCommand.sha256}</p>
+          <details className="text-xs text-muted-foreground">
+            <summary className="w-fit cursor-pointer">命令校验值</summary>
+            <p className="break-all font-mono">SHA-256：{operation.shownCommand.sha256}</p>
+          </details>
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
-            我已核对上述原生命令
+            允许执行以上命令
           </label>
         </div>
       )}

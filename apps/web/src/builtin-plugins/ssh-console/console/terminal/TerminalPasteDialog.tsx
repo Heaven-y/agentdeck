@@ -12,11 +12,10 @@ export function TerminalPasteDialog({
 }) {
   return (
     <DetailDialog title="确认多行粘贴" onClose={cancel}>
-      <p className="text-sm text-warning">内容包含换行，粘贴到 shell 后可能立即执行。请确认以下内容。</p>
+      <p className="text-sm text-warning">多行内容可能立即执行，发送后无法撤回。请检查后粘贴。</p>
       <pre className="my-3 max-h-72 overflow-auto whitespace-pre-wrap rounded border border-border bg-background p-3 font-mono text-xs">
         {text}
       </pre>
-      <p className="text-xs text-muted-foreground">发送后无法撤回。</p>
       <div className="mt-4 flex justify-end gap-2">
         <button type="button" className={buttonClass('outline')} onClick={cancel}>
           取消

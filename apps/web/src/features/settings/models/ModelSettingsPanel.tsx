@@ -241,7 +241,7 @@ function SettingsFooter({
   return (
     <footer className="settings-footer mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4">
       <p role={state.message ? 'status' : undefined} className="min-w-0 text-xs text-muted-foreground">
-        {state.message || (dirty ? '有未保存修改' : 'URL 和 Key 保存后，下次发送生效')}
+        {state.message || (dirty ? '有未保存修改' : '')}
       </p>
       <div className="flex shrink-0 gap-2">
         {!state.document && state.error && (

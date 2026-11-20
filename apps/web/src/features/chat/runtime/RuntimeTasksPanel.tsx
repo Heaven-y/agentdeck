@@ -7,11 +7,11 @@ import { runtimeTaskStopping, stopRuntimeTask, useRuntimeTasks } from './runtime
 
 const statusText = {
   running: '运行中',
-  waiting: '正在核验',
+  waiting: '正在获取状态',
   completed: '已完成',
   failed: '失败',
   cancelled: '已停止',
-  unknown: '状态未确认',
+  unknown: '状态不可用',
 };
 export function RuntimeTasksPanel() {
   const [open, setOpen] = useState(true);
