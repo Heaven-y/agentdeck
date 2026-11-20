@@ -25,6 +25,8 @@ const USAGE_FIELDS = [
 const record = (value: unknown): RecordValue =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as RecordValue) : {};
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
+const replyIdentity = (value: unknown) =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? { id: `agy-step-${value}` } : {};
 const clip = (value: string) => (value.length > 20_000 ? `${value.slice(0, 20_000)}\n[输出已截断]` : value);
 const toolOutput = (info: RecordValue) => {
   const error = antigravityDiagnostic(text(record(info.error).message), 'tool');
@@ -93,7 +95,8 @@ export class AntigravityMapper {
   private errorIndices = new Set<number>();
   private rateLimitedResult = false;
   private resultReviewable = false;
-  cumulativeResult = false;
+  resumedResultError = false;
+  private resultError = '';
   resultDiagnostic?: DiagnosticEvent;
   result?: Extract<AgentEvent, { type: 'turn_end' }>;
 
@@ -145,7 +148,10 @@ export class AntigravityMapper {
     if (step.step_type === 'agent_response') {
       const delta = text(step.text_delta);
       if (delta) this.streamed = true;
-      return [...(delta ? [{ type: 'text' as const, delta }] : []), ...this.stepStatistics(step)];
+      return [
+        ...(delta ? [{ type: 'text' as const, delta, ...replyIdentity(step.step_index) }] : []),
+        ...this.stepStatistics(step),
+      ];
     }
     if (step.step_type === 'checkpoint') return this.checkpoint(step);
     if (Array.isArray(record(step.subagent_info).subagents)) return this.subagentStep(step);
@@ -214,7 +220,8 @@ export class AntigravityMapper {
     const content = text(response.modifiedResponse) || text(response.response);
     const events: AgentEvent[] = [];
     // 只有该步骤完全没有直播正文时才补整段，避免被统计事件分隔成两条回复。
-    if (!this.replySteps.has(reply.finalIndex) && content) events.push({ type: 'text', delta: content });
+    if (!this.replySteps.has(reply.finalIndex) && content)
+      events.push({ type: 'text', id: `agy-step-${reply.finalIndex}`, delta: content });
     const statistics = this.finalReplyStatistics(
       `agy-step-${reply.finalIndex}`,
       reply.finalIndex,
@@ -242,7 +249,7 @@ export class AntigravityMapper {
   completionBoundary(): CompletionBoundary | undefined {
     if (
       !this.result?.isError ||
-      (!this.resultReviewable && !this.cumulativeResult) ||
+      (!this.resultReviewable && !this.resumedResultError) ||
       this.uncertainBoundary ||
       this.inputIndex === undefined ||
       !this.sessionId
@@ -254,6 +261,7 @@ export class AntigravityMapper {
       latestIndex: this.latestIndex ?? this.inputIndex,
       errorIndices: [...this.errorIndices],
       rateLimitedResult: this.rateLimitedResult,
+      ...(this.resumedResultError ? { resultError: this.resultError } : {}),
     };
   }
 
@@ -359,10 +367,11 @@ export class AntigravityMapper {
 
   private prepareResult(result: RecordValue): AgentEvent[] {
     const resultError = text(result.error).trim();
+    this.resultError = resultError;
     this.rateLimitedResult = rateLimitOnlyFailure(resultError);
-    this.cumulativeResult = this.isResumedResultError(result);
-    if (result.status !== 'SUCCESS' && !this.cumulativeResult)
-      this.resultDiagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
+    // 每轮 result 默认属于本轮；续接只开放复核，不预先认定错误来自历史。
+    this.resumedResultError = this.isResumedResultError(result);
+    if (result.status !== 'SUCCESS') this.resultDiagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
     const hasDeniedActions = Array.isArray(result.denied_actions) && result.denied_actions.length > 0;
     this.resultReviewable = !hasDeniedActions && this.reviewableResult(result);
     return hasDeniedActions ? [{ type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE }] : [];
@@ -381,7 +390,7 @@ export class AntigravityMapper {
       result.conversation_id === this.sessionId &&
       result.status === 'ERROR' &&
       (!text(result.error).trim() || this.rateLimitedResult) &&
-      // 续接的累计错误可能没有正文；只开放只读复核，不直接判为成功。
+      // 缺少错误正文仍只开放只读复核，不能凭已有答复判为成功。
       reviewableError(result.error, !!this.expectedId)
     );
   }

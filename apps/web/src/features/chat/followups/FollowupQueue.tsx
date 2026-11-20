@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { ArrowUp, MessageSquare, SquarePen, Trash2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
-import type { FollowupItem, FollowupStatus } from '@agentdeck/shared/conversation';
+import { FOLLOWUP_UNCONFIRMED_REASON, type FollowupItem, type FollowupStatus } from '@agentdeck/shared/conversation';
 import { useChat } from '../state/chat-store';
 import {
   canReturnToDraft,
   canSteerQueued,
+  followupView,
   pendingFollowups,
   type FollowupDraft,
   type LocalFollowupQueue,
@@ -177,6 +178,31 @@ function QueueControls({ queue, unresolved }: { queue: LocalFollowupQueue; unres
     </div>
   );
 }
+function QueueReason({ queue }: { queue: LocalFollowupQueue }) {
+  const inspect = useChat((state) => state.inspectItem);
+  const status = useChat((state) => {
+    if (state.running || state.pendingClientTurnId || queue.invalid || !queue.snapshot.paused) return;
+    const start = state.items.findLastIndex((item) => item.kind === 'user' && !item.steeringInput);
+    return state.items.slice(start + 1).findLast((item) => item.kind === 'turn-status');
+  });
+  const reason = queue.snapshot.reason;
+  if (!reason) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
+      <p role="status">{reason}</p>
+      {status && reason === FOLLOWUP_UNCONFIRMED_REASON && (
+        <button
+          type="button"
+          className="rounded-md px-1 hover:bg-muted hover:text-foreground"
+          aria-label="查看待发暂停原因"
+          onClick={() => inspect(status.id)}
+        >
+          查看原因
+        </button>
+      )}
+    </div>
+  );
+}
 function QueuePanel({ queue, focusComposer }: Omit<EntryProps, 'item'>) {
   const unresolved = pendingFollowups(queue);
   const local = Object.values(queue.drafts).filter(
@@ -193,11 +219,7 @@ function QueuePanel({ queue, focusComposer }: Omit<EntryProps, 'item'>) {
           {queue.error}
         </p>
       )}
-      {queue.snapshot.reason && (
-        <p role="status" className="text-xs leading-5 text-muted-foreground">
-          {queue.snapshot.reason}
-        </p>
-      )}
+      <QueueReason queue={queue} />
       {queue.invalid && <p className="text-xs leading-5 text-warning">列表已失效，保留本页备份。</p>}
       <ul className="space-y-1">
         {unresolved.map((item) => (
@@ -215,10 +237,7 @@ export function FollowupQueue({ focusComposer }: { focusComposer(): void }) {
   const queues = useChat(
     useShallow((state) =>
       Object.values(state.followups).filter(
-        (queue) =>
-          queue.snapshot.conversationId === state.conversationId &&
-          queue.snapshot.workspaceId === state.workspaceId &&
-          queue.snapshot.agent === state.agent,
+        (queue) => followupView(state, queue.snapshot)?.conversationId === state.conversationId,
       ),
     ),
   );

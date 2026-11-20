@@ -7,6 +7,7 @@ import {
 } from '../management/management-rpc';
 import { contextEvent, historyResponseTiming, historyTiming, stepUsage } from '../run/metrics';
 import { historyGeneration } from '../run/generation-timing';
+import { historyResponseModel } from '../run/generation-model';
 import { OMITTED_HISTORY_STEP } from '../management/history-window';
 
 const DONE = 'CORTEX_STEP_STATUS_DONE';
@@ -175,7 +176,10 @@ function recordedCancellation(step: ManagementRecord): boolean | undefined {
 
 function response(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
   const content = responseContent(step);
-  const events: AgentEvent[] = content ? [{ type: 'text', delta: content }] : [];
+  const responseModel = historyResponseModel(trajectory, step, index);
+  const events: AgentEvent[] = content
+    ? [{ type: 'text', id: `agy-step-${index}`, delta: content, ...(responseModel ? { responseModel } : {}) }]
+    : [];
   const usage = stepUsage(object(step.metadata).modelUsage);
   if (step.status === DONE && usage) {
     const generation = historyGeneration(trajectory, step, index, usage);

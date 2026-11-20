@@ -7,6 +7,7 @@ import { useChat } from '../state/chat-store';
 import {
   conversationBusy,
   conversationHasDraft,
+  conversationHasInput,
   conversationTitle,
   conversationViews,
   waitingPermission,
@@ -40,7 +41,7 @@ export function BackgroundConversations({
           (conversationBusy(view) ||
             queueHasPending(state.followups, view) ||
             view.unread ||
-            !!view.draft ||
+            conversationHasInput(view) ||
             (!view.sessionId && conversationHasDraft(view))),
       ),
     ),

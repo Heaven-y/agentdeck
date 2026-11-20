@@ -11,6 +11,7 @@ import {
   canReturnToDraft,
   canSteerQueued,
   draftContent,
+  followupView,
   pendingFollowups,
   restoreDraft,
   steerAvailable,
@@ -20,7 +21,7 @@ import {
   type LocalFollowupQueue,
 } from './followup-state';
 import { selectionRestriction } from '../controls/capability-selection';
-import { conversationById, updateConversation } from '../state/conversations';
+import { updateConversation } from '../state/conversations';
 import { conversationPermission, conversationPermissionError, permissionPending } from '../state/chat-permission';
 import { openedTab } from '../tabs/conversation-tabs';
 type Set = (patch: Partial<ChatState>) => void;
@@ -157,7 +158,7 @@ export function createFollowupActions(get: () => ChatState, set: Set, send: Chat
         set({ banner: blocked });
         return;
       }
-      const view = conversationById(state, queue.snapshot.conversationId);
+      const view = followupView(state, queue.snapshot);
       const backup = restoreEntry(queue, id, view?.selectedCapability);
       if (!backup || !view || view.attachmentsBusy) return;
       const reason = recoveryBlocked(backup);

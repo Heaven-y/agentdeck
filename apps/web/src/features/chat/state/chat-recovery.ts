@@ -1,12 +1,18 @@
 import type { RecoveryNotice, RecoveryTurn } from '@agentdeck/shared/conversation';
 import type { ChatState, ConversationView } from './chat-state';
 import { emptyConversation, DEFAULT_REASONING_EFFORTS, EMPTY_MODEL_OVERRIDES } from './chat-state-helpers';
-import { conversationBusy, conversationById, conversationViews, updateConversation } from './conversations';
+import {
+  conversationBusy,
+  conversationById,
+  conversationHasDraft,
+  conversationViews,
+  updateConversation,
+} from './conversations';
 import { reduceChat, type ChatItem } from '../../conversation/model/conversation-events';
 import { openedTab } from '../tabs/conversation-tabs';
 import { preserveAttachmentInput } from '../composer/attachment-actions';
 import { applyFollowupSnapshot, invalidateFollowups } from '../followups/followup-events';
-import { inputItem } from '../followups/followup-state';
+import { followupView, inputItem } from '../followups/followup-state';
 import { invalidateAsyncQuestions } from '../interactions/async-question-actions';
 
 type SetState = (patch: Partial<ChatState>) => void;
@@ -55,6 +61,9 @@ function recoveredView(turn: RecoveryTurn, previous?: ConversationView): Convers
 function recoveredText(message: RecoveryTurn['message']): string {
   return message.text || (message.attachments?.length ? '' : '已发送原生技能或命令');
 }
+function canSelectRecovered(state: ChatState) {
+  return !state.items.length && !state.sessionId && !conversationHasDraft(state) && !conversationBusy(state);
+}
 
 export function createChatRecovery(get: () => ChatState, set: SetState, interrupts: Set<string>) {
   const saved = new Map<string, RecoveryTurn>();
@@ -99,11 +108,15 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
       const state = get();
       if (conversationViews(state).some((view) => view.pendingClientTurnId === clientTurnId)) return;
       const id = turn.message.conversationId ?? clientTurnId;
-      const view = recoveredView(turn, conversationById(state, id));
-      const select = !state.items.length && !state.draft && !conversationBusy(state);
+      const previous = followupView(state, { ...turn.message, conversationId: id });
+      if (!previous && conversationById(state, id)) return;
+      const view = recoveredView(turn, previous);
+      const select = canSelectRecovered(state);
       if (select || state.conversationId === view.conversationId) state.cancelHistoryRead();
+      const background = { ...state.background };
+      delete background[view.conversationId];
       set({
-        ...(select ? view : updateConversation(state, view, view)),
+        ...(select ? { ...view, background } : updateConversation(state, view, view)),
         tabIds: openedTab(state.tabIds, view.conversationId),
         initialDefaultsEligible: false,
       });
@@ -111,7 +124,7 @@ export function createChatRecovery(get: () => ChatState, set: SetState, interrup
     onRecovery(notice: RecoveryNotice) {
       switch (notice.type) {
         case 'connection.followups':
-          for (const snapshot of notice.snapshots) applyFollowupSnapshot(get, set, snapshot);
+          for (const snapshot of notice.snapshots) applyFollowupSnapshot(get, set, snapshot, true);
           return;
         case 'connection.snapshot':
           saved.clear();

@@ -1,6 +1,7 @@
 import type { GenerationTiming, TokenUsage } from '@agentdeck/shared/conversation';
 import { managementObject as object, type ManagementRecord } from '../management/management-rpc';
 import { stepUsage } from './metrics';
+import { matchedGenerationModel } from './generation-model';
 
 function milliseconds(value: unknown): number | undefined {
   if (typeof value !== 'string' || !/^\d+(?:\.\d{1,9})?s$/.test(value)) return;
@@ -11,32 +12,6 @@ function milliseconds(value: unknown): number | undefined {
 const sameUsage = (value: unknown, expected: TokenUsage) =>
   JSON.stringify(stepUsage(value)) === JSON.stringify(expected);
 
-function generatorAt(trajectory: ManagementRecord, index: number) {
-  const entries: unknown[] = Array.isArray(trajectory.generatorMetadata) ? trajectory.generatorMetadata : [];
-  const offset = typeof trajectory.generatorMetadataOffset === 'number' ? trajectory.generatorMetadataOffset : 0;
-  return object(entries[index - offset]);
-}
-
-function matchedModel(
-  trajectory: ManagementRecord,
-  step: ManagementRecord,
-  index: number,
-): ManagementRecord | undefined {
-  const metadata = object(step.metadata);
-  const source = object(metadata.sourceTrajectoryStepInfo);
-  if (
-    !Number.isSafeInteger(source.metadataIndex) ||
-    source.stepIndex !== index ||
-    source.cascadeId !== trajectory.cascadeId
-  )
-    return;
-  const generator = generatorAt(trajectory, Number(source.metadataIndex));
-  if (!metadata.executionId || generator.executionId !== metadata.executionId) return;
-  if (!Array.isArray(generator.stepIndices) || generator.stepIndices.length !== 1 || generator.stepIndices[0] !== index)
-    return;
-  return object(generator.chatModel);
-}
-
 /** 单一成功生成且只对应当前回复时才配对，重试、多步骤和旧元数据均不推算。 */
 export function historyGeneration(
   trajectory: ManagementRecord,
@@ -44,7 +19,7 @@ export function historyGeneration(
   index: number,
   usage: TokenUsage,
 ): GenerationTiming | undefined {
-  const model = matchedModel(trajectory, step, index);
+  const model = matchedGenerationModel(trajectory, step, index);
   if (!model) return;
   const retries = Array.isArray(model.retryInfos) ? model.retryInfos : [];
   if (retries.length !== 1 || !sameUsage(object(retries[0]).usage, usage) || !sameUsage(model.usage, usage)) return;

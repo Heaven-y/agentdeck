@@ -86,6 +86,10 @@ it('模式绑定具体会话和下轮输入，运行中改模式只可排队，�
     running: true,
     followups: { queue: { snapshot, drafts: {} } },
   });
+  expect(steerAvailable(useChat.getState())).toBe(false);
+  useChat.setState({
+    followups: { queue: { snapshot: { ...snapshot, activeTurnId: 'turn' }, drafts: {} } },
+  });
   expect(steerAvailable(useChat.getState())).toBe(true);
   await chooseMode('执行模式');
   expect(steerAvailable(useChat.getState())).toBe(false);

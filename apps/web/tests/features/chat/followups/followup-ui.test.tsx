@@ -7,6 +7,7 @@ import { startChatConnection, useChat } from '../../../../src/features/chat/stat
 import { Composer } from '../../../../src/features/chat/composer/Composer';
 import { AsyncQuestionCard } from '../../../../src/features/chat/interactions/AsyncQuestionCard';
 import { chatKeys } from '../../../../src/features/chat/api';
+import { historyItems } from '../../../../src/features/conversation/model/conversation-events';
 const sent: ClientMessage[] = [];
 let emit!: (message: ServerMessage) => void;
 const queueId = '00000000-0000-4000-8000-000000000001';
@@ -68,6 +69,92 @@ function mount() {
     </QueryClientProvider>,
   );
 }
+it('待发因结果冲突暂停时就地查看原因，清空后不留下页脚提醒', () => {
+  const items = historyItems([
+    { type: 'user_message', text: '本轮请求' },
+    { type: 'text', delta: '本轮回复' },
+    { type: 'turn_end', isError: true, outcome: 'unconfirmed' },
+  ]);
+  useChat.setState({ items, running: false });
+  emit({
+    type: 'followup.state',
+    snapshot: {
+      ...state([{ clientMessageId: 'queued-next', revision: 0, mode: 'queue', status: 'queued', text: '下一条' }]),
+      paused: true,
+      reason: '本轮原生结果未确认，待发列表已暂停。',
+    },
+  });
+  mount();
+  const queue = screen.getByRole('region', { name: '待发列表' });
+  expect(within(queue).getByText('本轮原生结果未确认，待发列表已暂停。')).toBeTruthy();
+  fireEvent.click(within(queue).getByRole('button', { name: '查看待发暂停原因' }));
+  expect(useChat.getState().inspectedItemId).toBe(items.find((item) => item.kind === 'turn-status')!.id);
+  expect(sent).toEqual([]);
+  const paused = useChat.getState().followups[queueId]!.snapshot;
+  act(() =>
+    emit({
+      type: 'followup.state',
+      snapshot: { ...paused, revision: 2, reason: '连接已断开，待发列表已暂停；恢复连接后可继续。' },
+    }),
+  );
+  expect(within(queue).getByText('连接已断开，待发列表已暂停；恢复连接后可继续。')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看待发暂停原因' })).toBeNull();
+  act(() => emit({ type: 'followup.state', snapshot: { ...state(), revision: 3, paused: true } }));
+  expect(screen.queryByRole('region', { name: '待发列表' })).toBeNull();
+  expect(screen.queryByText('结果待核实')).toBeNull();
+});
+it('按原生身份认领的队列可见且恢复到当前视图，投递不会另造重复会话', () => {
+  const currentId = useChat.getState().conversationId;
+  useChat.setState({ permission: { agent: 'codex', mode: 'ask' } });
+  emit({
+    type: 'followup.state',
+    snapshot: {
+      ...state([
+        {
+          clientMessageId: '00000000-0000-4000-8000-000000000002',
+          revision: 0,
+          mode: 'queue',
+          status: 'unknown',
+          text: '待核对文字',
+          content: { text: '待核对文字', model: 'queued-model', permission: { agent: 'codex', mode: 'full-access' } },
+        },
+      ]),
+      conversationId: 'previous-view',
+      paused: true,
+    },
+  });
+  mount();
+  expect(screen.getByText('待核对文字')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '恢复到草稿' }));
+  expect(useChat.getState()).toMatchObject({
+    conversationId: currentId,
+    draft: '待核对文字',
+    permission: { agent: 'codex', mode: 'ask' },
+    modelOverrides: { codex: 'queued-model' },
+  });
+  act(() =>
+    emit({
+      type: 'turn.started',
+      turnId: 'next-turn',
+      clientTurnId: 'next-attempt',
+      workspaceId: 'project',
+      agent: 'codex',
+      queueId,
+      input: {
+        type: 'chat.send',
+        workspaceId: 'project',
+        agent: 'codex',
+        conversationId: 'previous-view',
+        sessionId: 'session',
+        clientTurnId: 'next-attempt',
+        text: '已确认的下一轮',
+      },
+    }),
+  );
+  expect(useChat.getState()).toMatchObject({ conversationId: currentId, turnId: 'next-turn' });
+  expect(useChat.getState().background['previous-view']).toBeUndefined();
+  expect(sent).toEqual([]);
+});
 it('运行中默认排队、显式引导与独立停止，IME确认不会排队', async () => {
   emit({ type: 'followup.state', snapshot: state() });
   mount();

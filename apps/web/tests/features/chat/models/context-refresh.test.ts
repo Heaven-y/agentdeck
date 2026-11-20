@@ -38,7 +38,7 @@ function pending() {
   const promise = new Promise<SessionHistory>((done) => (resolve = done));
   return { promise, resolve };
 }
-function start(turnId = 'turn-one') {
+function start(turnId = 'turn-one', replyId?: string) {
   expect(useChat.getState().send('示例输入')).toBe(true);
   const message = sent.at(-1) as Extract<ClientMessage, { type: 'chat.send' }>;
   receive({
@@ -53,7 +53,11 @@ function start(turnId = 'turn-one') {
     turnId,
     event: { type: 'session', agent: 'antigravity', sessionId: 'native', cwd: 'project', model: '当前模型' },
   });
-  receive({ type: 'agent.event', turnId, event: { type: 'text', delta: '实时正文' } });
+  receive({
+    type: 'agent.event',
+    turnId,
+    event: { type: 'text', delta: '实时正文', ...(replyId ? { id: replyId } : {}) },
+  });
 }
 function finish(turnId = 'turn-one') {
   receive({ type: 'agent.event', turnId, event: { type: 'turn_end', isError: false } });
@@ -169,4 +173,70 @@ it('补读超过预算时取消，迟到结果不能写入；下一轮仍可正�
   finish('turn-two');
   await settle();
   expect(useChat.getState().contextUsage).toEqual(usage);
+});
+
+it('已有实时上下文仍补齐本轮同一步骤的响应模型，不改正文、历史回复或菜单型号', async () => {
+  const result = history();
+  result.events = [
+    { type: 'user_message', text: '前一轮' },
+    { type: 'text', id: 'agy-step-1', delta: '旧回复', responseModel: 'old-model' },
+    { type: 'user_message', text: '示例输入' },
+    { type: 'text', id: 'agy-step-3', delta: '实时正文', responseModel: 'actual-model' },
+    { type: 'context', usage },
+  ];
+  const read = vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue(result);
+  useChat.setState({
+    items: [
+      { kind: 'user', id: 'old-user', text: '前一轮' },
+      { kind: 'assistant', id: 'old-reply', nativeId: 'agy-step-1', text: '旧回复', streaming: false },
+    ],
+  });
+  start('turn-one', 'agy-step-3');
+  const live = { ...usage, usedTokens: 1600 };
+  receive({ type: 'agent.event', turnId: 'turn-one', event: { type: 'context', usage: live } });
+  finish();
+  await settle();
+  expect(read).toHaveBeenCalledOnce();
+  expect(useChat.getState().contextUsage).toEqual(live);
+  expect(useChat.getState().actualModel).toBe('当前模型');
+  expect(useChat.getState().items.filter((item) => item.kind === 'assistant')).toMatchObject([
+    { text: '旧回复' },
+    { text: '实时正文', nativeId: 'agy-step-3', responseModel: 'actual-model' },
+  ]);
+  expect(useChat.getState().items.find((item) => item.id === 'old-reply')).not.toHaveProperty('responseModel');
+});
+
+it('补读不按相同正文猜模型，也不采用重复步骤的冲突报告', async () => {
+  const result = history();
+  result.events = [
+    { type: 'text', id: 'agy-step-8', delta: '实时正文', responseModel: 'other-step-model' },
+    { type: 'text', id: 'agy-step-3', delta: '实时正文', responseModel: 'conflict-one' },
+    { type: 'text', id: 'agy-step-3', delta: '实时正文', responseModel: 'conflict-two' },
+  ];
+  vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue(result);
+  start('turn-one', 'agy-step-3');
+  finish();
+  await settle();
+  expect(useChat.getState().items.find((item) => item.kind === 'assistant')).not.toHaveProperty('responseModel');
+});
+
+it('旧轮模型补读迟到时不串到同一时刻发送的新一轮', async () => {
+  vi.useFakeTimers();
+  const first = pending();
+  vi.spyOn(sessionsApi, 'sessionEvents').mockReturnValueOnce(first.promise).mockResolvedValue(history());
+  start('turn-one', 'agy-step-3');
+  finish();
+  start('turn-two', 'agy-step-5');
+  finish('turn-two');
+  first.resolve({
+    ...history(),
+    events: [{ type: 'text', id: 'agy-step-3', delta: '实时正文', responseModel: 'late-model' }],
+  });
+  await settle();
+  expect(
+    useChat
+      .getState()
+      .items.filter((item) => item.kind === 'assistant')
+      .every((item) => !item.responseModel),
+  ).toBe(true);
 });

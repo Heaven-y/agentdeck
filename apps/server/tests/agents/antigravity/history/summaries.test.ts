@@ -358,7 +358,7 @@ describe('Antigravity 原生管理接线', () => {
     const result = await provider.read('source-session', dir);
     expect(result.events).toEqual([
       { type: 'user_message', text: '示例问题' },
-      { type: 'text', delta: '示例回复' },
+      { type: 'text', id: 'agy-step-1', delta: '示例回复' },
       { type: 'turn_end', isError: false, forkPoint: '1' },
     ]);
     management.readTrajectory.mockResolvedValueOnce({ trajectory: { cascadeId: 'foreign', steps: [] } });

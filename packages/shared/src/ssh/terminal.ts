@@ -3,11 +3,8 @@ import { z } from 'zod';
 /** 终端专用限制；正文不进入聊天协议或持久存储。 */
 export const TERMINAL_LIMITS = {
   frameBytes: 32_768,
-  controlBytes: 65_536,
   inputBytes: 262_144,
   initBytes: 131_072,
-  outputBytes: 1_048_576,
-  resumeBytes: 65_536,
   initMs: 10_000,
   panes: 4,
   scrollback: 2_000,

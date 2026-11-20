@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { FOLLOWUP_UNCONFIRMED_REASON } from '@agentdeck/shared/conversation';
 import type {
   ClientMessage,
   FollowupContent,
@@ -326,7 +327,7 @@ export class FollowupHost {
       this.queue.pause(
         group.owner,
         group.context.queueId,
-        outcome.unconfirmed ? '本轮原生结果未确认，待发列表已暂停。' : '本轮失败或停止，待发列表已暂停。',
+        outcome.unconfirmed ? FOLLOWUP_UNCONFIRMED_REASON : '本轮失败或停止，待发列表已暂停。',
       );
     this.publish(group.context.queueId);
     if (outcome.success) void this.pump(group);

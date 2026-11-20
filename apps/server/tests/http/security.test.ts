@@ -52,6 +52,19 @@ describe('访问控制边界', () => {
       expect((await app.inject({ method: 'GET', url: '/api/x', headers })).statusCode).toBe(401);
     }
   });
+
+  it.each(['/%61pi/x', '/a%70i/x', '/%61%70%69/x'])('编码后的 API 路径也必须校验 Cookie：%s', async (url) => {
+    const app = make();
+    try {
+      for (const method of ['GET', 'POST'] as const) {
+        const headers = { host: '127.0.0.1:4317', origin: 'http://127.0.0.1:4317' };
+        expect((await app.inject({ method, url, headers })).statusCode).toBe(401);
+        expect((await app.inject({ method, url, headers: { ...headers, cookie } })).statusCode).toBe(200);
+      }
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 describe('辅助函数', () => {

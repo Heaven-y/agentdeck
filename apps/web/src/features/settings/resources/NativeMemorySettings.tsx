@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ClaudeAutoMemoryState } from '@agentdeck/shared/settings';
 import { FileCode2, RefreshCw } from 'lucide-react';
@@ -32,7 +32,7 @@ function useClaudeAutoMemory() {
   }, [reload]);
 
   const save = async (override: Override) => {
-    if (saving) return;
+    if (saving || !memory) return;
     setSaving(true);
     setError('');
     try {
@@ -47,9 +47,12 @@ function useClaudeAutoMemory() {
   return {
     memory,
     error,
+    loading: !memory && !error,
     saving,
     save,
     refresh() {
+      if (saving) return;
+      setMemory(undefined);
       setError('');
       setReload((value) => value + 1);
     },
@@ -113,18 +116,18 @@ function MemoryStatus({ memory, error }: Pick<ReturnType<typeof useClaudeAutoMem
 function MemoryControls({
   memory,
   saving,
+  loading,
   save,
   refresh,
-}: Pick<ReturnType<typeof useClaudeAutoMemory>, 'memory' | 'saving' | 'save' | 'refresh'>) {
-  if (!memory) return null;
+}: Pick<ReturnType<typeof useClaudeAutoMemory>, 'memory' | 'saving' | 'loading' | 'save' | 'refresh'>) {
   return (
     <>
-      <UserMemoryControl memory={memory} saving={saving} save={save} />
+      {memory && <UserMemoryControl memory={memory} saving={saving} save={save} />}
       <div className="flex items-center justify-between gap-3">
         <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
-          {saving ? '正在保存…' : '更改直接写入 Claude 原生设置。'}
+          {memory && (saving ? '正在保存…' : '更改直接写入 Claude 原生设置。')}
         </p>
-        <button type="button" className={buttonClass('ghost')} disabled={saving} onClick={refresh}>
+        <button type="button" className={buttonClass('ghost')} disabled={saving || loading} onClick={refresh}>
           <RefreshCw aria-hidden className="size-4" />
           重新读取
         </button>

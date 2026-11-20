@@ -72,6 +72,13 @@ function expectUnconfirmed(events: AgentEvent[], completedReplyStepId?: string) 
   if (!completedReplyStepId) expect(events.at(-1)).not.toHaveProperty('completedReplyStepId');
 }
 
+function expectNativeFailure(events: AgentEvent[], diagnostic?: string) {
+  expect(events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  const errors = events.filter((event) => event.type === 'error');
+  expect(errors).toHaveLength(1);
+  if (diagnostic) expect(errors[0]!.message).toContain(diagnostic);
+}
+
 it('累计 result 与历史错误一致时，完成答复后仍保留无法确定本轮归属的状态', async () => {
   const trajectory = completedTrajectory();
   trajectory.steps.splice(
@@ -118,7 +125,7 @@ function completedTrajectory() {
   };
 }
 
-it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时按本轮原生终态复核：%s', async (error) => {
+it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时不能只凭完整答复改判成功：%s', async (error) => {
   const trajectory = completedTrajectory();
   const read = vi.fn(async () => ({ trajectory }));
   const f = await resumedTurn(true, read);
@@ -128,19 +135,28 @@ it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时按�
   f.child.emit('close', 0);
   await f.handle.done;
   expect(read).toHaveBeenCalledWith('native-resumed', cwd, expect.any(AbortSignal));
-  expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
-  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+  expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('未成功完成本轮') });
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
 });
 
-it.each(['same', 'different', 'none'] as const)(
-  '续接结果与历史关系为 %s 时均核对本轮并保留归属不明',
+it.each(['same', 'different', 'none', 'tool-error', 'tool-output'] as const)(
+  '续接结果与历史关系为 %s 时，仅核实旧错误与完整本轮冲突才保留未知',
   async (scenario) => {
     const error = `${previousError}; token=synthetic-secret`;
     const trajectory = completedTrajectory();
     if (scenario === 'same') Object.assign(trajectory.steps[3]!, { errorMessage: { error: { shortError: error } } });
     if (scenario === 'different')
       Object.assign(trajectory.steps[3]!, { errorMessage: { error: { shortError: 'Error 500: 不同错误' } } });
-    if (scenario === 'none') delete (trajectory.steps[3] as Record<string, unknown>).errorMessage;
+    if (scenario === 'none')
+      trajectory.steps[3] = { type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE', status: 'CORTEX_STEP_STATUS_DONE' };
+    if (scenario === 'tool-error' || scenario === 'tool-output')
+      trajectory.steps[3] = {
+        type: 'CORTEX_STEP_TYPE_RUN_COMMAND',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        ...(scenario === 'tool-error'
+          ? { error: { type: 'TOOL_ERROR', message: error } }
+          : { runCommand: { output: error } }),
+      };
     const read = vi.fn(async () => ({ trajectory }));
     const f = await resumedTurn(true, read);
     f.step(4, 'user_input');
@@ -149,7 +165,13 @@ it.each(['same', 'different', 'none'] as const)(
     f.child.emit('close', 0);
     await f.handle.done;
     expect(read).toHaveBeenCalledOnce();
-    expectUnconfirmed(f.events, 'agy-step-6');
+    if (scenario === 'same') expectUnconfirmed(f.events, 'agy-step-6');
+    else {
+      expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+      expect(f.events.filter((event) => event.type === 'error')).toEqual([
+        { type: 'error', message: expect.stringContaining('524') },
+      ]);
+    }
     expect(JSON.stringify(f.events)).not.toContain('synthetic-secret');
   },
 );
@@ -161,7 +183,8 @@ it('缺少原生复核时，完成直播不能单独将 result ERROR 判成功',
   f.result();
   f.child.emit('close', 0);
   await f.handle.done;
-  expectUnconfirmed(f.events);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('524') });
 });
 
 it('新建会话没有历史累计结果，原生524仍显示具体诊断', async () => {
@@ -177,7 +200,19 @@ it('新建会话没有历史累计结果，原生524仍显示具体诊断', asyn
   expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
 });
 
-it('续接纯429的原生复核读取失败时保留状态未确认', async () => {
+it.each(['step', 'stderr'] as const)('本轮 %s 缺少细节时仍展示 result 的具体脱敏诊断', async (source) => {
+  const f = await resumedTurn();
+  f.step(4, 'user_input');
+  if (source === 'step') f.step(5, 'error_message');
+  else f.child.stderr.write('error: synthetic-native-failure\n');
+  f.result({ error: `${previousError}; token=synthetic-secret` });
+  f.child.emit('close', 3);
+  await f.handle.done;
+  expectNativeFailure(f.events, '524');
+  expect(JSON.stringify(f.events)).not.toMatch(/synthetic-native-failure|synthetic-secret/);
+});
+
+it('续接纯429的原生复核读取失败时保留本轮失败', async () => {
   const read = vi.fn(async () => {
     throw new Error('synthetic-private-failure');
   });
@@ -188,7 +223,8 @@ it('续接纯429的原生复核读取失败时保留状态未确认', async () =
   f.child.emit('close', 0);
   await f.handle.done;
   expect(read).toHaveBeenCalledOnce();
-  expectUnconfirmed(f.events);
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events).toContainEqual({ type: 'error', message: expect.stringContaining('429') });
   expect(JSON.stringify(f.events)).not.toContain('synthetic-private-failure');
 });
 
@@ -234,12 +270,11 @@ type MissingErrorGuard = {
   exit?: number;
   interrupt?: boolean;
   review?: boolean;
-  unconfirmed?: boolean;
 };
 const missingErrorGuards: [string, MissingErrorGuard][] = [
   ['新建会话', { resume: false, input: 0 }],
   ['未知结果状态', { result: { status: 'UNKNOWN' } }],
-  ['错误正文格式异常', { result: { error: {} }, review: true, unconfirmed: true }],
+  ['错误正文格式异常', { result: { error: {} }, review: true }],
   ['缺少结果身份', { result: { conversation_id: undefined } }],
   ['权限拒绝', { result: { denied_actions: [{ action: 'command' }] } }],
   ['非零退出', { exit: 3, review: true }],
@@ -257,11 +292,8 @@ it.each(missingErrorGuards)('无错误正文遇到%s时按可用证据分类', a
   await interrupted;
   await f.handle.done;
   expect(read).toHaveBeenCalledTimes(options.review ? 1 : 0);
-  if (options.unconfirmed) expectUnconfirmed(f.events, 'agy-step-6');
-  else {
-    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-    expect(f.events.some((event) => event.type === 'error')).toBe(!options.interrupt);
-  }
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events.some((event) => event.type === 'error')).toBe(!options.interrupt);
 });
 
 it.each(['wrong-session', 'wrong-input', 'current-error', 'later-input', 'later-error'])(
@@ -283,10 +315,7 @@ it.each(['wrong-session', 'wrong-input', 'current-error', 'later-input', 'later-
     f.child.emit('close', 0);
     await f.handle.done;
     expect(read).toHaveBeenCalledOnce();
-    if (scenario === 'current-error' || scenario === 'later-error') {
-      expect(f.events.some((event) => event.type === 'error')).toBe(true);
-      expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-    } else expectUnconfirmed(f.events);
+    expectNativeFailure(f.events);
   },
 );
 
@@ -393,7 +422,7 @@ const mixed429Cases = [
   ['未知附文', 'unexpected network reset', undefined],
 ] as const;
 
-it.each(mixed429Cases)('仅 result 同时含429与%s时不把累计错误当本轮故障', async (_label, other) => {
+it.each(mixed429Cases)('仅 result 同时含429与%s且无相同历史故障时保留本轮失败', async (_label, other, code) => {
   const read = vi.fn(async () => ({ trajectory: rateLimitedTrajectory() }));
   const f = await resumedTurn(true, read);
   f.step(4, 'user_input');
@@ -403,7 +432,7 @@ it.each(mixed429Cases)('仅 result 同时含429与%s时不把累计错误当本�
   f.child.emit('close', 0);
   await f.handle.done;
   expect(read).toHaveBeenCalledOnce();
-  expectUnconfirmed(f.events, 'agy-step-6');
+  expectNativeFailure(f.events, code ?? '其他错误');
 });
 
 it.each(mixed429Cases)('轨迹错误同时含429与%s不能作为纯429恢复', async (_label, other, code) => {
@@ -576,12 +605,7 @@ it.each([
   f.result({ error: rateLimitError });
   f.child.emit('close', scenario === 'exit' ? 1 : 0);
   await f.handle.done;
-  if (['later-input', 'wrong-session', 'missing-reader'].includes(scenario)) {
-    expectUnconfirmed(f.events);
-  } else {
-    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
-  }
+  expectNativeFailure(f.events);
 });
 
 it('429 后用户中断不能被较晚到达的成功轨迹覆盖', async () => {
@@ -634,14 +658,15 @@ it.each([true, false])('累计结果的旧答复不回放，仅轨迹复核可�
   await f.handle.done;
   expect(read).toHaveBeenCalledTimes(hasReader ? 1 : 0);
   expect(f.events.filter((event) => event.type === 'text')).toEqual(
-    hasReader ? [{ type: 'text', delta: '本轮已完成。' }] : [],
+    hasReader ? [{ type: 'text', id: 'agy-step-6', delta: '本轮已完成。' }] : [],
   );
-  expectUnconfirmed(f.events, hasReader ? 'agy-step-6' : undefined);
+  if (hasReader) expectUnconfirmed(f.events, 'agy-step-6');
+  else expectNativeFailure(f.events, '524');
 });
 
 it.each([
   ['累计错误', previousError, '本轮'],
-  ['成功复核', '', '本轮'],
+  ['缺少错误详情', '', '本轮'],
   ['文本不一致', previousError, '直播中的不同文本。'],
 ])('%s 时已有直播正文不再追加原生文本', async (_label, error, streamed) => {
   const f = await resumedTurn(true, async () => ({ trajectory: completedTrajectory() }));
@@ -650,9 +675,11 @@ it.each([
   f.result({ error });
   f.child.emit('close', 0);
   await f.handle.done;
-  expect(f.events.filter((event) => event.type === 'text')).toEqual([{ type: 'text', delta: streamed }]);
+  expect(f.events.filter((event) => event.type === 'text')).toEqual([
+    { type: 'text', id: 'agy-step-6', delta: streamed },
+  ]);
   if (error) expectUnconfirmed(f.events, 'agy-step-6');
-  else expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+  else expectNativeFailure(f.events);
 });
 
 it('直播答复之后仍有运行中的工具时不授予最终步骤或补发统计', async () => {
@@ -667,7 +694,7 @@ it('直播答复之后仍有运行中的工具时不授予最终步骤或补发�
   f.child.emit('close', 0);
   await f.handle.done;
   expect(f.events.filter((event) => event.type === 'step_usage')).toEqual([]);
-  expectUnconfirmed(f.events);
+  expectNativeFailure(f.events, '524');
 });
 
 it('直播已有用量但无耗时时，从已复核的同一步补齐耗时而不使用累计结果', async () => {
@@ -748,10 +775,7 @@ it.each(['current-error', 'wrong-session', 'wrong-input', 'later-input', 'stale-
     f.child.emit('close', 0);
     await f.handle.done;
     expect(read).toHaveBeenCalledOnce();
-    if (scenario === 'current-error' || scenario === 'denied') {
-      expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-      expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
-    } else expectUnconfirmed(f.events);
+    expectNativeFailure(f.events);
     expect(JSON.stringify(f.events)).not.toContain('private-native-failure');
   },
 );
@@ -816,8 +840,7 @@ it.each(['cancelled', 'multiple-input', 'denied', 'exit', 'cleanup'])(
     f.child.emit('close', scenario === 'exit' ? 3 : 0);
     await f.handle.done;
     expect(read).toHaveBeenCalledTimes(['cancelled', 'exit'].includes(scenario) ? 1 : 0);
-    if (['multiple-input', 'cleanup'].includes(scenario)) expectUnconfirmed(f.events);
-    else expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+    expectNativeFailure(f.events);
   },
 );
 
@@ -846,7 +869,7 @@ it('原生复核超过预算时结束等待并保留失败', async () => {
   f.child.emit('close', 0);
   await f.handle.done;
   expect(reviewSignal?.aborted).toBe(true);
-  expectUnconfirmed(f.events);
+  expectNativeFailure(f.events);
 }, 7000);
 
 it.each(['ERROR', 'DONE'])('本轮工具失败后答复完整但同文524归属不明：%s', async (state) => {
@@ -928,28 +951,14 @@ const incompleteCases: [string, IncompleteEvidence][] = [
   ['结果仍含被拒绝的操作', { result: { denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } }],
 ];
 
-it.each(incompleteCases)('累计旧失败遇到%s时不误判成功', async (scenario, input) => {
+it.each(incompleteCases)('续接 ERROR 遇到%s且无可靠复核时保留失败', async (_scenario, input) => {
   const f = await resumedTurn(input.resume);
   for (const step of input.steps ?? completedSteps) f.step(...step);
   if (input.stderr) f.child.stderr.write(input.stderr);
   f.result(input.result);
   f.child.emit('close', input.exit ?? 0);
   await f.handle.done;
-  if (
-    [
-      '缺少本轮输入',
-      '输入边界前已收到高索引错误',
-      '缺少最终公开文本',
-      '最终答复未结束',
-      '答复后仍有工具',
-      '缺少结果答复',
-    ].includes(scenario)
-  ) {
-    expectUnconfirmed(f.events);
-  } else {
-    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-    expect(f.events.some((event) => event.type === 'error')).toBe(true);
-  }
+  expectNativeFailure(f.events);
   expect(JSON.stringify(f.events)).not.toContain('synthetic-native-failure');
 });
 
@@ -962,7 +971,7 @@ it('自动清理后的退出不能代替原生自然成功证据', async () => {
   await vi.advanceTimersByTimeAsync(2100);
   f.child.emit('close', 0);
   await f.handle.done;
-  expectUnconfirmed(f.events);
+  expectNativeFailure(f.events, '524');
 });
 
 function cleanupResultFor(scenario: string): Record<string, unknown> {
@@ -980,7 +989,7 @@ it.each([
   [0, null, 2100],
   [null, 'SIGTERM', 2100],
   [null, 'SIGKILL', 4100],
-] as const)('结果后主机清理仍保留累计错误的未确定归属：%s / %s', async (code, signal, delay) => {
+] as const)('结果后主机清理不能将原生失败改成未知：%s / %s', async (code, signal, delay) => {
   vi.useFakeTimers();
   const read = vi.fn(async () => ({ trajectory: completedTrajectory() }));
   const f = await resumedTurn(true, read);
@@ -993,7 +1002,7 @@ it.each([
   f.child.emit('close', code, signal);
   await f.handle.done;
   expect(read).not.toHaveBeenCalled();
-  expectUnconfirmed(f.events);
+  expectNativeFailure(f.events, '524');
 });
 
 it.each([
@@ -1022,8 +1031,7 @@ it.each([
   f.child.emit('close', ...cleanupExitFor(scenario));
   await interrupted;
   await f.handle.done;
-  if (scenario === 'no-final-text') expectUnconfirmed(f.events);
-  else expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
+  expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
   expect(read).not.toHaveBeenCalled();
 });
 
@@ -1076,7 +1084,7 @@ it.each(['natural', 'cleanup', 'interrupt'] as const)(
     if (ending === 'interrupt') {
       expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
       expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
-    } else expectUnconfirmed(f.events, ending === 'natural' ? 'agy-step-6' : undefined);
+    } else expectNativeFailure(f.events, '524');
   },
 );
 

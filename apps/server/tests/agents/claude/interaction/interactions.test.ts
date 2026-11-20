@@ -130,6 +130,91 @@ it('URL完成通知按原生会话和MCP服务身份确认，未知消息不吞�
   claudeElicitationCompleted(input, message, { id: 'runtime', sessionId: 'session' });
   expect(completeInteraction).toHaveBeenCalledWith('runtime', JSON.stringify(['fixture', 'auth']));
 });
+it('后台子代理审批保持创建轮归属，任务完成后的迟到批准仍拒绝', async () => {
+  let options!: Options;
+  let turn = 0;
+  const queryFn: QueryFn = (params) => {
+    options = params.options;
+    return Object.assign(
+      (async function* () {
+        for await (const _ of params.prompt) {
+          turn++;
+          if (turn === 1)
+            yield {
+              type: 'system',
+              subtype: 'task_started',
+              session_id: 'session',
+              task_id: 'child',
+              task_type: 'local_agent',
+              is_backgrounded: true,
+            };
+          if (turn === 3)
+            yield {
+              type: 'system',
+              subtype: 'task_notification',
+              session_id: 'session',
+              task_id: 'child',
+              status: 'completed',
+            };
+          yield { type: 'result', subtype: 'success' };
+        }
+      })(),
+      {
+        close: () => {},
+        interrupt: async () => undefined,
+        supportedCommands: async () => [],
+        supportedModels: async () => [],
+        getContextUsage: async () => {
+          throw new Error('合成上下文不可用');
+        },
+      },
+    );
+  };
+  const owner = vi
+    .fn<NonNullable<AgentTurnInput['requestInteraction']>>()
+    .mockResolvedValue({ action: 'submit', values: { allow: 'allow' } });
+  const later = vi.fn<NonNullable<AgentTurnInput['requestInteraction']>>();
+  const requestPermission = vi.fn(async () => ({ allow: false }));
+  const input: AgentTurnInput = {
+    workspace: { id: 'w', name: 'fixture', dir: process.cwd() },
+    sessionId: 'session',
+    text: '合成任务',
+    emit: () => {},
+    requestPermission,
+    requestInteraction: owner,
+  };
+  const runtime = new ClaudeRuntime({ ...input, queryFn });
+  const toolInput = { command: 'pwd' };
+  const permit = () =>
+    options.canUseTool!('Bash', toolInput, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool',
+      requestId: 'permission',
+      agentID: 'child',
+    });
+  try {
+    await runtime.run(input).done;
+    await runtime.run({ ...input, requestInteraction: later }).done;
+    expect(await permit()).toEqual({ behavior: 'allow', updatedInput: toolInput });
+    expect(owner).toHaveBeenCalledOnce();
+    expect(owner.mock.calls[0]?.[0]).toMatchObject({
+      scope: { kind: 'session', id: 'session' },
+      spec: { source: 'Claude · 子代理 child', fields: [{ label: 'pwd' }] },
+    });
+    let answer!: (value: Awaited<ReturnType<typeof owner>>) => void;
+    owner.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const pending = permit();
+    await runtime.run({ ...input, requestInteraction: later }).done;
+    answer({ action: 'submit', values: { allow: 'allow' } });
+    expect(await pending).toMatchObject({ behavior: 'deny' });
+    expect(await permit()).toMatchObject({ behavior: 'deny' });
+    expect(owner).toHaveBeenCalledTimes(2);
+    expect(later).not.toHaveBeenCalled();
+    expect(requestPermission).not.toHaveBeenCalled();
+  } finally {
+    await runtime.close();
+  }
+});
 it('原生问题的多选与自由回答交回工具，取消不授权执行', async () => {
   const requestInteraction = vi
     .fn<NonNullable<AgentTurnInput['requestInteraction']>>()

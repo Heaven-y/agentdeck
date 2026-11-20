@@ -354,6 +354,10 @@ class AntigravityTurn {
     if (this.pendingService) this.notice(this.pendingService);
     // stdout 与 stderr 顺序不固定；排空后才兜底，避免覆盖稍后到达的具体原因。
     if (this.failed || this.reportedError) return;
+    if (this.mapper.resultDiagnostic?.type === 'error') {
+      this.notice(this.mapper.resultDiagnostic);
+      return;
+    }
     this.notice({
       type: 'error',
       message: result
@@ -382,7 +386,7 @@ class AntigravityTurn {
 
   private applyCompletion(review: CurrentTurnReview | undefined, exit: ResultExit): void {
     const completed = review?.status === 'completed' && !this.mapper.terminalFailure ? review : undefined;
-    if (exit === 'success' && completed?.verifiedCompletion && this.mapper.canRecoverCompletion) {
+    if (exit === 'success' && completed?.recoveredRateLimit && this.mapper.canRecoverCompletion) {
       for (const event of this.mapper.confirmCompletion(completed)) this.emit(event);
       return;
     }
@@ -393,9 +397,13 @@ class AntigravityTurn {
     completed: Extract<CurrentTurnReview, { status: 'completed' }> | undefined,
     exit: ResultExit,
   ) {
-    const ended = exit === 'success' || exit === 'cleanup';
-    if (this.mapper.cumulativeResult && ended && (!this.pendingService || completed?.verifiedCompletion)) {
-      // 只有答复可确认时才补齐对应步骤；累计结果不能写入正文或放行待发。
+    if (
+      this.mapper.resumedResultError &&
+      completed?.historicalErrorMatch &&
+      exit === 'success' &&
+      (!this.pendingService || completed.verifiedCompletion)
+    ) {
+      // 仅核实旧错误与当前完整轨迹冲突时保留未知；同文不等于已证明本轮成功。
       for (const event of this.mapper.markUnconfirmed(completed)) this.emit(event);
     } else if (!this.pendingService && this.mapper.resultDiagnostic) {
       this.notice(this.mapper.resultDiagnostic);
@@ -409,7 +417,11 @@ class AntigravityTurn {
     }
     if (!this.mapper.currentStepFailure || completed) return false;
     if (!this.pendingService)
-      this.notice({ type: 'error', message: 'Antigravity 原生会话记录了本轮错误，请核对原生会话。' });
+      this.notice(
+        this.mapper.resultDiagnostic?.type === 'error'
+          ? this.mapper.resultDiagnostic
+          : { type: 'error', message: 'Antigravity 原生会话记录了本轮错误，请核对原生会话。' },
+      );
     return true;
   }
 

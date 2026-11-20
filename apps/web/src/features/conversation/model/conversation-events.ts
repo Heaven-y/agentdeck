@@ -49,7 +49,7 @@ export type ChatItem =
       clientMessageId?: string;
       steeringInput?: true;
     }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean; responseModel?: string }
+  | { kind: 'assistant'; id: string; text: string; streaming: boolean; nativeId?: string; responseModel?: string }
   | { kind: 'reasoning'; id: string; text: string }
   | {
       kind: 'tool';
@@ -90,9 +90,14 @@ function nextId(items: ChatItem[], kind: string): string {
 
 function canAppendAssistant(
   item: ChatItem | undefined,
-  responseModel?: string,
+  metadata: { responseModel?: string; nativeId?: string },
 ): item is Extract<ChatItem, { kind: 'assistant' }> {
-  return item?.kind === 'assistant' && item.streaming && item.responseModel === responseModel;
+  return (
+    item?.kind === 'assistant' &&
+    item.streaming &&
+    item.responseModel === metadata.responseModel &&
+    item.nativeId === metadata.nativeId
+  );
 }
 
 function canAppendReasoning(item: ChatItem | undefined): item is Extract<ChatItem, { kind: 'reasoning' }> {
@@ -104,10 +109,10 @@ function appendText(
   items: ChatItem[],
   kind: 'assistant' | 'reasoning',
   delta: string,
-  responseModel?: string,
+  metadata: { responseModel?: string; nativeId?: string } = {},
 ): ChatItem[] {
   const last = items.at(-1);
-  if (kind === 'assistant' && canAppendAssistant(last, responseModel)) {
+  if (kind === 'assistant' && canAppendAssistant(last, metadata)) {
     return [...items.slice(0, -1), { ...last, text: last.text + delta }];
   }
   if (kind === 'reasoning' && canAppendReasoning(last)) {
@@ -117,7 +122,14 @@ function appendText(
   return [
     ...items,
     kind === 'assistant'
-      ? { kind, id, text: delta, streaming: true, ...(responseModel ? { responseModel } : {}) }
+      ? {
+          kind,
+          id,
+          text: delta,
+          streaming: true,
+          ...(metadata.responseModel ? { responseModel: metadata.responseModel } : {}),
+          ...(metadata.nativeId ? { nativeId: metadata.nativeId } : {}),
+        }
       : { kind, id, text: delta },
   ];
 }
@@ -139,7 +151,7 @@ export function reduceChat(items: ChatItem[], e: AgentEvent): ChatItem[] {
     case 'user_message':
       return [...items, userItem(items, e)];
     case 'text':
-      return appendText(items, 'assistant', e.delta, e.responseModel);
+      return appendText(items, 'assistant', e.delta, { responseModel: e.responseModel, nativeId: e.id });
     case 'reasoning':
       return appendText(items, 'reasoning', e.delta);
     case 'tool_call':

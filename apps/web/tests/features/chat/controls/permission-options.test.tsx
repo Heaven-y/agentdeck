@@ -21,8 +21,7 @@ it.each([
   useChat.getState().newSession(agent);
   const { rerender } = render(<PermissionOptionsMenu disabled={false} />);
   const trigger = screen.getByRole('button', { name: '权限模式' });
-  expect(trigger.textContent).toBe('跟随 CLI');
-  expect(trigger.getAttribute('title')).toBe('由 CLI 决定权限；手动选择也会用于该 CLI 的新会话');
+  expect(trigger.textContent).toBe('选择权限');
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('menuitemradio', { name: new RegExp('^' + label) }));
   await waitFor(() => expect(trigger.textContent).toContain(label));
@@ -34,6 +33,29 @@ it.each([
   rerender(<PermissionOptionsMenu disabled={false} />);
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('menuitem', { name: '重置权限' }));
-  await waitFor(() => expect(trigger.textContent).toBe('跟随 CLI'));
+  await waitFor(() => expect(trigger.textContent).toBe('选择权限'));
   expect(save).toHaveBeenLastCalledWith(agent, null);
+});
+
+it('选择后立即显示具体模式，保存失败恢复原选择并保留失败状态', async () => {
+  let reject!: (error: Error) => void;
+  vi.spyOn(sessionsApi, 'savePermissionDefault').mockImplementation(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      }),
+  );
+  useChat.setState(useChat.getInitialState(), true);
+  useChat.getState().newSession('codex');
+  render(<PermissionOptionsMenu disabled={false} />);
+  const trigger = screen.getByRole('button', { name: '权限模式' });
+  fireEvent.click(trigger);
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: '帮我批准' }));
+  expect(trigger.textContent).toBe('帮我批准');
+  expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  expect(useChat.getState().send('保存尚未完成')).toBe(false);
+  await act(async () => reject(new Error('保存未确认')));
+  expect(trigger.textContent).toBe('权限');
+  expect(useChat.getState().permissionDefaults.values.codex).toBeUndefined();
+  expect(useChat.getState().permissionDefaults.saveErrors.codex).toContain('保存未确认');
 });
