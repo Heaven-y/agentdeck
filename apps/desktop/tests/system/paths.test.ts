@@ -10,10 +10,14 @@ describe('桌面安装路径与导航', () => {
     const resourcesPath = path.join(root, 'resources');
     expect(desktopPaths({ packaged: true, resourcesPath, mainDirectory })).toEqual({
       web: path.join(resourcesPath, 'web'),
+      icon: path.join(resourcesPath, 'icon.png'),
       preload: path.join(mainDirectory, '../preload/preload.cjs'),
     });
     expect(desktopPaths({ packaged: false, resourcesPath, mainDirectory }).web).toBe(
       path.join(mainDirectory, '../../../web/dist'),
+    );
+    expect(desktopPaths({ packaged: false, resourcesPath, mainDirectory }).icon).toBe(
+      path.join(root, 'web', 'src', 'ui', 'assets', 'agentdeck.png'),
     );
   });
 

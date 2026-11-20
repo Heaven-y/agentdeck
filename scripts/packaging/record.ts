@@ -4,6 +4,7 @@ import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractFile, listPackage } from '@electron/asar';
+import { Data, NtExecutable, NtExecutableResource, Resource } from 'resedit';
 import { z } from 'zod';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -28,6 +29,28 @@ const sourceFiles = new Set([
   'apps/desktop/electron-builder.yml',
 ]);
 const packageFiles = /^((?:apps|packages)\/[^/]+\/package\.json)$/;
+
+const iconBytes = (icon: Data.IconItem | Data.RawIconItem) => Buffer.from(icon.isRaw() ? icon.bin : icon.generate());
+const iconSource = await readFile(path.join(root, 'apps/web/src/ui/assets/agentdeck.png'));
+const iconFile = Data.IconFile.from(await readFile(path.join(root, 'apps/desktop/assets/icon.ico')));
+const largestIcon = iconFile.icons.find(
+  ({ data }) => data.isRaw() && [0, 256].includes(data.width) && [0, 256].includes(data.height),
+);
+if (!largestIcon || digest(iconBytes(largestIcon.data)) !== digest(iconSource))
+  throw new Error('窗口 PNG 与 ICO 中的 256 像素图标不一致');
+const expectedIcons = iconFile.icons.map(({ data }) => digest(iconBytes(data))).sort();
+
+async function verifyExecutableIcon(file: string) {
+  const executable = NtExecutable.from(await readFile(file), { ignoreCert: true });
+  const { entries } = NtExecutableResource.from(executable);
+  const primary = Resource.IconGroupEntry.fromEntries(entries)[0];
+  const actual = primary
+    ?.getIconItemsFromEntries(entries)
+    .map((icon) => digest(iconBytes(icon)))
+    .sort();
+  if (!actual || actual.join() !== expectedIcons.join())
+    throw new Error(`程序图标与当前应用素材不一致：${path.basename(file)}`);
+}
 
 async function sourceFingerprint() {
   const files = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
@@ -62,7 +85,11 @@ async function verifyRuntime(version: string) {
   const webIndex = await hashFile(path.join(root, 'apps/web/dist/index.html'));
   if (webIndex !== (await hashFile(path.join(release, 'win-unpacked/resources/web/index.html'))))
     throw new Error('安装包页面不是当前前端构建');
-  return { main: mainHash, preload: preloadHash, webIndex, archive: await hashFile(archive) };
+  const icon = digest(iconSource);
+  if (icon !== (await hashFile(path.join(release, 'win-unpacked/resources/icon.png'))))
+    throw new Error('桌面窗口图标与当前应用素材不一致');
+  await verifyExecutableIcon(path.join(release, 'win-unpacked/AgentDeck.exe'));
+  return { main: mainHash, preload: preloadHash, webIndex, icon, archive: await hashFile(archive) };
 }
 
 const version = PackageVersion.parse(
@@ -74,6 +101,7 @@ const artifacts = [];
 const expectedArtifacts = new Set(['setup', 'portable'].map((kind) => `AgentDeck-${version}-x64-${kind}.exe`));
 for (const name of (await readdir(release)).filter((file) => expectedArtifacts.has(file)).sort()) {
   const file = path.join(release, name);
+  await verifyExecutableIcon(file);
   artifacts.push({ file: name, bytes: (await stat(file)).size, sha256: await hashFile(file) });
 }
 if (artifacts.length !== 2) throw new Error(`缺少 ${version} 安装版或便携版产物`);

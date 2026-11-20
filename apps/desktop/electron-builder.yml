@@ -20,6 +20,8 @@ files:
   - '!node_modules/nan/**'
   - '!node_modules/ssh2/lib/protocol/crypto/build/**'
 extraResources:
+  - from: ../web/src/ui/assets/agentdeck.png
+    to: icon.png
   - from: ../web/dist
     to: web
     filter:

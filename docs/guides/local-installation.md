@@ -41,6 +41,8 @@ npm.cmd run package:desktop
 
 脚本先构建网页和 Electron，再由 electron-builder 生成两种 exe；参数固定为 `--publish never`。首次构建需要下载锁定版本的 Electron 和打包工具。仅需要解压版时运行 `npm.cmd run package:desktop:dir`。
 
+应用采用用户选定的叠卡 A 图标，三版原稿保留在 `apps/desktop/assets/branding/`。网页标签与桌面开发窗口共用 `apps/web/src/ui/assets/agentdeck.png`；安装版把同一文件复制到 `resources/icon.png`。应用 EXE、安装包和快捷方式使用 `apps/desktop/assets/icon.ico`，其多尺寸图层从该 PNG 导出；修改图案时同步更新衍生文件，并核对最终包内资源。
+
 产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。本轮已按用户要求逐个清理 0.1.0、0.1.1 的旧安装版、便携版及 0.1.1 校验清单，历史验收记录保留。
 
 桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI，SSH 的可选原生加速模块采用 JavaScript 回退。
@@ -55,7 +57,7 @@ Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File sc
 
 仅检查安装页面逻辑时，在 PowerShell 7 中运行 `pwsh -NoProfile -File scripts/packaging/installer-pages-smoke.ps1`。脚本使用已缓存的 NSIS 工具执行生产页面钩子，覆盖首次安装、当前用户/全机更新、双范围、残留登记、显式范围和路径以及原生更新参数；中文、空格和非默认旧目录均需原样保留。测试不改真实安装登记，不安装或卸载应用，临时文件逐项清理；结果写入 `release/verification/installer-pages.json`。
 
-`node --import tsx scripts/packaging/record.ts` 核对包内版本、主进程、preload 和网页入口，记录源文件指纹、Git 提交和成品摘要。它检查 desktop 清单当前版本的两种 x64 exe，任一缺失时失败。结果写入 `release/SHA256SUMS.txt` 与 `release/verification/build-record.json`。
+`node --import tsx scripts/packaging/record.ts` 核对包内版本、主进程、preload、网页入口和窗口图标，并检查 PNG 与 ICO 的 256 像素图层一致，再逐一比较应用 EXE、安装包、便携包内主图标组的全部图层与当前 ICO，记录源文件指纹、Git 提交和成品摘要。它检查 desktop 清单当前版本的两种 x64 exe，任一缺失时失败。结果写入 `release/SHA256SUMS.txt` 与 `release/verification/build-record.json`。
 
 最终交付附 SHA-256 清单。可用 PowerShell 核对下载或复制后的文件：
 

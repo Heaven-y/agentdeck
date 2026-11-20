@@ -3,6 +3,9 @@ import path from 'node:path';
 export function desktopPaths(input: { packaged: boolean; resourcesPath: string; mainDirectory: string }) {
   return {
     web: input.packaged ? path.join(input.resourcesPath, 'web') : path.join(input.mainDirectory, '../../../web/dist'),
+    icon: input.packaged
+      ? path.join(input.resourcesPath, 'icon.png')
+      : path.join(input.mainDirectory, '../../../web/src/ui/assets/agentdeck.png'),
     preload: path.join(input.mainDirectory, '../preload/preload.cjs'),
   };
 }

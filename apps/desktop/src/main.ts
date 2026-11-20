@@ -53,6 +53,7 @@ function createMainWindow(url: string, started: StartedServer): BrowserWindow {
     show: false,
     backgroundColor: '#f5f6f8',
     title: 'AgentDeck',
+    icon: paths.icon,
     ...desktopChromeOptions(),
     webPreferences: {
       preload: paths.preload,
