@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readdir, rm, rmdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +46,8 @@ function isolatedEnvironment(root: string): NodeJS.ProcessEnv {
     CLAUDE_CONFIG_DIR: path.join(profile, '.claude'),
     CODEX_HOME: path.join(profile, '.codex'),
     AGENTDECK_CONFIG_DIR: path.join(root, 'configuration'),
+    // 解压版冒烟只验运行，不把临时复制路径登记为系统会话协议；安装与协议另行验收。
+    ...(mode === 'unpacked' ? { PORTABLE_EXECUTABLE_FILE: path.join(root, 'application/AgentDeck.exe') } : {}),
   };
 }
 function launch(executable: string, args: string[], env: NodeJS.ProcessEnv, directory: string) {
@@ -100,7 +102,31 @@ async function cleanTemporary(root: string) {
     !path.basename(verified).startsWith('agentdeck-package-smoke-')
   )
     throw new Error('临时验收目录不符合清理范围');
-  await rm(verified, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+  // 逐项清理本次隔离目录；不跟随链接，也不递归批量删除文件。
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await removeTemporaryEntry(verified, verified);
+      return;
+    } catch (error) {
+      if (attempt >= 5) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  }
+}
+async function removeTemporaryEntry(root: string, entry: string): Promise<void> {
+  const resolved = path.resolve(entry);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new Error('临时文件越出清理范围');
+  const metadata = await lstat(resolved).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (!metadata) return;
+  if (metadata.isDirectory() && !metadata.isSymbolicLink()) {
+    for (const name of await readdir(resolved)) await removeTemporaryEntry(root, path.join(resolved, name));
+    await rmdir(resolved);
+  } else {
+    await rm(resolved, { force: true });
+  }
 }
 
 async function prepareApplication(root: string): Promise<string> {
