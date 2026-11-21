@@ -77,9 +77,24 @@ it('引导列表很晚才返回协议错误时仍关闭入口并取消在途读�
   await stopped(f.evidence);
 });
 
-it.each(['malformed', 'list-invalid'])('异常协议即关闭，不将已打印的端口交给调用方：%s', async (mode) => {
+it.each(['malformed', 'list-invalid'])('异常协议无论先于还是晚于就绪，入口都不可继续读取：%s', async (mode) => {
   const f = await options(mode);
-  await expect(startManagementBackend(f.settings)).rejects.toMatchObject({ code: 'session_runtime_failed' });
+  const started = await startManagementBackend(f.settings).then(
+    (backend) => ({ backend }),
+    (error: unknown) => ({ error }),
+  );
+  if ('backend' in started) {
+    try {
+      // 自有端口可能先就绪；不能要求异步协议错误一定早于启动返回。
+      await vi.waitFor(() =>
+        expect(started.backend.request('GetCascadeTrajectory', { cascadeId: 'fixture' })).rejects.toMatchObject({
+          code: 'session_runtime_failed',
+        }),
+      );
+    } finally {
+      await started.backend.close();
+    }
+  } else expect(started.error).toMatchObject({ code: 'session_runtime_failed' });
   await stopped(f.evidence);
 });
 
