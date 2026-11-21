@@ -6,6 +6,7 @@ import { AGENT_KINDS, type AgentKind, type SessionSummary } from '@agentdeck/sha
 import type { Workspace } from '@agentdeck/shared/projects';
 import { DetailDialog } from '../../ui/DetailDialog';
 import { AgentIcon } from '../../ui/BrandIcons';
+import { inputClass } from '../../ui/styles';
 
 import { sessionActionKey, useChat } from '../../features/chat/state/chat-store';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
@@ -22,7 +23,7 @@ export type PaletteActions = {
 };
 type Action = { id: string; label: string; workspace?: boolean; run(): boolean };
 const itemClass =
-  'flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2.5 text-sm data-[selected=true]:bg-muted data-[selected=true]:text-foreground data-[disabled=true]:opacity-45';
+  'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors data-[selected=true]:bg-control-hover data-[selected=true]:text-foreground data-[disabled=true]:opacity-45';
 function commonActions(actions: PaletteActions, id: string): Action[] {
   return [
     ...(actions.plugins ?? []),
@@ -65,6 +66,7 @@ function SessionSource({
   choose(session: SessionSummary): void;
 }) {
   const operations = useChat((state) => state.sessionOperations);
+  if (!sessions.length) return null;
   return (
     <Command.Group
       heading={
@@ -186,7 +188,7 @@ export default function CommandPalette({
           onValueChange={setSearch}
           placeholder="搜索项目、会话或操作…"
           aria-label="搜索命令"
-          className="w-full rounded-md border border-border-strong bg-background px-3 py-2 text-sm"
+          className={inputClass}
         />
         {error && (
           <p role="alert" className="mt-2 text-sm text-destructive-foreground">

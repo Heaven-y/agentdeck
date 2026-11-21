@@ -15,9 +15,12 @@
     box-shadow var(--ui-fast),
     background var(--ui-fast);
 }
+.ui-control:hover:not(:disabled):not(:read-only) {
+  border-color: color-mix(in srgb, var(--color-interactive) 42%, var(--color-border-strong));
+}
 .ui-control:focus-visible {
-  outline: 2px solid var(--color-interactive);
-  outline-offset: -2px;
+  outline: 1.5px solid color-mix(in srgb, var(--color-interactive) 82%, transparent);
+  outline-offset: -1.5px;
   box-shadow: none;
 }
 .ui-control[aria-invalid='true'] {
@@ -27,13 +30,23 @@
   cursor: default;
 }
 :is(input, textarea, select):focus-visible {
-  outline-offset: -2px;
+  outline-offset: -1.5px;
 }
 :is(button, summary):focus-visible {
-  outline-offset: -2px;
+  outline-offset: -1.5px;
 }
 .composer-input:focus-visible {
   outline: none;
+}
+.ui-popover {
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--surface-elevated);
+  color: var(--color-foreground);
+  box-shadow: var(--popover-shadow);
+  overscroll-behavior: contain;
+  animation: ui-popover-in var(--ui-fast) var(--ui-ease);
+  transform-origin: var(--popover-transform-origin);
 }
 .field-suggestions {
   flex: 1;
@@ -58,22 +71,25 @@
 }
 .field-options {
   z-index: 80;
-  border-radius: 10px;
+  border-radius: 12px;
+  background: var(--surface-elevated);
   box-shadow: var(--popover-shadow);
   overscroll-behavior: contain;
   scroll-padding: 6px;
   animation: ui-popover-in var(--ui-fast) var(--ui-ease);
 }
 .field-option {
-  border-radius: 6px;
+  border-radius: 8px;
   transition: background var(--ui-fast);
 }
 .field-option[aria-selected='true'] {
   color: var(--color-interactive);
   background: var(--surface-selected);
+  font-weight: 500;
 }
 .field-option[data-active-item] {
-  outline: 1px solid var(--color-interactive);
+  background: var(--control-hover);
+  outline: 1px solid color-mix(in srgb, var(--color-interactive) 55%, transparent);
   outline-offset: -1px;
 }
 
@@ -82,34 +98,46 @@ dialog[open] {
   animation: ui-fade-in var(--ui-enter) var(--ui-ease);
 }
 dialog::backdrop {
-  background: #10182842;
-  backdrop-filter: blur(3px);
+  background: #0d131f52;
+  backdrop-filter: blur(4px);
 }
 .settings-navigation {
   background: var(--color-sidebar);
 }
 .settings-navigation-item {
-  border-radius: 7px;
+  border-radius: 8px;
+  transition:
+    background var(--ui-fast),
+    color var(--ui-fast);
 }
 .settings-navigation-item[aria-current='page'] {
   color: var(--color-interactive);
   background: var(--surface-selected);
+  font-weight: 500;
 }
 .settings-model-tabs {
-  gap: 5px;
-  padding-bottom: 15px;
+  gap: 6px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--color-border);
 }
 .settings-model-tab {
   display: inline-flex;
   gap: 7px;
   align-items: center;
-  border-radius: 7px;
-  padding: 7px 11px;
-  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  transition:
+    background var(--ui-fast),
+    border-color var(--ui-fast),
+    color var(--ui-fast);
 }
 .settings-model-tab[aria-pressed='true'] {
   background: var(--surface-selected);
+  border-color: color-mix(in srgb, var(--color-interactive) 35%, var(--color-border));
+  color: var(--color-foreground);
+  font-weight: 500;
 }
 .settings-model-panel {
   animation: ui-fade-in var(--ui-enter) ease;
@@ -117,21 +145,32 @@ dialog::backdrop {
 .settings-footer {
   position: sticky;
   bottom: 0;
-  background: var(--color-card);
+  z-index: 10;
+  background: color-mix(in srgb, var(--color-background) 94%, transparent);
+  backdrop-filter: blur(6px);
 }
 .settings-footer button {
   white-space: nowrap;
 }
 .appearance-theme {
-  width: 145px;
+  width: 156px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 10px;
-  padding: 7px;
+  border-radius: 12px;
+  padding: 8px;
+  background: var(--surface-subtle);
   text-align: left;
+  transition:
+    border-color var(--ui-fast),
+    box-shadow var(--ui-fast),
+    background var(--ui-fast);
+}
+.appearance-theme:hover {
+  border-color: color-mix(in srgb, var(--color-interactive) 45%, var(--color-border-strong));
 }
 .appearance-theme[aria-pressed='true'] {
   border-color: var(--color-interactive);
-  box-shadow: 0 0 0 2px var(--surface-selected);
+  background: var(--surface-selected);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-interactive) 18%, transparent);
 }
 .appearance-window {
   display: flex;
@@ -256,17 +295,18 @@ dialog::backdrop {
   flex-wrap: wrap;
 }
 #workspace-topbar h1 {
-  line-height: 24px;
+  line-height: 22px;
 }
 #workspace-topbar p {
-  font-size: 11px;
+  font-size: 12px;
 }
 .ui-segment {
   display: inline-flex;
   gap: 3px;
   padding: 3px;
   background: var(--color-muted);
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  border-radius: 9px;
   max-width: 100%;
 }
 .ui-segment > button {
@@ -279,19 +319,26 @@ dialog::backdrop {
   padding: 4px 12px;
   color: var(--color-muted-foreground);
   font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
   transition:
     background var(--ui-fast),
     box-shadow var(--ui-fast),
     color var(--ui-fast);
 }
-.ui-segment > button:hover {
+.ui-segment > button:hover:not(:disabled) {
   color: var(--color-foreground);
 }
 .ui-segment > button[aria-pressed='true'] {
   color: var(--color-foreground);
   background: var(--color-card);
-  box-shadow: 0 1px 3px #00000010;
+  box-shadow:
+    0 1px 2px #00000014,
+    0 0 0 0.5px var(--color-border-strong);
+}
+.ui-segment > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 .conversation-view-content {
   animation: ui-fade-in var(--ui-enter) ease;
@@ -307,11 +354,15 @@ dialog::backdrop {
 }
 .tool-card {
   border: 1px solid var(--color-border);
-  background: var(--color-background);
-  border-radius: 9px;
+  background: var(--surface-subtle);
+  border-radius: 10px;
+  transition: border-color var(--ui-fast);
+}
+.tool-card:hover {
+  border-color: var(--color-border-strong);
 }
 .tool-card > summary {
-  padding: 9px 11px;
+  padding: 8px 12px;
   min-height: 36px;
 }
 .tool-card[open] > div {
@@ -319,12 +370,14 @@ dialog::backdrop {
 }
 .tool-card .tool-card {
   border: 0;
+  background: transparent;
 }
 .conversation-scroll-bottom {
-  background: var(--color-card);
+  background: var(--surface-elevated);
+  box-shadow: var(--popover-shadow);
 }
 .conversation-scroll-bottom:hover {
-  background: var(--color-muted);
+  background: var(--control-hover);
 }
 .message-navigation-list {
   scrollbar-width: none;
@@ -333,14 +386,14 @@ dialog::backdrop {
   display: none;
 }
 .message-navigation-button:hover {
-  background: var(--color-muted);
+  background: var(--control-hover);
 }
 .composer-status {
   text-align: center;
 }
 .composer-statistic {
   justify-content: center;
-  font-size: 11px;
+  font-size: 12px;
 }
 .composer-statistic ~ .composer-statistic {
   border-left: 1px solid var(--color-border-strong);
@@ -389,36 +442,79 @@ dialog::backdrop {
 .ui-spotlight[data-illuminated]::after {
   opacity: var(--composer-glow-opacity);
 }
+.ui-switch,
 .spotlight-switch {
-  width: 36px;
+  width: 38px;
   height: 22px;
   padding: 3px;
-  border-radius: 20px;
+  border-radius: 999px;
   background: var(--color-border-strong);
   flex-shrink: 0;
+  transition: background var(--ui-fast) var(--ui-ease);
 }
+.ui-switch span,
 .spotlight-switch span {
   display: block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: white;
-  transition: transform 130ms;
+  background: #ffffff;
+  box-shadow: 0 1px 2px #00000028;
+  transition: transform var(--ui-fast) var(--ui-ease);
 }
+.ui-switch[aria-checked='true'],
 .spotlight-switch[aria-checked='true'] {
   background: var(--color-interactive);
 }
+.ui-switch[aria-checked='true'] span,
 .spotlight-switch[aria-checked='true'] span {
-  transform: translateX(14px);
+  transform: translateX(16px);
+}
+.ui-switch-checkbox {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  cursor: pointer;
+  transition: background var(--ui-fast) var(--ui-ease);
+}
+.ui-switch-checkbox::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px #00000028;
+  transition: transform var(--ui-fast) var(--ui-ease);
+}
+.ui-switch-checkbox:checked {
+  background: var(--color-interactive);
+}
+.ui-switch-checkbox:checked::after {
+  transform: translateX(16px);
+}
+.ui-switch-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 @media (forced-colors: active) {
   .ui-spotlight::after {
     display: none;
   }
-  .spotlight-switch {
+  .ui-switch,
+  .spotlight-switch,
+  .ui-switch-checkbox {
     border: 1px solid ButtonText;
   }
-  .spotlight-switch span {
+  .ui-switch span,
+  .spotlight-switch span,
+  .ui-switch-checkbox::after {
     background: ButtonText;
   }
 }
@@ -428,16 +524,15 @@ dialog::backdrop {
   padding: 12px 24px;
 }
 .trajectory-toolbar .ui-segment {
-  background: transparent;
-  gap: 4px;
+  background: var(--color-muted);
+  gap: 3px;
   flex-wrap: wrap;
 }
 .trajectory-toolbar .ui-segment > button {
-  font-size: 11px;
+  font-size: 12px;
 }
 .trajectory-toolbar .ui-segment > button[aria-pressed='true'] {
-  background: var(--surface-selected);
-  box-shadow: none;
+  background: var(--color-card);
   color: var(--color-interactive);
 }
 .trajectory-context {
@@ -450,9 +545,10 @@ dialog::backdrop {
   padding: 0 24px;
 }
 .trajectory-turn-label {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--color-muted-foreground);
-  margin: 8px 0 4px;
+  margin: 10px 0 4px;
 }
 .trajectory-user > svg {
   justify-self: center;
@@ -469,19 +565,19 @@ dialog::backdrop {
 .trajectory-step,
 .trajectory-user {
   display: grid;
-  grid-template-columns: 20px 3.2rem minmax(0, 1fr) 3.5rem 3rem 14px;
+  grid-template-columns: 20px 3.4rem minmax(0, 1fr) 3.8rem 3.2rem 14px;
   align-items: center;
   gap: 8px;
   width: 100%;
   min-height: 36px;
-  padding: 7px;
-  border-radius: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   transition: background var(--ui-fast);
 }
 .trajectory-step:hover {
-  background: var(--color-muted);
+  background: var(--control-hover);
 }
 .trajectory-step[aria-pressed='true'] {
   background: var(--surface-selected);

@@ -7,11 +7,13 @@ export function SegmentedControl<Value extends string>({
   label,
   value,
   options,
+  disabled = false,
   onChange,
 }: {
   label: string;
   value: Value;
   options: readonly Option<Value>[];
+  disabled?: boolean;
   onChange(value: Value): void;
 }) {
   return (
@@ -20,6 +22,7 @@ export function SegmentedControl<Value extends string>({
         <button
           key={option.value}
           type="button"
+          disabled={disabled}
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
         >

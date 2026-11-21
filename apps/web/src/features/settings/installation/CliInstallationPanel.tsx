@@ -1,6 +1,7 @@
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { CliInstallationStatus, CliInstallPhase, EnvironmentTool } from '@agentdeck/shared/settings';
 import { RefreshCw } from 'lucide-react';
+import { AgentIcon } from '../../../ui/BrandIcons';
 import { buttonClass } from '../../../ui/styles';
 import { availableAction, validRelease } from './cli-installation-actions';
 import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
@@ -27,11 +28,11 @@ function InstallationVersions({ status }: { status: CliInstallationStatus }) {
     <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-1 text-xs leading-5">
       <div className="flex min-w-0 gap-2">
         <dt className="shrink-0 text-muted-foreground">当前版本</dt>
-        <dd className="break-all">{status.installed ? (status.currentVersion ?? '版本未知') : '未安装'}</dd>
+        <dd className="break-all font-mono">{status.installed ? (status.currentVersion ?? '版本未知') : '未安装'}</dd>
       </div>
       <div className="flex min-w-0 gap-2">
         <dt className="shrink-0 text-muted-foreground">最新版本</dt>
-        <dd className="break-all">{status.latestVersion ?? '尚未检查'}</dd>
+        <dd className="break-all font-mono">{status.latestVersion ?? '尚未检查'}</dd>
       </div>
     </dl>
   );
@@ -115,40 +116,29 @@ function InstallationFeedback({ state, healthy }: { state: State; healthy: boole
   return <InstallationResult status={status} healthy={healthy} />;
 }
 
-function InstallationHealth({ health }: { health?: EnvironmentTool }) {
+function InstallationHealthBadge({ health }: { health?: EnvironmentTool }) {
   if (!health) return null;
   return (
-    <div role={health.available ? 'status' : 'alert'} className="space-y-1 text-xs leading-5">
-      <p className={health.available ? 'text-success' : 'text-warning'}>{health.available ? '可用' : '不可用'}</p>
-      {health.message && <p className="break-words text-muted-foreground">{health.message}</p>}
-    </div>
+    <span
+      role={health.available ? 'status' : 'alert'}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-4 font-medium ${health.available ? 'border-border-success bg-surface-success text-success' : 'border-border-warning bg-surface-warning text-warning'}`}
+    >
+      {health.available ? '可用' : '不可用'}
+    </span>
   );
 }
 
-export function CliInstallationPanel({
-  agent,
-  disabled = false,
+function InstallationNotices({
+  state,
+  status,
   health,
 }: {
-  agent: AgentKind;
-  disabled?: boolean;
+  state: State;
+  status?: CliInstallationStatus;
   health?: EnvironmentTool;
 }) {
-  const state = useCliInstallation(agent);
-  const status = state.status.data;
   return (
-    <section
-      aria-label={`${AGENT_FULL_NAMES[agent]} 安装与更新`}
-      aria-busy={state.busy || state.status.isPending}
-      className="min-w-0 space-y-2.5 rounded-lg border border-border bg-muted/20 p-3"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-[13px] font-medium">{AGENT_FULL_NAMES[agent]} CLI</h4>
-        <InstallationActions state={state} disabled={disabled} />
-      </div>
-      {status && <InstallationVersions status={status} />}
-      <InstallationHealth health={health} />
-      <InstallationFeedback state={state} healthy={health?.available !== false} />
+    <>
       {state.error && (
         <button type="button" className={buttonClass('ghost')} disabled={state.status.isFetching} onClick={state.retry}>
           重试读取
@@ -170,6 +160,41 @@ export function CliInstallationPanel({
           官方安装指南
         </a>
       )}
+    </>
+  );
+}
+
+export function CliInstallationPanel({
+  agent,
+  disabled = false,
+  health,
+}: {
+  agent: AgentKind;
+  disabled?: boolean;
+  health?: EnvironmentTool;
+}) {
+  const state = useCliInstallation(agent);
+  const status = state.status.data;
+  return (
+    <section
+      aria-label={`${AGENT_FULL_NAMES[agent]} 安装与更新`}
+      aria-busy={state.busy || state.status.isPending}
+      className="min-w-0 space-y-2.5 rounded-xl border border-border bg-surface-subtle p-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="flex items-center gap-2 text-sm font-semibold">
+            <AgentIcon agent={agent} className="size-4" />
+            {AGENT_FULL_NAMES[agent]} CLI
+          </h4>
+          <InstallationHealthBadge health={health} />
+        </div>
+        <InstallationActions state={state} disabled={disabled} />
+      </div>
+      {status && <InstallationVersions status={status} />}
+      {health?.message && <p className="break-words text-xs leading-5 text-muted-foreground">{health.message}</p>}
+      <InstallationFeedback state={state} healthy={health?.available !== false} />
+      <InstallationNotices state={state} status={status} health={health} />
     </section>
   );
 }

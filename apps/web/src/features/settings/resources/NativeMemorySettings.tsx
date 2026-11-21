@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ClaudeAutoMemoryState } from '@agentdeck/shared/settings';
-import { FileCode2, RefreshCw } from 'lucide-react';
+import { ChevronRight, FileCode2, RefreshCw } from 'lucide-react';
 import { settingsApi } from '../api';
 import { buttonClass } from '../../../ui/styles';
 
@@ -81,10 +81,15 @@ function ClaudeAutoMemorySettings() {
       <div className="space-y-2 border-b border-border pb-5">
         <h2 className="text-base font-semibold">Claude Code 自动记忆</h2>
         <p className="text-sm leading-6 text-muted-foreground">在 Claude Code 中使用 /memory 查看和整理记忆。</p>
-        <details className="text-xs leading-6 text-muted-foreground">
-          <summary className="w-fit cursor-pointer">版本与生效范围</summary>
-          <p>需要 Claude Code 2.1.234 或更新版本。记忆按 Git 仓库保存在本机，此处设置适用于所有项目。</p>
-          <p>项目设置、环境变量或管理员策略可覆盖全局设置。</p>
+        <details className="group/scope text-xs leading-6 text-muted-foreground">
+          <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-0.5 marker:hidden transition-colors select-none hover:text-foreground">
+            <ChevronRight aria-hidden className="size-3.5 transition-transform group-open/scope:rotate-90" />
+            版本与生效范围
+          </summary>
+          <div className="mt-1 space-y-1 pl-4">
+            <p>需要 Claude Code 2.1.234 或更新版本。记忆按 Git 仓库保存在本机，此处设置适用于所有项目。</p>
+            <p>项目设置、环境变量或管理员策略可覆盖全局设置。</p>
+          </div>
         </details>
       </div>
       <MemoryStatus memory={state.memory} error={state.error} />
@@ -147,10 +152,11 @@ function UserMemoryControl({
           {memory.override === null ? '已启用（默认）' : memory.enabled ? '已启用' : '已关闭'}
         </p>
       </div>
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium">
         <input
           type="checkbox"
           aria-label="启用自动记忆"
+          className="ui-switch-checkbox"
           checked={memory.enabled}
           disabled={saving}
           onChange={(event) => void save(event.currentTarget.checked ? 'enabled' : 'disabled')}

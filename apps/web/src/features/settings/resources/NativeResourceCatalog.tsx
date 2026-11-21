@@ -1,5 +1,5 @@
 import type { NativeResource, NativeResourceCatalog as Catalog, NativeResourceRoot } from '@agentdeck/shared/settings';
-import { FilePlus2 } from 'lucide-react';
+import { ChevronRight, FilePlus2 } from 'lucide-react';
 import { buttonClass } from '../../../ui/styles';
 import { nativeKindNames, nativeScopeNames } from './native-resource-labels';
 
@@ -90,8 +90,14 @@ export function NativeResourceCatalog({
       ))}
       {scopes.length === 0 && <p className="text-sm text-muted-foreground">当前没有可浏览的原生文件。</p>}
       {catalog.guidance.length > 0 && (
-        <details aria-label="CLI 原生能力说明" className="space-y-3 border-t border-border pt-4">
-          <summary className="w-fit cursor-pointer text-sm font-medium">文件与能力说明</summary>
+        <details aria-label="CLI 原生能力说明" className="group/guide space-y-3 border-t border-border pt-4">
+          <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md py-0.5 text-sm font-medium marker:hidden transition-colors select-none hover:text-foreground">
+            <ChevronRight
+              aria-hidden
+              className="size-3.5 text-muted-foreground transition-transform group-open/guide:rotate-90"
+            />
+            文件与能力说明
+          </summary>
           {catalog.guidance.map((item) => (
             <div key={item.label} className="space-y-1">
               <h4 className="text-sm font-medium">{item.label}</h4>

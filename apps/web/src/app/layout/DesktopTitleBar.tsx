@@ -3,6 +3,7 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { AppMenuName, DesktopChrome } from '../../../../desktop/src/bridge';
 import { desktopChrome } from '../../lib/desktop-bridge';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
+import brandIcon from '../../ui/assets/agentdeck.png';
 
 const MENUS: { id: AppMenuName; label: string; shortcut: string }[] = [
   { id: 'file', label: 'File', shortcut: 'f' },
@@ -66,7 +67,10 @@ function TitleBar({ bridge }: { bridge: DesktopChrome }) {
       >
         <CollapseIcon aria-hidden className="size-4" />
       </button>
-      <span className="mr-3 select-none text-[13px] font-semibold tracking-tight">AgentDeck</span>
+      <span className="mr-3 inline-flex select-none items-center gap-2 text-[13px] font-semibold tracking-tight">
+        <img src={brandIcon} alt="" aria-hidden className="size-[18px] shrink-0 rounded-[4px] object-contain" />
+        AgentDeck
+      </span>
       <div role="menubar" aria-label="应用菜单" className="desktop-menubar">
         {MENUS.map((menu, index) => (
           <button

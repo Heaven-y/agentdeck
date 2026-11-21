@@ -53,7 +53,7 @@ export function NewSessionMenu({
         render={<button type="button" />}
         className={
           compact
-            ? 'flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent'
+            ? 'flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground focus-visible:outline-interactive'
             : sidebarItemClass(collapsed)
         }
         aria-label={label}

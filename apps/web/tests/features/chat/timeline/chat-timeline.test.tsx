@@ -169,3 +169,23 @@ it('用户刻度按工具合并后的真实行定位，主动跳转期间不被�
   });
   expect(navigation.getByRole('button', { name: '跳转到第 1 条消息：先检查目录' }).tabIndex).toBe(0);
 });
+
+it('用户消息与已完成助手回复提供复制入口，流式生成中不提前显示', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  render(
+    <ConversationTimeline
+      running={false}
+      items={[
+        { kind: 'user', id: 'u1', text: '检查样式变量' },
+        { kind: 'assistant', id: 'a1', text: '已完成审查', streaming: false },
+        { kind: 'assistant', id: 'a2', text: '仍在输出', streaming: true },
+      ]}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: '复制消息内容' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith('检查样式变量'));
+  expect(screen.getAllByRole('button', { name: '复制回复内容' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '复制回复内容' }));
+  await waitFor(() => expect(writeText).toHaveBeenLastCalledWith('已完成审查'));
+});

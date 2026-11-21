@@ -1,5 +1,5 @@
 import { useLayoutEffect, type MutableRefObject, type ReactNode } from 'react';
-import { ArrowUpRight, FileCode2, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, FileCode2, RefreshCw } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ModelSettingField } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../../ui/styles';
@@ -164,8 +164,11 @@ function AdvancedSettings({
   onLaunchEnvironment?: () => void;
 }) {
   return (
-    <details className="border-t border-border pt-4">
-      <summary className="cursor-pointer text-[13px] text-muted-foreground">高级设置</summary>
+    <details className="group/adv border-t border-border pt-4">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 text-[13px] font-medium text-muted-foreground marker:hidden transition-colors select-none hover:text-foreground">
+        <ChevronRight aria-hidden className="size-3.5 transition-transform group-open/adv:rotate-90" />
+        高级设置
+      </summary>
       <div className="mt-4 space-y-4">
         <Fields fields={fields.filter((field) => field.advanced)} state={state} />
         {state.document?.warnings.map((warning) => (
@@ -227,6 +230,12 @@ function SettingsFeedback({ state }: { state: State }) {
     );
   return null;
 }
+function footerStatus(message: string, dirty: boolean) {
+  if (message) return { text: message, tone: 'text-muted-foreground' };
+  return dirty
+    ? { text: '有未保存修改', tone: 'font-medium text-warning' }
+    : { text: '', tone: 'text-muted-foreground' };
+}
 function SettingsFooter({
   state,
   dirty,
@@ -238,10 +247,11 @@ function SettingsFooter({
   save(): void;
   reread(): void;
 }) {
+  const status = footerStatus(state.message, dirty);
   return (
-    <footer className="settings-footer mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4">
-      <p role={state.message ? 'status' : undefined} className="min-w-0 text-xs text-muted-foreground">
-        {state.message || (dirty ? '有未保存修改' : '')}
+    <footer className="settings-footer mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border py-3.5">
+      <p role={state.message ? 'status' : undefined} className={`min-w-0 text-xs ${status.tone}`}>
+        {status.text}
       </p>
       <div className="flex shrink-0 gap-2">
         {!state.document && state.error && (

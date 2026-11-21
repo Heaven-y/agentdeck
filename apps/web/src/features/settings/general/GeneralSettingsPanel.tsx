@@ -107,6 +107,36 @@ function GeneralFeedback({ state }: { state: ReturnType<typeof useGeneralSetting
   );
 }
 
+function GeneralFooter({ state }: { state: ReturnType<typeof useGeneralSettings> }) {
+  return (
+    <footer className="settings-footer flex flex-wrap items-center justify-between gap-3 border-t border-border py-3.5">
+      <p className={`text-xs ${state.dirty ? 'font-medium text-warning' : 'text-muted-foreground'}`}>
+        {state.dirty ? '有未保存修改' : '模型和认证在“模型与连接”中设置。'}
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className={buttonClass('ghost')}
+          disabled={state.saving || (!state.document && !state.error)}
+          onClick={state.reread}
+        >
+          <RefreshCw aria-hidden className="size-3.5" />
+          重新读取
+        </button>
+        <button
+          type="button"
+          className={buttonClass('primary')}
+          disabled={state.saving || !state.dirty}
+          onClick={() => void state.save()}
+        >
+          <Save aria-hidden className="size-3.5" />
+          {state.saving ? '正在保存…' : '保存设置'}
+        </button>
+      </div>
+    </footer>
+  );
+}
+
 export function GeneralSettingsPanel({ guardRef }: { guardRef: MutableRefObject<SettingsLeave> }) {
   const state = useGeneralSettings();
   useLayoutEffect(() => {
@@ -141,31 +171,7 @@ export function GeneralSettingsPanel({ guardRef }: { guardRef: MutableRefObject<
           change={(patch) => state.setDraft((current) => current && { ...current, ...patch })}
         />
       )}
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-        <p className="text-xs text-muted-foreground">
-          {state.dirty ? '有未保存修改' : '模型和认证在“模型与连接”中设置。'}
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={buttonClass('ghost')}
-            disabled={state.saving || (!state.document && !state.error)}
-            onClick={state.reread}
-          >
-            <RefreshCw aria-hidden className="size-3.5" />
-            重新读取
-          </button>
-          <button
-            type="button"
-            className={buttonClass('primary')}
-            disabled={state.saving || !state.dirty}
-            onClick={() => void state.save()}
-          >
-            <Save aria-hidden className="size-3.5" />
-            {state.saving ? '正在保存…' : '保存设置'}
-          </button>
-        </div>
-      </footer>
+      <GeneralFooter state={state} />
     </div>
   );
 }

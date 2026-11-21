@@ -1,7 +1,6 @@
 import { Tab, TabList, TabProvider } from '@ariakit/react';
 import { Activity, FolderOpen, ListChecks, ListTree, TerminalSquare, X } from 'lucide-react';
 import type { ManagedServer } from '@agentdeck/shared/ssh';
-import { buttonClass } from '../../../../ui/styles';
 import type { ConsoleServerTab, ConsoleView } from './console-state';
 
 export const consoleViews = [
@@ -25,6 +24,7 @@ export function ConsoleServerTabs({
   select(id: string): void;
   close(id: string): void;
 }) {
+  if (!tabs.length) return null;
   return (
     <TabProvider
       selectedId={selected}
@@ -32,21 +32,29 @@ export function ConsoleServerTabs({
         if (id) select(id);
       }}
     >
-      <TabList aria-label="服务器标签" className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-4">
+      <TabList
+        aria-label="服务器标签"
+        className="conversation-tabs flex shrink-0 overflow-x-auto border-b border-border bg-sidebar"
+      >
         {tabs.map((tab) => {
           const server = servers.find((item) => item.alias === tab.serverId);
+          const active = selected === tab.serverId;
           return (
-            <div key={tab.serverId} className="flex shrink-0 items-center">
+            <div
+              key={tab.serverId}
+              data-active={active || undefined}
+              className="conversation-tab group flex min-w-28 max-w-60 shrink-0 items-center border-r border-border"
+            >
               <Tab
                 id={tab.serverId}
                 aria-controls={`console-server-${encodeURIComponent(tab.serverId)}`}
-                className="min-h-11 rounded-t-lg px-4 text-sm text-muted-foreground aria-selected:bg-muted aria-selected:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+                className="flex h-9 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs font-medium outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-interactive"
               >
-                {server?.name ?? tab.serverId}
+                <span className="truncate">{server?.name ?? tab.serverId}</span>
               </Tab>
               <button
                 type="button"
-                className={buttonClass('ghost')}
+                className={`mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-control-hover hover:text-foreground focus-visible:outline-interactive ${active ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100'}`}
                 aria-label={`关闭服务器标签 ${server?.name ?? tab.serverId}`}
                 title="关闭标签，保留服务器上的终端"
                 onClick={() => close(tab.serverId)}
@@ -84,9 +92,9 @@ export function ConsoleViewTabs({
             key={id}
             id={`${prefix}-${id}`}
             aria-controls={`${prefix}-panel`}
-            className="flex min-h-11 items-center gap-2 border-b-2 border-transparent px-4 text-sm text-muted-foreground aria-selected:border-accent aria-selected:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-10 items-center gap-1.5 border-b-2 border-transparent px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground aria-selected:border-interactive aria-selected:text-foreground focus-visible:outline-interactive"
           >
-            <Icon aria-hidden className="size-4" />
+            <Icon aria-hidden className="size-3.5" />
             {label}
           </Tab>
         ))}

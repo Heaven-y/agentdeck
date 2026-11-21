@@ -1,4 +1,9 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
 @import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
 @import 'tailwindcss';
 
 @import 'streamdown/styles.css';
@@ -7,67 +12,98 @@
 @source '../../../node_modules/streamdown/dist/*.js';
 
 .composer-followup {
-  @apply inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-border px-3 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40;
+  @apply inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-border-strong px-3 text-xs font-medium text-foreground transition-colors hover:bg-control-hover disabled:cursor-not-allowed disabled:opacity-40;
 }
 
-/* 参考 DSH 本机主题的中性层级；品牌操作与状态颜色分别定义。 */
+/* 桌面中性表面层级：融合清晰明度阶梯、统一状态层与语义容器配对，并与 Windows 原生标题栏对齐。 */
 @theme {
   --color-background: #191b20;
   --color-sidebar: #15171b;
-  --color-card: #202329;
-  --color-muted: #24272e;
-  --color-muted-foreground: #a0a8b8;
-  --color-foreground: #dce0e8;
-  --color-border: #2c3039;
-  --color-border-strong: #3d4451;
+  --color-card: #21242b;
+  --color-muted: #262a33;
+  --color-muted-foreground: #98a2b3;
+  --color-foreground: #e3e7ef;
+  --color-border: #2a2f3a;
+  --color-border-strong: #3b4252;
   --color-accent: #f9fafb;
   --color-accent-foreground: #0f1115;
-  --color-interactive: #a8bee7;
-  --color-success: #81cba4;
-  --color-warning: #f0c77f;
-  --color-destructive: #e66f7a;
-  --color-destructive-foreground: #ffb0b8;
+  --color-interactive: #8fb4ee;
+  --color-success: #79cc9f;
+  --color-warning: #f0c372;
+  --color-destructive: #e86c79;
+  --color-destructive-foreground: #ffb4bc;
+
+  --color-surface-subtle: #1d2026;
+  --color-surface-elevated: #252932;
+  --color-surface-selected: #283448;
+  --color-surface-warning: #2b2316;
+  --color-border-warning: #5b4520;
+  --color-surface-danger: #2d1a1f;
+  --color-border-danger: #5e2a35;
+  --color-surface-success: #182921;
+  --color-border-success: #2a533d;
+  --color-control-hover: #2c313b;
+  --color-control-active: #343a47;
 
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Helvetica Neue', Arial,
-    sans-serif;
+    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
+    'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-composer: #202329;
-  --surface-user-message: #24272e;
-  --surface-code: #16191f;
-  --surface-selected: #2b3548;
-  --control-hover: #2b2f38;
-  --popover-shadow: 0 16px 48px #0005, 0 2px 8px #0003;
-  --control-shadow: 0 0 0 0.5px #ffffff1f, 0 2px 6px #00000024;
+  --surface-composer: #1f2229;
+  --surface-user-message: #252a34;
+  --surface-code: #14161b;
+  --surface-selected: #283448;
+  --surface-subtle: #1d2026;
+  --surface-elevated: #252932;
+  --control-hover: #2c313b;
+  --control-active: #343a47;
+  --popover-shadow: 0 18px 44px -4px #0000006e, 0 4px 12px -2px #00000048, 0 0 0 1px #ffffff12;
+  --control-shadow: 0 2px 8px #0000002e, 0 0 0 1px var(--color-border-strong);
 }
 :root:not([data-theme='dark']) {
   color-scheme: light;
   --color-background: #ffffff;
   --color-sidebar: #f5f6f8;
   --color-card: #ffffff;
-  --color-muted: #f4f5f7;
-  --color-muted-foreground: #656d7b;
-  --color-foreground: #30343d;
-  --color-border: #e8eaef;
-  --color-border-strong: #d9dde5;
-  --color-accent: #0f1115;
+  --color-muted: #f0f2f5;
+  --color-muted-foreground: #5c6575;
+  --color-foreground: #1f2430;
+  --color-border: #e6e9ef;
+  --color-border-strong: #d3d8e2;
+  --color-accent: #141821;
   --color-accent-foreground: #ffffff;
-  --color-interactive: #50698f;
-  --color-success: #23613e;
-  --color-warning: #805100;
-  --color-destructive: #b6273f;
-  --color-destructive-foreground: #a51c34;
+  --color-interactive: #3f6090;
+  --color-success: #1f633e;
+  --color-warning: #875500;
+  --color-destructive: #b82640;
+  --color-destructive-foreground: #9e1b33;
+
+  --color-surface-subtle: #f8f9fb;
+  --color-surface-elevated: #ffffff;
+  --color-surface-selected: #e7eef8;
+  --color-surface-warning: #fef7e6;
+  --color-border-warning: #ebd29d;
+  --color-surface-danger: #fdf1f3;
+  --color-border-danger: #efc5cc;
+  --color-surface-success: #edf7f1;
+  --color-border-success: #b9dfc8;
+  --color-control-hover: #e9ecf1;
+  --color-control-active: #e0e5ec;
+
   --surface-composer: #ffffff;
-  --surface-user-message: #f4f5f7;
+  --surface-user-message: #f2f4f7;
   --surface-code: #f6f7f9;
-  --surface-selected: #e8edf5;
-  --control-hover: #eaecef;
-  --popover-shadow: 0 12px 44px #242c4314, 0 2px 6px #242c4308;
-  --control-shadow: 0 0 0 0.5px #0000001a, 0 2px 6px #0000000a;
+  --surface-selected: #e7eef8;
+  --surface-subtle: #f8f9fb;
+  --surface-elevated: #ffffff;
+  --control-hover: #e9ecf1;
+  --control-active: #e0e5ec;
+  --popover-shadow: 0 14px 36px -4px #141c2c1c, 0 4px 10px -2px #141c2c0e, 0 0 0 1px #141c2c0c;
+  --control-shadow: 0 1px 3px #0f172a0d, 0 0 0 1px var(--color-border-strong);
 }
 
 /* 桌面顶栏与系统按钮共用一行，交互控件退出拖动区，保留 Windows 原生贴靠与窗口菜单。 */
@@ -158,7 +194,8 @@
   width: fit-content;
   max-width: min(82%, 648px);
   margin-left: auto;
-  border-radius: 14px 14px 4px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: 16px 16px 4px 16px;
   background: var(--surface-user-message);
   padding: 10px 16px;
   font-size: 14px;
@@ -177,24 +214,29 @@
 }
 .conversation-assistant :is(pre, [data-streamdown='code-block']) {
   border-color: var(--color-border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface-code);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 20px;
 }
+.conversation-assistant [data-streamdown='code-block'] pre {
+  background: transparent;
+  border-radius: 0;
+}
 .conversation-assistant :not(pre) > code {
-  border-radius: 4px;
-  background: var(--control-hover);
-  padding: 1px 4px;
-  font-size: 12px;
+  border-radius: 5px;
+  background: var(--color-muted);
+  padding: 1.5px 5px;
+  font-size: 12.5px;
 }
 .conversation-assistant a {
+  color: var(--color-interactive);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 .composer {
   flex-shrink: 0;
-  padding: 12px 16px 16px;
+  padding: 10px 16px 14px;
 }
 .composer-followups {
   max-width: calc(var(--conversation-width, 748px) + 32px);
@@ -206,18 +248,18 @@
   width: 100%;
   max-width: calc(var(--conversation-width, 748px) + 32px);
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin-inline: auto;
   border-radius: 16px;
   background: var(--surface-composer);
-  padding-top: 12px;
+  padding-top: 10px;
   box-shadow: var(--control-shadow);
   transition: box-shadow 0.15s ease;
 }
 .composer-card:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--color-interactive) 60%, var(--color-border)),
-    0 2px 10px #00000008;
+    0 0 0 1.5px color-mix(in srgb, var(--color-interactive) 68%, var(--color-border)),
+    0 4px 16px -4px #0f172a12;
 }
 .composer-status {
   display: flex;
@@ -346,8 +388,61 @@
   select {
     cursor: pointer;
   }
+  select.ui-control {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23788296' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 14px 14px;
+  }
+  select.ui-control option {
+    background-color: var(--color-card);
+    color: var(--color-foreground);
+  }
+  input[type='checkbox']:not(.ui-switch-checkbox) {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    border: 1.5px solid var(--color-border-strong);
+    border-radius: 5px;
+    background-color: var(--color-background);
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 11px 11px;
+    cursor: pointer;
+    vertical-align: middle;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+  input[type='checkbox']:not(.ui-switch-checkbox):hover:not(:disabled) {
+    border-color: var(--color-interactive);
+  }
+  input[type='checkbox']:not(.ui-switch-checkbox):checked {
+    border-color: var(--color-interactive);
+    background-color: var(--color-interactive);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2 5 8.7 9.5 3.6'/%3E%3C/svg%3E");
+  }
+  :root[data-theme='dark'] input[type='checkbox']:not(.ui-switch-checkbox):checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2312151c' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2 5 8.7 9.5 3.6'/%3E%3C/svg%3E");
+  }
+  input[type='checkbox']:not(.ui-switch-checkbox):disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+  @media (forced-colors: active) {
+    input[type='checkbox']:not(.ui-switch-checkbox),
+    select.ui-control {
+      appearance: auto;
+      background-image: none;
+    }
+  }
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-interactive;
+    outline: 1.5px solid color-mix(in srgb, var(--color-interactive) 82%, transparent);
+    outline-offset: 1px;
   }
   @media (prefers-reduced-motion: reduce) {
     *,

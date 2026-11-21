@@ -41,7 +41,7 @@ const popoverProps = {
     return true;
   },
   className:
-    'field-options z-[80] max-h-[min(280px,var(--popover-available-height))] max-w-[calc(100vw-32px)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-1.5 text-foreground shadow-lg',
+    'field-options z-[80] max-h-[min(280px,var(--popover-available-height))] max-w-[calc(100vw-32px)] overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface-elevated p-1.5 text-foreground',
 } as const;
 
 function OptionLabel({ option, selected }: { option: FieldOption; selected: boolean }) {
@@ -53,7 +53,7 @@ function OptionLabel({ option, selected }: { option: FieldOption; selected: bool
   );
 }
 const optionClass =
-  'field-option flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none data-active-item:bg-muted aria-selected:text-interactive';
+  'field-option flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none data-active-item:bg-control-hover aria-selected:text-interactive';
 
 /** 固定选项只在明确确认时写回，打开、方向键浏览和 Esc 均不覆盖配置。 */
 export function FieldSelect({ id, label, value, options, disabled, readOnly, onChange }: FieldProps) {

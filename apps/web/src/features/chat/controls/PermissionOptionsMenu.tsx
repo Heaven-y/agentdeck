@@ -2,7 +2,7 @@ import { Menu, MenuButton, MenuItem, MenuProvider, MenuSeparator } from '@ariaki
 import { ChevronDown, ShieldCheck } from 'lucide-react';
 import { permissionChoices } from '../../../cli/permission-policies';
 import { MenuChoice, modelMenuItemClass } from '../../../ui/fields/MenuChoice';
-import { buttonClass } from '../../../ui/styles';
+import { buttonClass, popoverClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
 import { conversationPermission, conversationPermissionError, permissionEditorPending } from '../state/chat-permission';
 
@@ -20,7 +20,7 @@ export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
   const current = choices.find((entry) => entry.selection.mode === selected?.mode);
   const display = current ?? (pending || permissionError ? { label: '权限', description: undefined } : nativeDefault);
   return (
-    <MenuProvider placement="top-end">
+    <MenuProvider placement="top-start">
       <MenuButton
         disabled={disabled}
         aria-label="权限模式"
@@ -37,7 +37,7 @@ export function PermissionOptionsMenu({ disabled }: { disabled: boolean }) {
         unmountOnHide
         gutter={8}
         aria-label="权限模式菜单"
-        className="z-50 max-h-[min(480px,var(--popover-available-height))] w-72 overflow-y-auto rounded-2xl border border-border bg-card p-1 text-foreground shadow-lg"
+        className={`${popoverClass} max-h-[min(480px,var(--popover-available-height))] min-w-48 max-w-64 overflow-y-auto`}
       >
         {choices.map((choice) => (
           <MenuChoice

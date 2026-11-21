@@ -4,17 +4,23 @@ import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { SessionSortMenu } from '../../features/sessions/list/SessionSortMenu';
 import { desktopChrome } from '../../lib/desktop-bridge';
 import { sidebarItemClass } from '../../ui/sidebar-styles';
-
-const iconButtonClass =
-  'inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent';
+import { iconButtonClass } from '../../ui/styles';
+import brandIcon from '../../ui/assets/agentdeck.png';
 
 export function SidebarBrand({ collapsed }: { collapsed: boolean }) {
   if (desktopChrome()) return null;
   const Icon = collapsed ? PanelLeftOpen : PanelLeftClose;
   const label = collapsed ? '展开侧栏' : '收起侧栏';
   return (
-    <header className={`flex min-h-10 shrink-0 items-center ${collapsed ? 'justify-center' : 'justify-between px-3'}`}>
-      {!collapsed && <span className="text-[15px] font-semibold tracking-tight">AgentDeck</span>}
+    <header
+      className={`flex min-h-10 shrink-0 items-center ${collapsed ? 'justify-center' : 'justify-between px-2.5'}`}
+    >
+      {!collapsed && (
+        <span className="inline-flex select-none items-center gap-2 text-[14px] font-semibold tracking-tight">
+          <img src={brandIcon} alt="" aria-hidden className="size-5 shrink-0 rounded-[5px] object-contain" />
+          AgentDeck
+        </span>
+      )}
       <button
         type="button"
         aria-label={label}
@@ -108,7 +114,7 @@ export function SidebarWorkspaces({
 
 export function SidebarFooter({ collapsed, onOpenSettings }: { collapsed: boolean; onOpenSettings?(): void }) {
   return (
-    <footer className="shrink-0 pt-2">
+    <footer className="mt-1 shrink-0 border-t border-border/70 pt-2">
       <button
         type="button"
         aria-label="设置"

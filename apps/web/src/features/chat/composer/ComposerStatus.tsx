@@ -5,6 +5,7 @@ import { averageTokenRate, finiteCount, formatDuration, tokenFields } from '../.
 import { ContextStatus } from '../models/ContextStatus';
 import { StatisticsLine } from '../../conversation/timeline/StatisticsLine';
 import { useChat } from '../state/chat-store';
+import { popoverClass } from '../../../ui/styles';
 
 type StatisticsItem = Extract<ChatItem, { kind: 'statistics' }>;
 
@@ -104,7 +105,7 @@ function TurnStatistics({
         unmountOnHide
         gutter={8}
         aria-label={detailsLabel}
-        className="z-50 max-w-[calc(100vw-32px)] rounded-xl border border-border bg-card px-4 py-3 shadow-lg"
+        className={`${popoverClass} max-w-[calc(100vw-32px)] px-4 py-3`}
       >
         {hasDetails && item ? (
           <StatisticsLine statistics={item} />

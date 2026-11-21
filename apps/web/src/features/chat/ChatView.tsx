@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { conversationWidth } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../ui/styles';
+import { AgentIcon } from '../../ui/BrandIcons';
+import { AGENT_FULL_NAMES } from '../../cli/shared/labels';
 import { useProductSettings } from '../settings/general/use-product-settings';
 import { useChat } from './state/chat-store';
 import { conversationPermissionError } from './state/chat-permission';
@@ -21,14 +23,14 @@ function Banner() {
   return (
     <div
       role="alert"
-      className="conversation-notice flex items-start gap-2 rounded-xl bg-destructive/8 px-3 py-2 text-[13px]"
+      className="conversation-notice flex items-start gap-2.5 rounded-xl border border-border-danger bg-surface-danger px-3.5 py-2.5 text-[13px]"
     >
       <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
       <span className="min-w-0 flex-1 leading-6 break-words text-destructive-foreground">{banner}</span>
       <button
         type="button"
         aria-label="关闭提示"
-        className="-m-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="-m-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-control-hover hover:text-foreground"
         onClick={dismiss}
       >
         <X aria-hidden className="size-4" />
@@ -48,7 +50,7 @@ function HistoryFailure() {
 
   if (!historyError && !permissionError) return null;
   return (
-    <div className="conversation-notice space-y-2 rounded-xl border border-border p-3">
+    <div className="conversation-notice space-y-2.5 rounded-xl border border-border-danger bg-surface-danger p-3.5">
       <p role="alert" className="text-sm text-destructive-foreground">
         {historyError ?? permissionError}
       </p>
@@ -117,11 +119,18 @@ function useHistoryPagination(): HistoryPagination | undefined {
 }
 
 function EmptyConversation({ hasSession, notice }: { hasSession: boolean; notice?: string }) {
+  const agent = useChat((s) => s.agent);
   return (
-    <div className="m-auto max-w-lg px-6 py-12 text-center">
-      <h2 className="text-[26px] font-medium leading-8 tracking-tight">{hasSession ? '继续会话' : '从一条消息开始'}</h2>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {notice ?? (hasSession ? '暂无历史消息，可以继续发送。' : '描述你想完成的任务。')}
+    <div className="m-auto flex max-w-lg flex-col items-center px-6 py-12 text-center">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-2xl border border-border bg-surface-subtle shadow-xs">
+        <AgentIcon agent={agent} className="size-6" />
+      </div>
+      <h2 className="text-[22px] font-semibold leading-8 tracking-tight">
+        {hasSession ? '继续会话' : '从一条消息开始'}
+      </h2>
+      <p className="mt-2 text-[13px] leading-6 text-muted-foreground">
+        {notice ??
+          (hasSession ? '暂无历史消息，可以继续发送。' : `使用 ${AGENT_FULL_NAMES[agent]} 描述你想完成的任务。`)}
       </p>
     </div>
   );

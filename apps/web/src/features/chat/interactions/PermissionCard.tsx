@@ -17,7 +17,7 @@ export function PermissionCard({ item }: { item: PermissionItem }) {
     <div
       role="group"
       aria-label={`权限请求：${name}`}
-      className={`min-w-0 rounded-r-xl border-l-2 bg-sidebar px-3 py-3 text-[13px] ${item.resolved ? 'border-border' : 'border-warning'}`}
+      className={`min-w-0 rounded-xl border px-4 py-3.5 text-[13px] ${item.resolved ? 'border-border bg-surface-subtle' : 'border-border-warning bg-surface-warning/75'}`}
     >
       <div className="flex items-center gap-2 font-medium">
         <ShieldAlert
@@ -29,7 +29,7 @@ export function PermissionCard({ item }: { item: PermissionItem }) {
         </span>
       </div>
       {item.description && <p className="mt-2 leading-6 break-words text-muted-foreground">{item.description}</p>}
-      <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-background p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
+      <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-border/80 bg-background p-3 font-mono text-xs leading-5 whitespace-pre-wrap break-words">
         {JSON.stringify(item.input, null, 2)}
       </pre>
       {item.resolved ? (

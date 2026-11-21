@@ -13,7 +13,7 @@ export function SpotlightSettings({
     <section aria-label="鼠标光影" className="space-y-4 border-b border-border pb-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h4 className="text-sm font-medium">鼠标光影</h4>
+          <h4 className="text-sm font-semibold">鼠标光影</h4>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
             仅在聊天输入框内跟随鼠标，颜色随深浅主题自动适配。
           </p>
@@ -24,7 +24,7 @@ export function SpotlightSettings({
           aria-label="鼠标光影"
           aria-checked={value.enabled}
           disabled={disabled}
-          className="spotlight-switch"
+          className="ui-switch"
           onClick={() => change({ ...value, enabled: !value.enabled })}
         >
           <span />

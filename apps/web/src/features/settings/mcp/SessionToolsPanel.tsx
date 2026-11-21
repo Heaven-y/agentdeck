@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { useId, type ReactNode } from 'react';
 import { buttonClass } from '../../../ui/styles';
@@ -21,7 +22,7 @@ function AccessSwitch({ state, descriptionId }: { state: State; descriptionId: s
       aria-checked={enabled}
       aria-busy={pending}
       disabled={pending || !available || status.isError}
-      className="spotlight-switch shrink-0 disabled:opacity-50"
+      className="ui-switch shrink-0 disabled:opacity-50"
       onClick={() => mutation.mutate(!enabled)}
     >
       <span />
@@ -107,8 +108,9 @@ export function SessionToolsPanel({
       </div>
       <AccessFeedback state={state} onChanged={onChanged} />
       {!compact && (
-        <details className="text-xs text-muted-foreground">
-          <summary className="w-fit cursor-pointer py-1 focus-visible:outline-2 focus-visible:outline-accent">
+        <details className="group/tools text-xs text-muted-foreground">
+          <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 rounded-md py-1 marker:hidden transition-colors select-none hover:text-foreground">
+            <ChevronRight aria-hidden className="size-3.5 transition-transform group-open/tools:rotate-90" />
             工具说明
           </summary>
           <div className="space-y-3 pt-2 leading-5">

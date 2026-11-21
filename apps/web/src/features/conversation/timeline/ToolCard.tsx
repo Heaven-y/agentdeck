@@ -57,7 +57,7 @@ export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem 
         if (event.currentTarget.open !== expanded) onExpandedChange?.(event.currentTarget.open);
       }}
     >
-      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1 marker:hidden hover:bg-muted/50">
+      <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-1 marker:hidden transition-colors hover:bg-control-hover/50">
         <Wrench aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden whitespace-nowrap">
           <span title={item.name} className="max-w-32 shrink-0 truncate">

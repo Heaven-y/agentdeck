@@ -45,6 +45,7 @@ function Management({
       archived={archived}
       pinned={false}
       localActions={false}
+      hoverReveal={!archived}
       disabled={disabled}
       choose={choose}
     />
@@ -84,10 +85,13 @@ function RowFrame({ active, rowProps, children }: Pick<RowProps, 'active' | 'row
     <li
       {...rowProps}
       data-active={active || undefined}
-      className="project-session-row flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg"
+      className="project-session-row group/row flex min-w-0 flex-wrap items-center gap-0.5 rounded-lg"
     >
       {rowProps?.draggable && (
-        <GripVertical aria-hidden className="ml-1 size-3 shrink-0 cursor-grab text-muted-foreground" />
+        <GripVertical
+          aria-hidden
+          className="ml-1 size-3 shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-hover/row:opacity-70 group-focus-within/row:opacity-70"
+        />
       )}
       {children}
     </li>
@@ -106,7 +110,7 @@ function RowEntry({
   const { label } = rowDetails(session, running);
   const content = <RowContent session={session} running={running} />;
   const className =
-    'flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-1 text-left text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-interactive';
+    'flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] transition-colors focus-visible:outline-interactive';
   if (!select || archived)
     return (
       <div className={className} title={archived ? `${label} · 已归档，恢复后继续` : label}>
@@ -119,7 +123,7 @@ function RowEntry({
       aria-current={active ? 'true' : undefined}
       aria-label={label}
       title={rowProps?.draggable ? `${label} · 拖动或 Alt+↑/↓ 调整顺序` : label}
-      className={`${className} ${active ? 'font-medium' : 'hover:bg-muted/60 hover:text-foreground'}`}
+      className={`${className} ${active ? 'font-medium' : 'hover:text-foreground'}`}
       disabled={pending}
       onClick={select}
     >

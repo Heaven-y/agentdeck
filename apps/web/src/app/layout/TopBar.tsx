@@ -3,6 +3,7 @@ import type { Workspace } from '@agentdeck/shared/projects';
 import { reconnectChat, useChat } from '../../features/chat/state/chat-store';
 import { conversationTitle } from '../../features/chat/state/conversations';
 import { ConversationViewControls } from '../../features/chat/timeline/ConversationViewControls';
+import { iconButtonClass } from '../../ui/styles';
 
 /** 会话标题栏位于中央列，不让服务器和全局工具占据对话导航。 */
 export function TopBar({
@@ -20,7 +21,7 @@ export function TopBar({
   return (
     <header id="workspace-topbar" className="flex h-12 shrink-0 items-center gap-3 px-5">
       <div className="min-w-12 flex-1">
-        <h1 className="truncate text-sm font-medium" title={title}>
+        <h1 className="truncate text-sm font-semibold tracking-tight" title={title}>
           {title}
         </h1>
         {workspace && (
@@ -31,7 +32,10 @@ export function TopBar({
       </div>
       {workspace && <ConversationViewControls />}
       {running && (
-        <span role="status" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          role="status"
+          className="inline-flex items-center gap-1.5 rounded-full bg-surface-selected px-2.5 py-0.5 text-xs font-medium text-interactive"
+        >
           <LoaderCircle aria-hidden className="size-3.5 motion-safe:animate-spin" />
           运行中
         </span>
@@ -44,7 +48,7 @@ export function TopBar({
         aria-expanded={sidebarOpen}
         aria-controls="conversation-sidebar"
         onClick={onToggleSidebar}
-        className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+        className={iconButtonClass}
       >
         <SidebarIcon aria-hidden className="size-4" />
       </button>
@@ -59,7 +63,7 @@ function ConnectionStatus() {
   return (
     <button
       type="button"
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+      className="flex items-center gap-1.5 rounded-full border border-border-warning bg-surface-warning px-2.5 py-0.5 text-xs font-medium text-warning transition-colors hover:brightness-95"
       onClick={reconnectChat}
       title="重新连接本机服务"
     >

@@ -59,7 +59,7 @@ function ConversationTab({ view, project, active }: { view: ConversationView; pr
         type="button"
         aria-label={`关闭标签“${title}”`}
         title="关闭标签"
-        className="mr-1 flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted focus-visible:outline-2 focus-visible:outline-interactive"
+        className={`mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-control-hover hover:text-foreground focus-visible:outline-interactive ${active ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100'}`}
         onClick={closeTab}
       >
         <X aria-hidden className="size-3.5" />

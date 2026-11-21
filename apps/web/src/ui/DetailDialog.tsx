@@ -38,16 +38,16 @@ export function DetailDialog({
         event.stopPropagation();
         close();
       }}
-      className="m-auto max-h-[calc(100dvh-48px)] w-[min(620px,calc(100vw-48px))] overflow-hidden rounded-xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/55"
+      className="m-auto max-h-[calc(100dvh-48px)] w-[min(620px,calc(100vw-48px))] overflow-hidden rounded-xl border border-border bg-surface-elevated p-0 text-foreground shadow-2xl"
     >
       <div className="flex max-h-[calc(100dvh-48px)] flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-6 py-4">
-          <h2 id={id} className="text-base font-semibold">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+          <h2 id={id} className="text-[15px] font-semibold tracking-tight">
             {title}
           </h2>
           <button
             type="button"
-            className={buttonClass('ghost')}
+            className={`${buttonClass('ghost')} -mr-1.5 px-2`}
             aria-label={`关闭${title}`}
             disabled={busy}
             onClick={close}
@@ -55,7 +55,7 @@ export function DetailDialog({
             <X aria-hidden className="size-4" />
           </button>
         </header>
-        <div className="min-h-0 overflow-y-auto p-6">{children}</div>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
       </div>
     </dialog>
   );

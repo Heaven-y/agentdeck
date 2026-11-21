@@ -1,6 +1,6 @@
 import { settingsApi, settingsKeys } from '../api';
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { CircleAlert, RefreshCw } from 'lucide-react';
 import { AGENT_KINDS } from '@agentdeck/shared/conversation';
 
 import { buttonClass } from '../../../ui/styles';
@@ -18,10 +18,17 @@ export function EnvironmentSummary({ onOpenSettings }: { onOpenSettings(): void 
   return (
     <section
       aria-label="启动环境摘要"
-      className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border px-4 py-1 text-xs leading-6"
+      className="flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border-warning bg-surface-warning px-5 py-1.5 text-xs leading-5 text-warning"
     >
-      <p role="status">{query.isError ? '环境读取失败' : `${tool!.name} 暂不可用`}</p>
-      <button type="button" className={`${buttonClass('ghost')} text-xs`} onClick={onOpenSettings}>
+      <CircleAlert aria-hidden className="size-3.5 shrink-0" />
+      <p role="status" className="font-medium">
+        {query.isError ? '环境读取失败' : `${tool!.name} 暂不可用`}
+      </p>
+      <button
+        type="button"
+        className="ml-auto inline-flex min-h-7 items-center rounded-md border border-border-warning bg-background/70 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+        onClick={onOpenSettings}
+      >
         查看设置
       </button>
     </section>

@@ -3,7 +3,7 @@ import { ChevronDown, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { ApiError } from '../../../lib/http';
 import { MenuChoice, modelMenuItemClass } from '../../../ui/fields/MenuChoice';
-import { buttonClass } from '../../../ui/styles';
+import { buttonClass, popoverClass } from '../../../ui/styles';
 import { useChat } from '../state/chat-store';
 import { useAgentCapabilities } from './use-agent-capabilities';
 
@@ -17,7 +17,7 @@ function CodexModeMenu({ disabled }: { disabled: boolean }) {
   const catalog = useAgentCapabilities(requested || opened, requested || opened);
   const modes = catalog.data?.collaborationModes;
   return (
-    <MenuProvider placement="top-end" open={opened} setOpen={setOpened}>
+    <MenuProvider placement="top-start" open={opened} setOpen={setOpened}>
       <MenuButton
         aria-label="协作模式"
         title="选择下一轮的协作模式"
@@ -33,7 +33,7 @@ function CodexModeMenu({ disabled }: { disabled: boolean }) {
         unmountOnHide
         gutter={8}
         aria-label="协作模式菜单"
-        className="z-50 w-64 max-w-[calc(100vw-32px)] rounded-2xl border border-border bg-card p-1 text-foreground shadow-lg"
+        className={`${popoverClass} min-w-48 max-w-[min(16rem,calc(100vw-32px))]`}
       >
         <MenuChoice checked={!mode} disabled={disabled} choose={() => setMode(undefined)}>
           原生模式

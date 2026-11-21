@@ -155,13 +155,13 @@ function ProjectItem({
   );
   return (
     <li className="min-w-0">
-      <div className="group flex min-w-0 items-center rounded-lg hover:bg-muted/70">
+      <div className="group flex min-w-0 items-center rounded-lg transition-colors hover:bg-control-hover/70">
         <button
           type="button"
           aria-expanded={expanded}
           aria-current={current ? 'true' : undefined}
           title={project.dir}
-          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-1 text-left text-[13px] text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1 text-left text-[13px] text-foreground focus-visible:outline-interactive"
           onClick={toggle}
         >
           <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
@@ -170,11 +170,17 @@ function ProjectItem({
             title={
               searching ? `当前搜索结果：${sessions.length} 条会话` : `已加载会话及本页临时会话：${sessions.length} 条`
             }
-            className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+            className="shrink-0 rounded-full bg-control-hover/90 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-muted-foreground"
           >
             {sessions.length}
           </span>
         </button>
+        <ProjectMenu
+          project={project}
+          running={running}
+          choose={onManageProject ? (action) => onManageProject(project, action) : undefined}
+          reveal={projectReveal(reveal, project)}
+        />
         <NewSessionMenu
           projects={[project]}
           collapsed={false}
@@ -182,15 +188,12 @@ function ProjectItem({
           onNewSession={newSession}
           onAddProject={() => {}}
         />
-        <ProjectMenu
-          project={project}
-          running={running}
-          choose={onManageProject ? (action) => onManageProject(project, action) : undefined}
-          reveal={projectReveal(reveal, project)}
-        />
       </div>
       {expanded && (
-        <section aria-label={`${project.name}会话`} className="project-session-list mb-2 pl-3">
+        <section
+          aria-label={`${project.name}会话`}
+          className="project-session-list mb-2 ml-4 border-l border-border/80 pl-2"
+        >
           <ProjectSessionStatus
             loading={loading}
             incomplete={incomplete}
@@ -294,11 +297,13 @@ function ProjectSessionExpansionControl({
 
 function EmptyProjects({ addProject }: { addProject(): void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 px-5 py-10 text-center">
-      <FolderPlus aria-hidden className="size-7 text-muted-foreground" />
-      <p className="text-sm font-medium">还没有项目</p>
-      <p className="text-xs leading-5 text-muted-foreground">添加一个本地目录，查看与继续原生 CLI 会话。</p>
-      <button type="button" className={buttonClass('outline')} onClick={addProject}>
+    <div className="flex flex-col items-center justify-center gap-2.5 px-4 py-8 text-center">
+      <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-background/70 text-muted-foreground">
+        <FolderPlus aria-hidden className="size-5" />
+      </div>
+      <p className="text-[13px] font-medium">还没有项目</p>
+      <p className="text-xs leading-5 text-muted-foreground">添加本地目录后，这里会列出对应会话。</p>
+      <button type="button" className={`${buttonClass('outline')} mt-0.5`} onClick={addProject}>
         添加项目目录
       </button>
     </div>

@@ -7,10 +7,11 @@ import { matchesCapability, slashCompletion } from './slash-completion';
 import { useAgentCapabilities } from '../controls/use-agent-capabilities';
 import { commandWarnings } from '../controls/capability-feedback';
 import { isResumeName, RESUME_ALIASES, resumeSuggestionMatches } from './resume-command';
+import { popoverClass } from '../../../ui/styles';
 
 const MAX_SUGGESTIONS = 20;
 const itemClass =
-  'cursor-pointer rounded-xl px-3 py-2 text-[13px] outline-none data-active-item:bg-muted data-active-item:ring-1 data-active-item:ring-border-strong aria-disabled:cursor-not-allowed aria-disabled:opacity-60';
+  'cursor-pointer rounded-lg px-3 py-2 text-[13px] outline-none transition-colors data-active-item:bg-control-hover aria-disabled:cursor-not-allowed aria-disabled:opacity-60';
 
 function ResumeSuggestion({ choose, agent }: { choose(): void; agent: AgentKind }) {
   const aliases = RESUME_ALIASES[agent];
@@ -180,7 +181,7 @@ function ScopedInput({ id, text, onChange, onSend, onSteer, onResume, placeholde
         gutter={12}
         sameWidth
         aria-label="命令补全"
-        className="z-50 max-h-[min(360px,var(--popover-available-height))] overflow-y-auto rounded-2xl border border-border bg-card p-1.5 text-foreground shadow-lg"
+        className={`${popoverClass} max-h-[min(360px,var(--popover-available-height))] overflow-y-auto`}
       >
         <p role="status" className="px-3 py-2 text-xs leading-5 text-muted-foreground">
           {catalog.isFetching ? '正在读取原生能力…' : '↑ ↓ 选择 · Enter 确认 · Esc 关闭'}

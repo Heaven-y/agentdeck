@@ -82,13 +82,17 @@ export default function SshConsolePage({ visible, onManageServers }: SshConsoleP
           />
         ))}
         {!navigation.tabs.length && (
-          <div className="m-auto max-w-md space-y-3 p-6 text-center">
-            <Server aria-hidden className="mx-auto size-8 text-muted-foreground" />
-            <p className="font-medium">选择服务器开始</p>
-            <p className="text-sm leading-6 text-muted-foreground">
-              服务器独立于本地项目。连接后可查看资源、进程、只读文件并打开终端。
-            </p>
-            <button type="button" className={buttonClass('primary')} onClick={() => setPicker(true)}>
+          <div className="m-auto flex max-w-md flex-col items-center gap-3.5 p-6 text-center">
+            <div className="flex size-12 items-center justify-center rounded-2xl border border-border bg-surface-subtle text-muted-foreground">
+              <Server aria-hidden className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-semibold tracking-tight">选择服务器开始</p>
+              <p className="text-[13px] leading-6 text-muted-foreground">
+                服务器独立于本地项目。连接后可查看资源、进程、只读文件并打开终端。
+              </p>
+            </div>
+            <button type="button" className={`${buttonClass('primary')} mt-0.5`} onClick={() => setPicker(true)}>
               打开服务器
             </button>
           </div>

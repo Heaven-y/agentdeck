@@ -7,7 +7,7 @@ import {
   type SessionSummary,
   type SessionCapabilities,
 } from '@agentdeck/shared/conversation';
-import { buttonClass } from '../../../ui/styles';
+import { buttonClass, menuItemClass, popoverClass } from '../../../ui/styles';
 import { AGENT_LABELS } from '../../../cli/shared/labels';
 
 export type SessionDialogAction = SessionActionInput['action'] | 'fork';
@@ -47,6 +47,7 @@ export function SessionMenu({
   disabled,
   choose,
   localActions = true,
+  hoverReveal = false,
 }: {
   session: SessionSummary;
   archived: boolean;
@@ -55,39 +56,37 @@ export function SessionMenu({
   choose(action: SessionMenuAction): void;
   /** 项目侧栏已有排序，不重复提供旧的置顶动作；复制始终可用。 */
   localActions?: boolean;
+  /** 在紧凑列表中默认低调隐藏，悬停、键盘聚焦或展开菜单时可见。 */
+  hoverReveal?: boolean;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useMenuStore({ placement: 'bottom-start' });
   const capabilities = session.capabilities ?? legacySessionCapabilities(session.agent);
   const visible = visibleActions(capabilities, archived, localActions);
   if (!visible.length) return null;
+  const revealClass = hoverReveal
+    ? 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus:opacity-100 aria-expanded:opacity-100'
+    : '';
   return (
     <>
       <MenuButton
         ref={trigger}
         store={menu}
         render={<button type="button" />}
-        className={`${buttonClass('ghost')} shrink-0 px-1.5`}
+        className={`${buttonClass('ghost')} shrink-0 px-1.5 ${revealClass}`}
         aria-label={`${AGENT_LABELS[session.agent]} 会话“${session.title || '无标题会话'}”的更多操作`}
         title={disabled ? '会话运行或操作中，可复制会话引用' : '更多会话操作'}
       >
         <MoreHorizontal aria-hidden className="size-4" />
       </MenuButton>
-      <Menu
-        store={menu}
-        portal
-        unmountOnHide
-        gutter={6}
-        aria-label="会话操作"
-        className="z-50 min-w-40 rounded-xl border border-border-strong bg-card p-1.5 text-foreground shadow-xl"
-      >
+      <Menu store={menu} portal unmountOnHide gutter={6} aria-label="会话操作" className={`${popoverClass} min-w-44`}>
         {visible.map((action) => {
           const Icon = actions[action].icon;
           return (
             <MenuItem
               key={action}
               disabled={disabled && action !== 'copy'}
-              className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none data-active-item:bg-muted data-active-item:ring-1 data-active-item:ring-accent ${action === 'delete' ? 'text-destructive-foreground' : ''}`}
+              className={`${menuItemClass} py-2 ${action === 'delete' ? 'text-destructive-foreground' : ''}`}
               onClick={() => {
                 menu.hide();
                 // 对话框关闭后回到仍存在的更多按钮，而不是即将卸载的菜单项。

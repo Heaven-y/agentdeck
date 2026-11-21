@@ -6,7 +6,7 @@ export function AppearanceSettings() {
   const toggle = useUiPreferences((state) => state.toggleTheme);
   return (
     <section aria-label="外观" className="space-y-3 border-b border-border pb-6">
-      <h4 className="text-xs font-medium text-muted-foreground">外观</h4>
+      <h4 className="text-sm font-semibold">外观</h4>
       <div className="flex flex-wrap gap-3">
         {(['light', 'dark'] as const).map((value) => {
           const Icon = value === 'light' ? Sun : Moon;

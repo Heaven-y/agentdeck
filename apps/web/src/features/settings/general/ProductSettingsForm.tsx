@@ -1,14 +1,15 @@
 import { AGENT_KINDS } from '@agentdeck/shared/conversation';
 import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
 import { useId } from 'react';
-import { buttonClass, inputClass } from '../../../ui/styles';
+import { SegmentedControl } from '../../../ui/fields/SegmentedControl';
+import { inputClass } from '../../../ui/styles';
 import { type ProductSettingsDraft } from './product-settings-draft';
 
 const widthOptions = [
-  ['small', '小'],
-  ['medium', '中'],
-  ['large', '大'],
-  ['custom', '自定义'],
+  { value: 'small', label: '小' },
+  { value: 'medium', label: '中' },
+  { value: 'large', label: '大' },
+  { value: 'custom', label: '自定义' },
 ] as const;
 
 type Props = {
@@ -21,9 +22,9 @@ export function ProductSettingsForm(props: Props) {
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <h3 className="font-medium">新会话默认值</h3>
+        <h3 className="text-sm font-semibold">新会话默认值</h3>
       </div>
-      <label htmlFor={`${id}-agent`} className="flex max-w-xs flex-col gap-1.5 text-sm">
+      <label htmlFor={`${id}-agent`} className="flex max-w-xs flex-col gap-1.5 text-[13px] font-medium">
         默认 Agent
         <select
           id={`${id}-agent`}
@@ -41,11 +42,11 @@ export function ProductSettingsForm(props: Props) {
           ))}
         </select>
       </label>
-      <section className="space-y-3 border-t border-border pt-4">
+      <section className="space-y-3.5 border-t border-border pt-5">
         <div className="space-y-1">
-          <h3 className="font-medium">对话与侧栏</h3>
+          <h3 className="text-sm font-semibold">对话与侧栏</h3>
         </div>
-        <label htmlFor={`${id}-limit`} className="flex max-w-xs flex-col gap-1.5 text-sm">
+        <label htmlFor={`${id}-limit`} className="flex max-w-xs flex-col gap-1.5 text-[13px] font-medium">
           每个项目显示的会话条数
           <input
             id={`${id}-limit`}
@@ -58,23 +59,17 @@ export function ProductSettingsForm(props: Props) {
             onChange={(event) => props.change({ sessionLimit: event.target.value })}
           />
         </label>
-        <fieldset className="space-y-1.5 text-sm" disabled={props.disabled}>
-          <legend className="mb-1.5">对话区宽度</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {widthOptions.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={props.draft.widthPreset === value}
-                onClick={() => props.change({ widthPreset: value })}
-                className={`${buttonClass(props.draft.widthPreset === value ? 'outline' : 'ghost')} ${props.draft.widthPreset === value ? 'bg-muted' : ''}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <fieldset className="space-y-2 text-sm" disabled={props.disabled}>
+          <legend className="mb-1.5 text-[13px] font-medium">对话区宽度</legend>
+          <SegmentedControl
+            label="对话区宽度"
+            value={props.draft.widthPreset}
+            disabled={props.disabled}
+            options={widthOptions}
+            onChange={(widthPreset) => props.change({ widthPreset })}
+          />
           {props.draft.widthPreset === 'custom' && (
-            <label className="flex max-w-xs flex-col gap-1.5">
+            <label className="mt-2 flex max-w-xs flex-col gap-1.5 text-[13px]">
               自定义宽度（480–1400 像素）
               <input
                 type="number"

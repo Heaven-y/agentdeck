@@ -12,7 +12,7 @@ import { AGENT_KINDS, type AgentCapabilities, type AgentKind } from '@agentdeck/
 import type { Workspace } from '@agentdeck/shared/projects';
 
 import { ProjectManageDialog } from '../../projects/ProjectManageDialog';
-import { buttonClass } from '../../../ui/styles';
+import { buttonClass, popoverClass } from '../../../ui/styles';
 import { agentUnavailable, useEnvironment } from '../../settings/environment/use-environment';
 import { sessionActionKey, useChat } from '../state/chat-store';
 import { useAgentCapabilities } from '../controls/use-agent-capabilities';
@@ -28,8 +28,7 @@ import { ModelCandidateLabel } from './ModelCandidateLabel';
 import { ModelSearchDialog } from './ModelSearchDialog';
 import { currentModelCandidate, modelCandidates, type ModelOrigin } from '../../../cli/shared/model-candidates';
 
-const menuClass =
-  'z-50 max-h-[min(440px,var(--popover-available-height))] w-72 overflow-y-auto rounded-2xl border border-border bg-card p-1 text-foreground shadow-lg';
+const menuClass = `${popoverClass} max-h-[min(440px,var(--popover-available-height))] w-72 overflow-y-auto`;
 const triggerClass = `${buttonClass('ghost')} min-h-7 min-w-0 gap-1 rounded-lg px-2 text-[13px]`;
 
 function CatalogStatus({ catalog }: { catalog: ReturnType<typeof useAgentCapabilities> }) {

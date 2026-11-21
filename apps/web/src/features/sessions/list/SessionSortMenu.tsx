@@ -1,6 +1,7 @@
 import { Menu, MenuButton, MenuProvider } from '@ariakit/react';
 import { ArrowDownWideNarrow } from 'lucide-react';
 import { MenuChoice } from '../../../ui/fields/MenuChoice';
+import { iconButtonClass, popoverClass } from '../../../ui/styles';
 import { useSessionOrder } from './session-order';
 
 export function SessionSortMenu() {
@@ -8,20 +9,10 @@ export function SessionSortMenu() {
   const choose = useSessionOrder((state) => state.setMode);
   return (
     <MenuProvider placement="bottom-end">
-      <MenuButton
-        aria-label="会话排序"
-        title="会话排序"
-        className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-interactive"
-      >
+      <MenuButton aria-label="会话排序" title="会话排序" className={iconButtonClass}>
         <ArrowDownWideNarrow aria-hidden className="size-3.5" />
       </MenuButton>
-      <Menu
-        portal
-        unmountOnHide
-        gutter={6}
-        aria-label="会话排序方式"
-        className="z-50 min-w-36 rounded-xl border border-border bg-card p-1.5 shadow-lg"
-      >
+      <Menu portal unmountOnHide gutter={6} aria-label="会话排序方式" className={`${popoverClass} min-w-40`}>
         {(
           [
             ['recent', '最近活动'],

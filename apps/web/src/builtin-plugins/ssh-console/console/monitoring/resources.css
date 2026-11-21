@@ -1,24 +1,24 @@
-/* 仅资源组件使用的蓝青色阶；橙红保留给异常/过期，不以负载高低推断故障。 */
+/* 卡片外壳沿用主工作台中性表面色，指标色条保持清晰区分；橙红保留给异常/过期，不以负载高低推断故障。 */
 .resource-scope {
-  --resource-cpu: #235bb5;
-  --resource-gpu: #087184;
-  --resource-memory: #6950b0;
-  --resource-track: #e2e9f0;
-  --resource-surface: #f6f9fd;
-  --resource-border: #cfdce8;
-  --resource-warning: #855100;
-  --resource-warning-bg: #fff5df;
+  --resource-cpu: #2b62b8;
+  --resource-gpu: #0d7a8c;
+  --resource-memory: #6e56b3;
+  --resource-track: var(--color-muted);
+  --resource-surface: var(--surface-subtle);
+  --resource-border: var(--color-border);
+  --resource-warning: var(--color-warning);
+  --resource-warning-bg: var(--color-surface-warning);
   color: var(--color-foreground);
 }
 :root[data-theme='dark'] .resource-scope {
   --resource-cpu: #8fb9ff;
   --resource-gpu: #69d2e1;
   --resource-memory: #baa6f2;
-  --resource-track: #2d394a;
-  --resource-surface: #19232f;
-  --resource-border: #35475a;
-  --resource-warning: #f0c77f;
-  --resource-warning-bg: #352c1e;
+  --resource-track: var(--color-muted);
+  --resource-surface: var(--surface-subtle);
+  --resource-border: var(--color-border);
+  --resource-warning: var(--color-warning);
+  --resource-warning-bg: var(--color-surface-warning);
 }
 .resource-scope .resource-tone-cpu {
   --resource-tone: var(--resource-cpu);

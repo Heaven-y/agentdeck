@@ -27,7 +27,7 @@ export function SettingsNavigation({
             type="button"
             aria-current={selected ? 'page' : undefined}
             onClick={() => select(target)}
-            className={`settings-navigation-item flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${selected ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+            className={`settings-navigation-item flex w-full shrink-0 items-center gap-2.5 px-3 py-2 text-left text-[13px] ${selected ? '' : 'text-muted-foreground hover:bg-control-hover/70 hover:text-foreground'}`}
           >
             <Icon aria-hidden className="size-4 shrink-0" />
             <span className="whitespace-nowrap">{item.label}</span>
@@ -50,7 +50,7 @@ export function AgentNavigation({ agent, select }: { agent: AgentKind; select(ag
           type="button"
           aria-pressed={agent === item}
           onClick={() => select(item)}
-          className={`settings-model-tab flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${agent === item ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
+          className={`settings-model-tab ${agent === item ? '' : 'text-muted-foreground hover:bg-control-hover/70 hover:text-foreground'}`}
         >
           <AgentIcon agent={item} className="size-4" />
           <span>{AGENT_FULL_NAMES[item]}</span>

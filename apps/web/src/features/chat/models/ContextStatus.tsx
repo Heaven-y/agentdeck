@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import type { CompactionState } from '@agentdeck/shared/conversation';
 import { useChat } from '../state/chat-store';
 import { useContextWindow } from './use-context-window';
+import { popoverClass } from '../../../ui/styles';
 
 import {
   CompactionStatus,
@@ -90,7 +91,7 @@ export function ContextStatus() {
         unmountOnHide
         gutter={8}
         aria-label="上下文用量详情"
-        className="z-50 max-h-[min(360px,var(--popover-available-height))] w-80 max-w-[calc(100vw-32px)] space-y-2 overflow-y-auto rounded-2xl border border-border bg-card p-3 text-[13px] leading-6 text-muted-foreground shadow-lg"
+        className={`${popoverClass} max-h-[min(360px,var(--popover-available-height))] w-80 max-w-[calc(100vw-32px)] space-y-2 overflow-y-auto p-3.5 text-[13px] leading-6 text-muted-foreground`}
       >
         {usage ? <UsageDetails usage={usage} model={actualModel} /> : <p>{emptyUsageMessage}</p>}
         {compaction && compaction.status !== 'completed' && (

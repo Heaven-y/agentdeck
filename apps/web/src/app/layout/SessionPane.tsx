@@ -37,11 +37,18 @@ export function SessionPane({
   if (!project)
     return (
       <main className="flex min-w-0 flex-1 items-center justify-center px-6">
-        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-          <FolderPlus aria-hidden className="size-8 text-muted-foreground" />
-          <h2 className="text-base font-medium">选择一个工作区，开始对话</h2>
+        <div className="flex max-w-sm flex-col items-center gap-3.5 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-border bg-surface-subtle text-muted-foreground">
+            <FolderPlus aria-hidden className="size-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold tracking-tight">选择一个工作区，开始对话</h2>
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              添加本机项目目录，集中查看并继续原生 CLI 会话。
+            </p>
+          </div>
           {onAddProject && (
-            <button type="button" className={buttonClass('outline')} onClick={onAddProject}>
+            <button type="button" className={`${buttonClass('primary')} mt-1`} onClick={onAddProject}>
               添加项目目录
             </button>
           )}

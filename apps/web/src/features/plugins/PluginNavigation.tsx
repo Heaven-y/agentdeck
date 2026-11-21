@@ -37,7 +37,7 @@ export function PluginNavigation({
             title={manifest.name}
             aria-current={selected === manifest.id ? 'page' : undefined}
             onClick={() => open(manifest.id)}
-            className={`${sidebarItemClass(collapsed)} aria-[current]:bg-muted`}
+            className={`${sidebarItemClass(collapsed)} aria-[current]:bg-surface-selected aria-[current]:font-medium aria-[current]:text-interactive`}
           >
             <Icon aria-hidden className="size-4 shrink-0" />
             {!collapsed && <span className="truncate">{manifest.name}</span>}
