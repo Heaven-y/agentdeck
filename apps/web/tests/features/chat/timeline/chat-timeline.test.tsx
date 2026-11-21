@@ -7,6 +7,7 @@ import { RecordedConversationSurface } from '../../../../src/features/sessions/h
 import { ConversationTimeline } from '../../../../src/features/conversation/timeline/ConversationTimeline';
 import { historyItems, type ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
+import type { HistoryPagination } from '../../../../src/features/conversation/timeline/history-pages';
 
 const host: {
   scroll: ReturnType<typeof vi.fn>;
@@ -186,6 +187,93 @@ it('用户消息与已完成助手回复提供复制入口，流式生成中不�
   fireEvent.click(screen.getByRole('button', { name: '复制消息内容' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith('检查样式变量'));
   expect(screen.getAllByRole('button', { name: '复制回复内容' })).toHaveLength(1);
+  writeText.mockRejectedValueOnce(new Error('clipboard denied'));
   fireEvent.click(screen.getByRole('button', { name: '复制回复内容' }));
+  fireEvent.click(await screen.findByRole('button', { name: '复制失败，点击重试' }));
   await waitFor(() => expect(writeText).toHaveBeenLastCalledWith('已完成审查'));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '复制失败，点击重试' })).toBeNull());
+});
+
+it('长回合首屏没有提问时补读最近提问，右侧仍可加载更早页且不抢阅读位置', async () => {
+  const pagination: HistoryPagination = {
+    start: 360,
+    hasOlder: true,
+    loading: false,
+    load: vi.fn(),
+    restart: vi.fn(),
+    restartDisabled: false,
+  };
+  const reply: ChatItem = { kind: 'assistant', id: 'reply', text: '很长的回复', streaming: false };
+  const view = render(
+    <StrictMode>
+      <ConversationTimeline items={[reply]} running={false} pagination={pagination} />
+    </StrictMode>,
+  );
+  await waitFor(() => expect(pagination.load).toHaveBeenCalledOnce());
+  const navigation = within(screen.getByRole('navigation', { name: '用户消息导航' }));
+  expect(navigation.getByRole('button', { name: '加载更早记录' })).toBeTruthy();
+  host.follow.mockClear();
+  view.rerender(
+    <StrictMode>
+      <ConversationTimeline items={[reply]} running={false} pagination={{ ...pagination, loading: true }} />
+    </StrictMode>,
+  );
+  expect(navigation.getByRole('button', { name: '正在加载更早记录…' }).hasAttribute('disabled')).toBe(true);
+  const items: ChatItem[] = [
+    { kind: 'user', id: 'u1', text: '第一条提问' },
+    { kind: 'user', id: 'u2', text: '第二条提问' },
+    { kind: 'user', id: 'u3', text: '当前提问' },
+    reply,
+  ];
+  view.rerender(
+    <StrictMode>
+      <ConversationTimeline items={items} running={false} pagination={{ ...pagination, start: 100 }} />
+    </StrictMode>,
+  );
+  expect(pagination.load).toHaveBeenCalledOnce();
+  expect(host.follow).not.toHaveBeenCalled();
+  fireEvent.click(navigation.getByRole('button', { name: '跳转到第 1 条消息：第一条提问' }));
+  expect(host.scroll).toHaveBeenLastCalledWith({ index: 0, align: 'start', behavior: 'auto' });
+  fireEvent.click(navigation.getByRole('button', { name: '加载更早记录' }));
+  expect(pagination.load).toHaveBeenCalledTimes(2);
+});
+
+it('自动补页有预算，失败后只在导航点击重试，运行中不自动读历史', async () => {
+  const pagination: HistoryPagination = {
+    start: 1000,
+    hasOlder: true,
+    loading: false,
+    load: vi.fn(),
+    restart: vi.fn(),
+    restartDisabled: false,
+  };
+  const items: ChatItem[] = [{ kind: 'assistant', id: 'reply', text: '长回合片段', streaming: false }];
+  const view = render(<ConversationTimeline items={items} running pagination={pagination} />);
+  expect(pagination.load).not.toHaveBeenCalled();
+  for (const start of [1000, 904, 808, 712, 616]) {
+    view.rerender(<ConversationTimeline items={items} running={false} pagination={{ ...pagination, start }} />);
+  }
+  expect(pagination.load).toHaveBeenCalledTimes(4);
+  const error = { message: '读取失败', restart: false };
+  view.rerender(<ConversationTimeline items={items} running={false} pagination={{ ...pagination, error }} />);
+  const navigation = within(screen.getByRole('navigation', { name: '用户消息导航' }));
+  fireEvent.click(navigation.getByRole('button', { name: '重试加载更早记录' }));
+  expect(pagination.load).toHaveBeenCalledTimes(5);
+  view.rerender(
+    <ConversationTimeline
+      items={items}
+      running={false}
+      pagination={{ ...pagination, error: { ...error, restart: true }, restartDisabled: true }}
+    />,
+  );
+  expect(navigation.getByRole('button', { name: '重新读取最近记录' }).hasAttribute('disabled')).toBe(true);
+  view.rerender(
+    <ConversationTimeline
+      items={items}
+      running={false}
+      pagination={{ ...pagination, error: { ...error, restart: true } }}
+    />,
+  );
+  fireEvent.click(navigation.getByRole('button', { name: '重新读取最近记录' }));
+  expect(pagination.restart).toHaveBeenCalledOnce();
 });

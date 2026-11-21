@@ -291,6 +291,12 @@ describe('Antigravity 原生对话运行器', () => {
     ['stderr-first', 'Error 503, Message: model unavailable, Status: UNAVAILABLE', '503'],
     ['result-first', 'Error 500, Message: Upstream gateway error, Status: INTERNAL', 'HTTP 500'],
     ['stderr-first', 'Error 500, Message: Upstream gateway error, Status: INTERNAL', 'HTTP 500'],
+    [
+      'result-first',
+      'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h5m.',
+      '额度已用尽',
+    ],
+    ['stderr-first', 'RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 2h5m.', '额度已用尽'],
   ])('%s 的具体失败只报告一次且不会被泛化诊断覆盖', async (order, nativeError, expected) => {
     const f = await setup();
     f.init();

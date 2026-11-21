@@ -112,6 +112,11 @@ export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'r
 }
 
 function failureDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
+  if (source === 'run' && /\bIndividual quota reached\b/i.test(line))
+    return {
+      type: 'error',
+      message: 'Antigravity 模型额度已用尽。可等待额度恢复后重试，或更换有可用额度的模型。',
+    };
   // 只认生成终态的明确拒绝，不将后台探测的 403 视为回合失败。
   if (source === 'run' && /\bUser location is not supported for the API use\b/i.test(line))
     return { type: 'error', message: 'Antigravity 官方服务不支持当前访问地区。请核对网络出口与 Google 的可用地区。' };

@@ -17,29 +17,42 @@ import { sessionRemarkPlugins } from '../references/session-reference-markdown';
 import { isConversationControl, useConversationSurface, type ConversationError } from '../ConversationSurface';
 import { ConversationControlView } from './ConversationControlView';
 
+type CopyState = 'idle' | 'copied' | 'failed';
+function copyFeedback(state: CopyState, label: string) {
+  if (state === 'failed')
+    return { label: '复制失败，点击重试', title: '复制失败，可重试或手动选择文字复制。', text: '复制失败，重试' };
+  if (state === 'copied') return { label: '已复制', title: '已复制', text: '已复制' };
+  return { label, title: label, text: '复制' };
+}
+
 function CopyTextButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<CopyState>('idle');
+  const feedback = copyFeedback(state, label);
   useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1600);
+    if (state !== 'copied') return;
+    const timer = window.setTimeout(() => setState('idle'), 1600);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [state]);
   if (!text.trim() || !navigator.clipboard?.writeText) return null;
   return (
     <button
       type="button"
-      aria-label={copied ? '已复制' : label}
-      title={copied ? '已复制' : label}
-      className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 hover:bg-control-hover hover:text-foreground focus-visible:opacity-100"
+      aria-label={feedback.label}
+      title={feedback.title}
+      className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground ${state === 'failed' ? 'opacity-100' : 'opacity-0'} transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100 hover:bg-control-hover hover:text-foreground focus-visible:opacity-100`}
       onClick={() => {
         void navigator.clipboard.writeText(text).then(
-          () => setCopied(true),
-          () => {},
+          () => setState('copied'),
+          () => setState('failed'),
         );
       }}
     >
-      {copied ? <Check aria-hidden className="size-3 text-success" /> : <Copy aria-hidden className="size-3" />}
-      <span>{copied ? '已复制' : '复制'}</span>
+      {state === 'copied' ? (
+        <Check aria-hidden className="size-3 text-success" />
+      ) : (
+        <Copy aria-hidden className="size-3" />
+      )}
+      <span aria-live="polite">{feedback.text}</span>
     </button>
   );
 }

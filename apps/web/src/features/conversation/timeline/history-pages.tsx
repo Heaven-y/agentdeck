@@ -36,7 +36,7 @@ export function HistoryPageControl({ context }: { context?: HistoryPagination })
     </div>
   );
 }
-function pageAction({ loading, error }: HistoryPagination) {
+export function pageAction({ loading, error }: HistoryPagination) {
   if (loading) return '正在加载更早记录…';
   if (!error) return '加载更早记录';
   return error.restart ? '重新读取最近记录' : '重试加载更早记录';

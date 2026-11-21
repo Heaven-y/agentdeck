@@ -9,6 +9,7 @@ import { NativeTrajectoryMissing } from '../../../../src/agents/antigravity/mana
 
 const directories: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 async function options(mode = '') {
@@ -43,8 +44,41 @@ it('只取自有PID的HTTP端口，认证缺失不阻止本机管理，关闭确
   await stopped(f.evidence);
 });
 
-it('异常协议即关闭，不将已打印的端口交给调用方', async () => {
-  const f = await options('malformed');
+it('本地服务已就绪时不等待账号会话列表，仍可读取原生历史', async () => {
+  const f = await options('list-hang');
+  const backend = await startManagementBackend({ ...f.settings, signal: AbortSignal.timeout(2500) });
+  try {
+    expect(await backend.request('GetCascadeTrajectory', { cascadeId: 'fixture' })).toEqual({ fixture: true });
+  } finally {
+    await backend.close();
+  }
+  await stopped(f.evidence);
+});
+
+it('引导列表很晚才返回协议错误时仍关闭入口并取消在途读取', async () => {
+  const f = await options('list-delayed-invalid');
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  const backend = await startManagementBackend(f.settings);
+  try {
+    await vi.advanceTimersByTimeAsync(16_000);
+    vi.useRealTimers();
+    let failed = false;
+    const pending = backend.request('GetCascadeTrajectory', { cascadeId: 'fixture' }).catch(() => {
+      failed = true;
+    });
+    await vi.waitFor(() => expect(failed).toBe(true));
+    await pending;
+    await expect(backend.request('GetCascadeTrajectory', { cascadeId: 'fixture' })).rejects.toMatchObject({
+      code: 'session_runtime_failed',
+    });
+  } finally {
+    await backend.close();
+  }
+  await stopped(f.evidence);
+});
+
+it.each(['malformed', 'list-invalid'])('异常协议即关闭，不将已打印的端口交给调用方：%s', async (mode) => {
+  const f = await options(mode);
   await expect(startManagementBackend(f.settings)).rejects.toMatchObject({ code: 'session_runtime_failed' });
   await stopped(f.evidence);
 });

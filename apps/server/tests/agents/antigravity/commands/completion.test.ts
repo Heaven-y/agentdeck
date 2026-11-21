@@ -125,6 +125,22 @@ function completedTrajectory() {
   };
 }
 
+it.each(['history', 'current'] as const)('额度耗尽按真实输入边界归属，位置为%s', async (location) => {
+  const quota = 'Individual quota reached. Resets in 2h5m.';
+  const trajectory = completedTrajectory();
+  Object.assign(trajectory.steps[3]!, { errorMessage: { error: { modelErrorMessage: quota } } });
+  if (location === 'current') trajectory.steps[6] = { ...trajectory.steps[3]! };
+  const read = vi.fn(async () => ({ trajectory }));
+  const f = await resumedTurn(true, read);
+  f.step(4, 'user_input');
+  f.step(6, location === 'current' ? 'error_message' : 'agent_response');
+  f.result({ error: quota });
+  f.child.emit('close', 0);
+  await f.handle.done;
+  if (location === 'history') expectUnconfirmed(f.events, 'agy-step-6');
+  else expectNativeFailure(f.events, '额度已用尽');
+});
+
 it.each([undefined, null, '', '   '])('续接的 ERROR 缺少错误正文时不能只凭完整答复改判成功：%s', async (error) => {
   const trajectory = completedTrajectory();
   const read = vi.fn(async () => ({ trajectory }));

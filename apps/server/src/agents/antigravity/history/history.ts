@@ -9,6 +9,7 @@ import { contextEvent, historyResponseTiming, historyTiming, stepUsage } from '.
 import { historyGeneration } from '../run/generation-timing';
 import { historyResponseModel } from '../run/generation-model';
 import { OMITTED_HISTORY_STEP } from '../management/history-window';
+import { antigravityDiagnostic } from '../run/diagnostics';
 
 const DONE = 'CORTEX_STEP_STATUS_DONE';
 const FAILED = new Set(['CORTEX_STEP_STATUS_ERROR', 'CORTEX_STEP_STATUS_INVALID']);
@@ -226,7 +227,10 @@ function stepEvents(
       return checkpoint(step);
     case 'CORTEX_STEP_TYPE_ERROR_MESSAGE': {
       const message = errorMessage(step);
-      return message ? [{ type: 'error', message: clip(message) }] : [];
+      const diagnostic = antigravityDiagnostic(message);
+      return message
+        ? [{ type: 'error', message: diagnostic?.type === 'error' ? diagnostic.message : clip(message) }]
+        : [];
     }
     default:
       return toolOrActivity(step, index, preserve);

@@ -5,6 +5,32 @@ import { expect, it } from 'vitest';
 import { AntigravityMapper } from '../../../../src/agents/antigravity/run/mapper';
 import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
 
+it('历史额度错误显示具体原因，旧倒计时不当作当前剩余时间且不污染下一轮', () => {
+  const step = (type: string, extra = {}) => ({
+    type: `CORTEX_STEP_TYPE_${type}`,
+    status: 'CORTEX_STEP_STATUS_DONE',
+    ...extra,
+  });
+  const events = antigravityHistory({
+    steps: [
+      step('USER_INPUT', { userInput: { query: '先运行' } }),
+      step('ERROR_MESSAGE', {
+        errorMessage: {
+          shouldShowUser: true,
+          error: { userErrorMessage: 'Individual quota reached. Resets in 2h5m. token=synthetic-secret' },
+        },
+      }),
+      step('USER_INPUT', { userInput: { query: '稍后继续' } }),
+      step('PLANNER_RESPONSE', { plannerResponse: { response: '已完成' } }),
+    ],
+  });
+  expect(events.filter((event) => event.type === 'error')).toEqual([
+    { type: 'error', message: expect.stringContaining('额度已用尽') },
+  ]);
+  expect(events.filter((event) => event.type === 'turn_end')).toMatchObject([{ isError: true }, { isError: false }]);
+  expect(JSON.stringify(events)).not.toMatch(/2h5m|synthetic-secret/);
+});
+
 it('原生 ERROR 工具步骤及时结束并显示错误，重复事件去重，取消不伪装成功', () => {
   const cwd = path.join(tmpdir(), 'agentdeck-error-observability');
   const mapper = new AntigravityMapper(cwd);

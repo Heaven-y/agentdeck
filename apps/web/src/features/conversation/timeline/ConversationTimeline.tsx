@@ -71,6 +71,8 @@ export function ConversationTimeline({
       />
       <UserMessageNavigation
         rows={rows}
+        running={running}
+        pagination={pagination}
         activeRow={visible.index ?? rows.length - 1}
         jump={(index) => {
           atBottom.current = false;

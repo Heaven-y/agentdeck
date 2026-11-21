@@ -8,10 +8,15 @@ const args = process.argv.slice(2);
 const log = args[args.indexOf('--log-file') + 1]!;
 const mode = process.env.AGY_FIXTURE_MODE;
 const evidence = process.env.AGY_FIXTURE_EVIDENCE!;
+let bootstrapId: number | undefined;
 const server = http.createServer((request, response) => {
   if (mode === 'rpc-hang') return;
   request.resume();
   request.on('end', () => {
+    if (mode === 'list-delayed-invalid') {
+      process.stdout.write(JSON.stringify({ id: bootstrapId, error: { code: -32600 } }) + '\n');
+      return;
+    }
     if (mode === 'rpc-missing' || mode === 'rpc-unknown') {
       response.writeHead(404, { 'content-type': 'application/json' });
       response.end(
@@ -50,6 +55,7 @@ server.listen(0, '127.0.0.1', () => {
     evidence,
     JSON.stringify({ pid: process.pid, port, updateDisabled: process.env.AGY_CLI_DISABLE_AUTO_UPDATE }),
   );
+  if (mode === 'wait') return;
   fs.writeFileSync(
     log,
     `Starting language server process with pid ${mode === 'foreign-pid' ? process.pid + 1 : process.pid}\n` +
@@ -64,8 +70,12 @@ lines.on('line', (line) => {
       JSON.stringify({ id: message.id, result: { agentInfo: { name: 'Antigravity ACP Server' } } }) + '\n',
     );
   } else if (message.method === 'session/list') {
-    if (mode === 'wait') return;
-    const result = JSON.stringify({ id: message.id, error: { code: -32000, message: 'fixture-private-diagnostic' } });
+    bootstrapId = message.id;
+    if (mode === 'wait' || mode === 'list-hang' || mode === 'list-delayed-invalid') return;
+    const result = JSON.stringify({
+      id: message.id,
+      error: { code: mode === 'list-invalid' ? -32600 : -32000, message: 'fixture-private-diagnostic' },
+    });
     process.stdout.write(result + '\n' + (mode === 'malformed' ? 'invalid-json\n' : ''));
   } else throw new Error('不允许发送模型消息或创建会话');
 });
