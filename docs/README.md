@@ -22,6 +22,7 @@
 | 功能 | 文档 |
 |---|---|
 | 三 CLI 对话、会话管理、权限与引用读取 | [原生对话接入](engineering/native-dialogue.md) |
+| AGY 委派 Codex 的可行性、开关和完整任务往返范围 | [委派调研](engineering/agy-codex-delegation.md) |
 | 原生文件、URL/Key、启动环境与作用域 | [原生配置](engineering/native-configuration.md) |
 | 上下文、token、速度和执行轨迹 | [统计口径](engineering/cli-observability.md) |
 | 模型显示、Claude 1M 与推理档位 | [模型能力](engineering/model-capabilities.md) |
