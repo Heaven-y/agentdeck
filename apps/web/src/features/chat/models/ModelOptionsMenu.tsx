@@ -8,13 +8,13 @@ import { Brain, ChevronDown, ChevronRight, Gauge, LoaderCircle, RefreshCw } from
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { AGENT_KINDS, type AgentCapabilities, type AgentKind } from '@agentdeck/shared/conversation';
+import { AGENT_KINDS, type AgentCapabilities, type AgentKind, type AgentModel } from '@agentdeck/shared/conversation';
 import type { Workspace } from '@agentdeck/shared/projects';
 
 import { ProjectManageDialog } from '../../projects/ProjectManageDialog';
 import { buttonClass, popoverClass } from '../../../ui/styles';
 import { agentUnavailable, useEnvironment } from '../../settings/environment/use-environment';
-import { sessionActionKey, useChat } from '../state/chat-store';
+import { useChat } from '../state/chat-store';
 import { useAgentCapabilities } from '../controls/use-agent-capabilities';
 import { AgentIcon } from '../../../ui/BrandIcons';
 import { nativeCapabilitiesGeneration } from '../../../cli/shared/capability-cache';
@@ -26,7 +26,7 @@ import { ANTIGRAVITY_CONNECTION_LABELS } from '../../../cli/antigravity/model-po
 import { configuredModelEffort, modelEfforts } from '../../../cli/model-capabilities';
 import { ModelCandidateLabel } from './ModelCandidateLabel';
 import { ModelSearchDialog } from './ModelSearchDialog';
-import { currentModelCandidate, modelCandidates, type ModelOrigin } from '../../../cli/shared/model-candidates';
+import { currentModelCandidate, modelCandidates } from '../../../cli/shared/model-candidates';
 
 const menuClass = `${popoverClass} max-h-[min(440px,var(--popover-available-height))] w-72 overflow-y-auto`;
 const triggerClass = `${buttonClass('ghost')} min-h-7 min-w-0 gap-1 rounded-lg px-2 text-[13px]`;
@@ -83,64 +83,29 @@ function RefreshModels({ catalog, disabled }: { catalog: ReturnType<typeof useAg
 }
 
 type CatalogProps = { disabled: boolean; catalog: ReturnType<typeof useAgentCapabilities> };
-function inheritedModel(
-  native?: string,
-  actual?: string,
-  configured?: string,
-  runtime?: { agent: AgentKind; running: boolean },
-) {
-  const fallback = native || actual || configured || '';
-  if (runtime?.agent === 'antigravity') return (runtime.running && actual) || configured || fallback;
-  return fallback;
-}
-
-function modelOrigin(input: {
-  agent: AgentKind;
-  model: string;
-  running: boolean;
-  actual?: string;
-  native?: string;
-  configured?: string;
-}): ModelOrigin {
-  if (input.agent !== 'antigravity' || input.model) return 'selection';
-  if (input.running && input.actual) return 'native';
-  return !input.configured && (input.native || input.actual) ? 'native' : 'selection';
-}
-
-function modelMetadata(id: string, agent: AgentKind, origin: ModelOrigin, catalog?: AgentCapabilities) {
-  const candidate = currentModelCandidate(catalog?.models ?? [], id, agent, origin);
-  const capabilityId = origin === 'native' ? (candidate?.id ?? '') : id;
-  return {
-    selected: candidate?.id,
-    capabilityId,
-    label: modelDisplay(origin === 'native' ? (candidate?.id ?? id) : id, candidate),
-  };
+function reportedModelLabel(agent: AgentKind, models: AgentModel[], actual?: string) {
+  if (!actual || agent !== 'antigravity') return actual;
+  const match = currentModelCandidate(models, actual, agent, 'native');
+  return modelDisplay(match?.id ?? actual, match);
 }
 
 function useModelPresentation(model: string, catalog: AgentCapabilities | undefined, fetching: boolean) {
   const agent = useChat((state) => state.agent);
   const actual = useChat((state) => state.actualModel);
-  const running = useChat((state) => state.running);
-  const native = useChat((state) => {
-    if (!state.workspaceId || !state.sessionId) return undefined;
-    return state.sessionModels[sessionActionKey(state.workspaceId, { agent: state.agent, sessionId: state.sessionId })]
-      ?.nativeModel;
-  });
   const reading = useChat((state) => state.loadingHistory);
-  const historical = useChat((state) => !!state.sessionId);
-  // 下一轮配置与上一轮实际报告分开；没有配置证据时才以最近报告说明会话。
-  const configured = catalog?.defaultModel;
-  const inherited = inheritedModel(native, actual, configured, { agent, running });
-  const id = model || inherited;
-  const origin = modelOrigin({ agent, model, running, actual, native, configured });
-  const metadata = modelMetadata(id, agent, origin, catalog);
+  const inheritsSession = useChat((state) => Boolean(state.sessionId && !state.modelOverrides[state.agent]));
+  const origin = 'selection' as const;
+  const id = model || catalog?.defaultModel || '';
+  const models = catalog?.models ?? [];
+  const candidate = currentModelCandidate(models, id, agent, origin);
   return {
     id,
+    reported: reportedModelLabel(agent, models, actual),
     origin,
-    ...metadata,
+    selected: candidate?.id,
+    label: modelDisplay(id, candidate),
     loading: !id && (reading || fetching),
-    // 旧会话未报告原生强度，不能用新会话的目录默认冒充其有效值。
-    defaultEffort: historical ? undefined : configuredModelEffort(agent, metadata.capabilityId, catalog),
+    defaultEffort: inheritsSession ? undefined : configuredModelEffort(id, catalog),
   };
 }
 function effortLabel(effort?: string) {
@@ -333,6 +298,12 @@ function EffortChoices({
   );
 }
 
+function shouldClearEffort(catalog: CatalogProps['catalog'], model: string, effort: string, efforts: string[]) {
+  if (!effort || catalog.isFetching || efforts.includes(effort)) return false;
+  const reported = findModel(catalog.data?.models ?? [], model)?.reasoningEfforts;
+  return reported !== undefined || catalog.data?.discovered === true;
+}
+
 function EffortControls({
   disabled,
   catalog,
@@ -344,14 +315,14 @@ function EffortControls({
   const effort = useChat((state) => state.reasoningEfforts[state.agent]);
   const setEffort = useChat((state) => state.setReasoningEffort);
   const models = catalog.data?.models ?? [];
-  const unsupported = findModel(models, model)?.reasoningEfforts?.length === 0;
   const efforts = modelEfforts(agent, model, models);
+  const supported = efforts.length > 0;
+  const clear = shouldClearEffort(catalog, model, effort, efforts);
   useEffect(() => {
-    if (!unsupported) return;
-    store.setOpen(false);
-    if (!disabled && effort) setEffort('');
-  }, [unsupported, disabled, effort, setEffort, store]);
-  if (unsupported) return null;
+    if (!supported) store.setOpen(false);
+    if (!disabled && clear) setEffort('');
+  }, [supported, disabled, clear, setEffort, store]);
+  if (!supported) return null;
   return (
     <>
       <MenuButton
@@ -376,7 +347,6 @@ function EffortControls({
           effort={effort}
           defaultEffort={defaultEffort}
         />
-        {!efforts.length && <CatalogStatus catalog={catalog} />}
       </Menu>
     </>
   );
@@ -468,11 +438,14 @@ export function ModelOptionsMenu({ disabled }: { disabled: boolean }) {
         store={effortMenu}
         disabled={disabled}
         catalog={catalog}
-        model={presentation.capabilityId}
+        model={presentation.id}
         defaultEffort={presentation.defaultEffort}
       />
       <Menu store={modelMenu} portal unmountOnHide gutter={8} aria-label="模型选项菜单" className={menuClass}>
         <AgentChoices disabled={disabled} />
+        {presentation.reported && (
+          <p className="break-all px-3 py-1 text-xs text-muted-foreground">最近报告的模型：{presentation.reported}</p>
+        )}
         {usage.kind && (
           <MenuItem className={itemClass} disabled={modelChoicesDisabled(disabled, catalog)} onClick={usage.read}>
             <Gauge aria-hidden className="size-3.5" />

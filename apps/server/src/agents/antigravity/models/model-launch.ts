@@ -22,6 +22,7 @@ export type AntigravityLaunchSelection = {
   model?: string;
   sessionModel?: string;
   defaultReasoningEffort?: 'low' | 'medium' | 'high';
+  modelSetsEffort?: boolean;
   contextWindow?: NativeContextWindow;
   nativeSettings?: NativeSettings;
 };
@@ -119,6 +120,21 @@ async function addNativeDefaultEffort(
   }
 }
 
+function configuredWindow(
+  settings: ConfigObject,
+  requested: string | undefined,
+  readWindow: typeof antigravityContextWindow,
+) {
+  if (settings.modelProvider !== 'gemini' || (!requested && !string(settings.model))) return undefined;
+  return antigravityContextWindowSnapshot(settings, requested, readWindow);
+}
+
+function officialModelSetsEffort(settings: ConfigObject, model?: string) {
+  return (
+    !string(settings.modelProvider).trim() && /-(low|medium|high|xhigh|max)$/i.test(model ?? string(settings.model))
+  );
+}
+
 /** 启动参数和窗口快照共用同次读取；新建与 --conversation 续聊使用相同选择规则。 */
 export async function antigravityLaunchSelection(
   env: NodeJS.ProcessEnv,
@@ -135,14 +151,13 @@ export async function antigravityLaunchSelection(
   const custom = settings.modelProvider === 'gemini' ? selectedAntigravityModel(settings, requested) : undefined;
   const contextWindow = custom
     ? await antigravityContextWindow(settings, requested)
-    : settings.modelProvider === 'gemini' && (requested || string(settings.model))
-      ? await antigravityContextWindowSnapshot(settings, requested, readWindow)
-      : undefined;
+    : await configuredWindow(settings, requested, readWindow);
   // 同名内置选择可能绕过自定义窗口；仅本轮改用不会撞名的原生标签。
   const selection = applyWindowOverride(settings, custom, {
     model,
     contextWindow,
     ...(nativeSettings ? { nativeSettings } : {}),
   });
+  if (officialModelSetsEffort(settings, model)) return { ...selection, modelSetsEffort: true };
   return addNativeDefaultEffort(selection, custom, env, options);
 }

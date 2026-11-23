@@ -637,6 +637,7 @@ describe('AGY 官方账号图片', () => {
         sessionId,
         attachments: [image],
         attachmentsStored,
+        reasoningEffort: 'high',
         permission: { agent: 'antigravity', mode: 'plan' },
       },
     });
@@ -707,14 +708,13 @@ describe('AGY 官方账号图片', () => {
     expect(f.createClient).not.toHaveBeenCalled();
   });
 
-  it.each(['无登录', '强度冲突', '自动权限', '会话不匹配'])('%s时保留图片且不改用文字发送', async (cause) => {
+  it.each(['无登录', '自动权限', '会话不匹配'])('%s时保留图片且不改用文字发送', async (cause) => {
     const f = setup({
       settings,
       client: accountClient(),
       readAccount: cause === '无登录' ? async () => ({}) : readAccount,
       input: {
         attachments: [image],
-        ...(cause === '强度冲突' ? { reasoningEffort: 'high' } : {}),
         ...(cause === '自动权限' ? { permission: { agent: 'antigravity', mode: 'auto' } } : {}),
         ...(cause === '会话不匹配' ? { sessionId: 'native-origin' } : {}),
       },

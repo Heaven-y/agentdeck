@@ -53,7 +53,7 @@ function unavailable(support: NativeFeatureAvailability['support'], reason: stri
 
 function unknownFeatures(): NativeInteractionFeatures {
   return Object.fromEntries(
-    FEATURE_NAMES.map((name) => [name, unavailable('unknown', '尚未取得当前原生运行路径的能力证据。')]),
+    FEATURE_NAMES.map((name) => [name, unavailable('unknown', '无法判断当前会话是否支持此操作。')]),
   ) as NativeInteractionFeatures;
 }
 
@@ -62,7 +62,7 @@ function initialFeatures(runtime?: NativeRuntimePath): NativeInteractionFeatures
   if (runtime === 'antigravity-headless') {
     features.images = unavailable('unsupported', '当前 AGY 会话不能直接发图。可在原生 AGY 终端粘贴图片。');
     for (const name of ['questions', 'forms', 'steer'] as const)
-      features[name] = unavailable('unsupported', 'AGY headless 没有此原生交互通道，不能借用 ACP 能力。');
+      features[name] = unavailable('unsupported', '当前 AGY 会话不支持此操作。');
   }
   return features;
 }
@@ -94,24 +94,28 @@ function versionVerified(agent: AgentKind, evidence: NativeFeatureEvidence, name
   return audited || evidence.verifiedFeatures?.includes(name) === true;
 }
 
+function acpDeclaration(name: NativeInteractionFeature, evidence: NativeFeatureEvidence) {
+  if (evidence.runtime !== 'antigravity-acp') return undefined;
+  return name === 'images'
+    ? evidence.acpCapabilities?.image
+    : name === 'documents'
+      ? evidence.acpCapabilities?.embeddedContext
+      : undefined;
+}
+
 function acpSupport(name: NativeInteractionFeature, evidence: NativeFeatureEvidence): NativeFeatureAvailability {
-  const advertised =
-    name === 'images'
-      ? evidence.acpCapabilities?.image
-      : name === 'documents'
-        ? evidence.acpCapabilities?.embeddedContext
-        : undefined;
-  if (advertised === false) return unavailable('unsupported', '当前 ACP 握手明确不支持此输入。');
+  const advertised = acpDeclaration(name, evidence);
+  if (advertised === false) return unavailable('unsupported', '当前 AGY 会话不支持此附件。');
   if (advertised === true || evidence.verifiedFeatures?.includes(name))
     return { support: 'supported', available: false };
-  return unavailable('unknown', '当前 ACP 尚未逐项验证此交互。');
+  return unavailable('unknown', '当前 AGY 会话未提供此功能。');
 }
 
 function nativeSupport(name: NativeInteractionFeature, evidence: NativeFeatureEvidence): NativeFeatureAvailability {
   if (evidence.runtime === 'antigravity-acp') return acpSupport(name, evidence);
   if (BASELINE_SUPPORT[evidence.runtime].includes(name) || evidence.verifiedFeatures?.includes(name))
     return { support: 'supported', available: false };
-  return unavailable('unknown', '当前运行路径尚未逐项核实此交互。');
+  return unavailable('unknown', '当前会话未提供此功能。');
 }
 
 function featureLimits(
@@ -146,18 +150,19 @@ function resolvedFeature(name: NativeInteractionFeature, evidence: NativeFeature
   const feature = nativeSupport(name, evidence);
   if (feature.support !== 'supported') return feature;
   feature.available = evidence.implemented?.includes(name) === true;
-  feature.reason = feature.available ? undefined : '原生支持已核实，工作台尚未接入此交互。';
+  feature.reason = feature.available ? undefined : '请在原生 CLI 中使用此功能。';
   feature.limits = featureLimits(name, evidence.runtime);
   return feature;
 }
 
-/** 文本对话不依赖本契约。新交互必须同时通过路径、版本、握手与实现检查。 */
+/** 不借用其他路径的能力；当前协议明确声明的功能不依赖 CLI 版本号。 */
 export function nativeFeaturesFor(agent: AgentKind, evidence?: NativeFeatureEvidence): NativeInteractionFeatures {
   if (!evidence || RUNTIME_AGENT[evidence.runtime] !== agent) return unknownFeatures();
   const features = initialFeatures(evidence.runtime);
   if (!runtimeVerified(evidence)) return features;
   for (const name of FEATURE_NAMES) {
-    if (features[name].support === 'unsupported' || !versionVerified(agent, evidence, name)) continue;
+    if (features[name].support === 'unsupported') continue;
+    if (acpDeclaration(name, evidence) === undefined && !versionVerified(agent, evidence, name)) continue;
     features[name] = resolvedFeature(name, evidence);
   }
   return features;
@@ -168,7 +173,7 @@ export function featuresForModel(features?: NativeInteractionFeatures, model?: A
   const result = features ? structuredClone(features) : unknownFeatures();
   if (!model?.inputModalities) return result;
   if (!model.inputModalities.includes('image'))
-    result.images = { ...result.images, available: false, reason: '当前模型明确未声明图片输入。' };
+    result.images = { ...result.images, available: false, reason: '当前模型不支持图片。' };
   if (!model.inputModalities.includes('document') && result.documents.limits?.documentModes) {
     // 文本上下文与文件引用仍由原生工具处理，不冒称模型直接读取原始文档。
     result.documents.limits.documentModes = result.documents.limits.documentModes.filter(
@@ -176,7 +181,7 @@ export function featuresForModel(features?: NativeInteractionFeatures, model?: A
     );
     if (!result.documents.limits.documentModes.length) {
       result.documents.available = false;
-      result.documents.reason = '当前模型明确未声明原生文档输入。';
+      result.documents.reason = '当前模型不支持直接读取此文档。';
     }
   }
   return result;

@@ -65,8 +65,6 @@ function requestedMode(permission: AcpSelection['permission']): string | undefin
 }
 
 function requestedOptions(input: AcpSelection, model: string | undefined, variant?: ReturnType<typeof accountVariant>) {
-  if (variant && input.reasoningEffort && input.reasoningEffort !== variant.effort)
-    throw new AcpError('selection', '模型已指定另一档强度。请选择对应型号，或重置强度。');
   return {
     model: variant?.model ?? model,
     thought_level: variant?.effort ?? input.reasoningEffort,

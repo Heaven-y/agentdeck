@@ -27,12 +27,22 @@ export function antigravityModelGroups(models: AgentModel[]): AgentModel[][] {
 function groupsWithLabel(entries: AgentModel[]): AgentModel[][] {
   const native = entries.filter((model) => !model.modelId);
   // 缓存可能同时保存原生 ID 和以显示名为 ID 的记录；只合并这对明确身份，配置入口仍独立。
-  if (native.length === 2 && native.filter((model) => model.id === model.label).length === 1) {
+  if (isNativeAliasGroup(entries, native)) {
     const first = native[0]!;
     const canonical = [...native].sort((a, b) => Number(a.id === a.label) - Number(b.id === b.label));
     return entries.flatMap((model) => (model === first ? [canonical] : native.includes(model) ? [] : [[model]]));
   }
   return combinedValue(entries, '') ? [entries] : entries.map((model) => [model]);
+}
+
+function isNativeAliasGroup(entries: AgentModel[], native: AgentModel[]) {
+  if (native.length !== 2) return false;
+  const primary = native.find((model) => model.id !== model.label);
+  return (
+    primary !== undefined &&
+    native.some((model) => model.id === model.label) &&
+    entries.every((model) => !model.modelId || model.modelId === primary.id)
+  );
 }
 
 export function antigravityModelSuggestions(models: AgentModel[], current: string) {

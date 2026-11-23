@@ -13,38 +13,44 @@ const cwd = path.join(tmpdir(), 'agentdeck-agy-fixture');
 it.each([
   { explicit: undefined, expected: 'high' },
   { explicit: 'low', expected: 'low' },
-])('临时窗口模型使用原生默认强度，显式输入优先（$explicit）', async ({ explicit, expected }) => {
-  const child = Object.assign(new EventEmitter(), {
-    stdin: new PassThrough(),
-    stdout: new PassThrough(),
-    stderr: new PassThrough(),
-    kill: vi.fn(() => true),
-  });
-  const launch = vi.fn(() => child as unknown as AntigravityProcess);
-  const selectModel = vi.fn(async () => ({
-    model: 'runtime-label',
-    sessionModel: 'Example',
-    defaultReasoningEffort: 'high' as const,
-  }));
-  const runner = createAntigravityRunner({
-    launch,
-    selectModel,
-  });
-  const handle = runner({
-    workspace: { id: 'p', name: '项目', dir: cwd },
-    text: '示例',
-    reasoningEffort: explicit,
-    emit: () => {},
-    requestPermission: async () => ({ allow: false }),
-  });
-  await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
-  const args = (launch.mock.calls[0] as unknown as [{ args: string[] }])[0].args;
-  child.emit('close', 0);
-  await handle.done;
-  if (explicit) expect(selectModel).toHaveBeenCalledWith(undefined, explicit);
-  else expect(selectModel).toHaveBeenCalledWith(undefined);
-  expect(args[args.indexOf('--effort') + 1]).toBe(expected);
-});
+  { explicit: 'high', modelSetsEffort: true, expected: undefined },
+])(
+  '自定义窗口保留原生档位，已带档位的官方模型不额外传强度（$explicit）',
+  async ({ explicit, expected, modelSetsEffort }) => {
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => true),
+    });
+    const launch = vi.fn(() => child as unknown as AntigravityProcess);
+    const selectModel = vi.fn(async () => ({
+      model: modelSetsEffort ? 'gemini-native-low' : 'runtime-label',
+      modelSetsEffort,
+      sessionModel: 'Example',
+      defaultReasoningEffort: 'high' as const,
+    }));
+    const runner = createAntigravityRunner({
+      launch,
+      selectModel,
+    });
+    const handle = runner({
+      workspace: { id: 'p', name: '项目', dir: cwd },
+      text: '示例',
+      reasoningEffort: explicit,
+      emit: () => {},
+      requestPermission: async () => ({ allow: false }),
+    });
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
+    const args = (launch.mock.calls[0] as unknown as [{ args: string[] }])[0].args;
+    child.emit('close', 0);
+    await handle.done;
+    if (explicit) expect(selectModel).toHaveBeenCalledWith(undefined, explicit);
+    else expect(selectModel).toHaveBeenCalledWith(undefined);
+    if (expected) expect(args[args.indexOf('--effort') + 1]).toBe(expected);
+    else expect(args).not.toContain('--effort');
+  },
+);
 
 it('启动把消歧配置作为临时文件交给原生，窗口快照随会话事件返回并在退出时清理', async () => {
   const child = Object.assign(new EventEmitter(), {

@@ -74,7 +74,10 @@ beforeEach(() => {
   useChat.setState({ connection: 'open' });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   for (const agent of ['claude', 'codex', 'antigravity'] as const) {
-    client.setQueryData(sessionsKeys.sessions(workspace.id, agent), []);
+    client.setQueryData(sessionsKeys.pages(agent, 'active', '', workspace.id), {
+      pages: [{ items: [] }],
+      pageParams: [undefined],
+    });
     client.setQueryData(chatKeys.agentCapabilities(workspace.id, agent), { ...catalog, agent });
   }
   vi.spyOn(settingsApi, 'readEnvironment').mockResolvedValue({ checkedAt: 1, tools: [] });
@@ -301,7 +304,7 @@ it('当前会话提前读取缓存，重建输入区及重开菜单不重新请�
   await act(async () => resolve(cached));
 });
 
-it('首次打开强度也能发现默认型号，Claude [1m] 选择原样发送且采用型号档位', async () => {
+it('首次打开模型菜单发现原生档位，Claude [1m] 选择原样发送且采用型号档位', async () => {
   client.setQueryData(chatKeys.agentCapabilities(workspace.id, 'claude'), {
     agent: 'claude',
     discovered: false,
@@ -314,15 +317,14 @@ it('首次打开强度也能发现默认型号，Claude [1m] 选择原样发送�
     agent: 'claude',
     discovered: true,
     defaultModel: 'sonnet[1m]',
-    models: [{ id: 'sonnet[1m]', label: '长上下文模型', modelId: 'claude-sonnet-4-6[1m]' }],
+    models: [
+      { id: 'sonnet[1m]', label: '长上下文模型', modelId: 'claude-sonnet-4-6[1m]', reasoningEfforts: ['high', 'max'] },
+    ],
   });
   showComposer();
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
-  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'high' }));
-  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain('claude-sonnet-4-6[1m]');
-  expect(useChat.getState().modelOverrides.claude).toBe('');
   await menuChoose('模型选项', /^claude-sonnet-4-6/);
-  expect(useChat.getState().reasoningEfforts.claude).toBe('');
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain('claude-sonnet-4-6[1m]');
+  expect(useChat.getState().modelOverrides.claude).toBe('sonnet[1m]');
   await menuChoose('推理强度', 'max');
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '测试选择' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
@@ -665,11 +667,7 @@ it.each(['组字尚未结束', '组字结束键码229'] as const)('IME %s 时确
 
 it('强度菜单只列当前模型实际报告的档位，默认不覆盖', async () => {
   showChat();
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('');
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
-  expect(screen.queryByText('跟随配置')).toBeNull();
-  expect(screen.queryByRole('menuitemradio', { name: 'high' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
+  expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   await menuChoose('模型选项', /native-model/);
   fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
   expect(await screen.findByRole('menuitemradio', { name: 'low' })).toBeTruthy();
@@ -687,12 +685,10 @@ it.each(['claude', 'codex', 'antigravity'] as const)('%s手填模型且目录失
   client.removeQueries({ queryKey: chatKeys.agentCapabilities(workspace.id, agent) });
   vi.spyOn(chatApi, 'agentCapabilities').mockRejectedValue(new Error('模型列表暂不可用'));
   showChat();
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
   await waitFor(() =>
     expect(client.getQueryState(chatKeys.agentCapabilities(workspace.id, agent))?.status).toBe('error'),
   );
-  expect(screen.queryByRole('menuitemradio', { name: 'max' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
+  expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '保留我的模型' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(sent.at(-1)).toMatchObject({ agent, model: 'manual-model', reasoningEffort: undefined });
@@ -742,7 +738,7 @@ it('未知能力仍可跟随配置，原生明确不支持后隐藏入口并清�
     models: [{ id: 'custom-model', label: '自定义模型' }],
   });
   showComposer();
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('');
+  expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   act(() => {
     useChat.getState().setReasoningEffort('high');
     client.setQueryData(chatKeys.agentCapabilities(workspace.id, 'claude'), {
@@ -751,8 +747,7 @@ it('未知能力仍可跟随配置，原生明确不支持后隐藏入口并清�
       models: [{ id: 'custom-model', label: '自定义模型', reasoningEfforts: [] }],
     });
   });
-  await waitFor(() => expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull());
-  expect(useChat.getState().reasoningEfforts.claude).toBe('');
+  await waitFor(() => expect(useChat.getState().reasoningEfforts.claude).toBe(''));
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '继续处理' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(JSON.parse(JSON.stringify(sent[0]))).not.toHaveProperty('reasoningEffort');
@@ -795,7 +790,7 @@ it('能力选择器默认只列网页可执行项，限制说明按需展开且�
   const dialog = screen.getByRole('dialog', { name: '技能与命令' });
   expect(within(dialog).getByRole('button', { name: /demo/ })).toBeTruthy();
   expect(within(dialog).queryByRole('button', { name: /not-connected/ })).toBeNull();
-  fireEvent.click(within(dialog).getByRole('button', { name: /查看不可用能力/ }));
+  fireEvent.click(within(dialog).getByRole('button', { name: /暂不可调用/ }));
   expect(
     within(dialog)
       .getByRole('button', { name: /not-connected/ })
@@ -879,7 +874,7 @@ it.each([
   showComposer();
   const trigger = screen.getByRole('button', { name: '模型选项' });
   expect(trigger.textContent).toContain(label);
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('');
+  expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   expect(useChat.getState().modelOverrides.claude).toBe('');
   await menuChoose('模型选项', /native-model/);
   expect(trigger.textContent).toContain('native-model');
@@ -969,10 +964,11 @@ it.each(['claude', 'codex'] as const)('输入区%s跟随配置时省略强度字
     models: [{ id: 'native-model', label: '候选模型', reasoningEfforts: ['custom-effort'] }],
   });
   showComposer();
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
-  await screen.findByRole('menu', { name: '推理强度菜单' });
-  expect(!!screen.queryByRole('menuitemradio', { name: 'custom-effort' })).toBe(agent === 'codex');
-  fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
+  if (agent === 'codex') {
+    fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
+    await screen.findByRole('menuitemradio', { name: 'custom-effort' });
+    fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
+  } else expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '使用原生配置强度' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(JSON.parse(JSON.stringify(sent[0]))).not.toHaveProperty('reasoningEffort');
@@ -994,7 +990,7 @@ it('上下文用量位于输入框下方，来源及原生比例通过详情说�
   expect(options.queryByRole('button', { name: '上下文用量' })).toBeNull();
   expect(context.closest('.composer-card')).toBeNull();
   expect(options.getByRole('button', { name: '模型选项' })).toBeTruthy();
-  expect(options.getByRole('button', { name: '推理强度' })).toBeTruthy();
+  expect(options.queryByRole('button', { name: '推理强度' })).toBeNull();
   expect(screen.getAllByRole('button', { name: '上下文用量' })).toEqual([context]);
   expect(context.textContent).toContain('12,800 / 200,000');
   expect(context.title).toContain('Claude 原生估计');

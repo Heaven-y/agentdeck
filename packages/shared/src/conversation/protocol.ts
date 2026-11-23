@@ -8,7 +8,7 @@ import { AttachmentRefSchema, type ChatAttachment } from './messages/attachments
 import { FollowupContentSchema, type FollowupSnapshot } from './messages/followups';
 import type { RuntimeTasksState } from './messages/runtime-tasks';
 
-const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
+export const ClaudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
 // 前端 → 后端的 WebSocket 消息，后端用 schema 校验
 export const ClientMessageSchema = z.discriminatedUnion('type', [
