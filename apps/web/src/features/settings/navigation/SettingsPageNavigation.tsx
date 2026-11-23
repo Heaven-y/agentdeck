@@ -2,6 +2,7 @@ import { AGENT_KINDS, type AgentKind } from '@agentdeck/shared/conversation';
 import { AgentIcon } from '../../../ui/BrandIcons';
 import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
 import { sectionIds, sectionFor, settingsSection, type SettingsPage } from './page-registry';
+import { PluginSettingsNavigation } from '../../plugins/PluginActions';
 export function SettingsNavigation({
   page,
   select,
@@ -34,6 +35,7 @@ export function SettingsNavigation({
           </button>
         );
       })}
+      <PluginSettingsNavigation />
     </nav>
   );
 }

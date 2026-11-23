@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { rename } from 'node:fs/promises';
 import type {
   WorkbenchPluginBackendRequest,
+  WorkbenchPluginHostRequest,
   WorkbenchPluginCatalog,
   WorkbenchPluginInstallInput,
   WorkbenchPluginPage,
@@ -20,7 +21,7 @@ import { createPluginRegistry, registryCatalog, type RegistrySnapshot, type Inst
 import { createPluginStorage } from './storage';
 import { PluginBackend } from './backend';
 
-type Deps = { configDir: string };
+type Deps = { configDir: string; host?: (input: WorkbenchPluginHostRequest, signal?: AbortSignal) => Promise<unknown> };
 function assertRevision(current: RegistrySnapshot, revision: string) {
   if (current.snapshot.revision !== revision) throw new WorkbenchPluginError('revision_conflict');
 }
@@ -43,6 +44,7 @@ export function createWorkbenchPlugins(deps: Deps) {
   const registry = createPluginRegistry(directory);
   const storage = createPluginStorage(path.join(directory, 'storage'));
   const runtimes = new Map<string, PluginBackend>();
+  const hostRequests = new Map<AbortController, string>();
   let queue: Promise<unknown> = Promise.resolve();
   let disposed = false;
   function serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -56,11 +58,13 @@ export function createWorkbenchPlugins(deps: Deps) {
     });
   }
   async function stop(id: string) {
+    for (const [controller, pluginId] of hostRequests) if (pluginId === id) controller.abort();
     const runtime = runtimes.get(id);
     runtimes.delete(id);
     await runtime?.dispose();
   }
   async function active(id: string) {
+    if (disposed) throw new WorkbenchPluginError('plugin_disabled');
     const entry = findPlugin(await registry.load(), id);
     if (!entry.enabled) throw new WorkbenchPluginError('plugin_disabled');
     return entry;
@@ -77,7 +81,32 @@ export function createWorkbenchPlugins(deps: Deps) {
     if (!(await active(id)).manifest.permissions.includes('storage'))
       throw new WorkbenchPluginError('permission_denied');
   }
+  async function host(id: string, input: WorkbenchPluginHostRequest, signal?: AbortSignal) {
+    const controller = new AbortController();
+    const scopedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    hostRequests.set(controller, id);
+    try {
+      return await hostValue(id, input, scopedSignal);
+    } finally {
+      hostRequests.delete(controller);
+    }
+  }
+  async function hostValue(id: string, input: WorkbenchPluginHostRequest, signal: AbortSignal) {
+    const entry = await active(id);
+    signal.throwIfAborted();
+    const permission = input.method === 'projects.list' ? 'projects' : 'session-history';
+    if (entry.manifest.apiVersion !== 2 || !entry.manifest.permissions.includes(permission))
+      throw new WorkbenchPluginError('permission_denied');
+    if (!deps.host) throw new WorkbenchPluginError('backend_failed');
+    const result = await deps.host(input, signal);
+    signal?.throwIfAborted();
+    const current = await active(id);
+    if (!current.manifest.permissions.includes(permission) || current.packageRevision !== entry.packageRevision)
+      throw new WorkbenchPluginError('permission_denied');
+    return result;
+  }
   return {
+    host,
     list: (): Promise<WorkbenchPluginCatalog> => serial(async () => registryCatalog(await registry.load())),
     install(input: WorkbenchPluginInstallInput): Promise<WorkbenchPluginCatalog> {
       return serial(async () => {
@@ -163,7 +192,11 @@ export function createWorkbenchPlugins(deps: Deps) {
     async backend(id: string, input: WorkbenchPluginBackendRequest, signal?: AbortSignal) {
       const runtime = await serial(async () => {
         const entry = await active(id);
-        if (entry.manifest.apiVersion !== 2 || !entry.manifest.permissions.includes('backend'))
+        if (
+          entry.manifest.apiVersion !== 2 ||
+          !entry.manifest.backend ||
+          !entry.manifest.permissions.includes('backend')
+        )
           throw new WorkbenchPluginError('permission_denied');
         let value = runtimes.get(id);
         if (value && !value.alive) {
@@ -173,10 +206,14 @@ export function createWorkbenchPlugins(deps: Deps) {
         }
         if (!value) {
           await checked(entry);
-          value = await PluginBackend.start(childPath(childPath(packages, id), entry.manifest.backend), {
-            dataDir: childPath(path.join(directory, 'data'), id),
-            hostDataDir: deps.configDir,
-          });
+          value = await PluginBackend.start(
+            childPath(childPath(packages, id), entry.manifest.backend),
+            {
+              dataDir: childPath(path.join(directory, 'data'), id),
+              hostDataDir: deps.configDir,
+            },
+            (input, signal) => host(id, input, signal),
+          );
           runtimes.set(id, value);
         }
         return value;
@@ -197,6 +234,7 @@ export function createWorkbenchPlugins(deps: Deps) {
     },
     async dispose() {
       disposed = true;
+      for (const controller of hostRequests.keys()) controller.abort();
       await queue;
       await Promise.all([...runtimes.keys()].map(stop));
     },

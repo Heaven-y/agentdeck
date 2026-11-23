@@ -30,7 +30,7 @@ it('提供插件管理与启用插件入口，按安装顺序展示且没有重�
   fireEvent.click(screen.getByRole('button', { name: '插件' }));
   fireEvent.click(screen.getByRole('button', { name: 'SSH Console' }));
   expect(manage).toHaveBeenCalledOnce();
-  expect(open).toHaveBeenCalledExactlyOnceWith('ssh-console');
+  expect(open).toHaveBeenCalledExactlyOnceWith('ssh-console', 'main');
 });
 
 it('折叠导航仍能按可访问名称打开插件', () => {
@@ -38,6 +38,6 @@ it('折叠导航仍能按可访问名称打开插件', () => {
   const open = vi.fn();
   render(<PluginNavigation plugins={[plugin('ssh-console', 'SSH Console')]} open={open} manage={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: 'SSH Console' }));
-  expect(open).toHaveBeenCalledExactlyOnceWith('ssh-console');
+  expect(open).toHaveBeenCalledExactlyOnceWith('ssh-console', 'main');
   expect(screen.getByRole('button', { name: '插件' })).toBeTruthy();
 });

@@ -32,7 +32,7 @@ const STATIC_EXTENSIONS = new Set([
 export type PluginPackage = { manifest: WorkbenchPluginManifest; files: Map<string, Buffer> };
 
 function allowedAsset(relative: string, backend?: string): boolean {
-  if (relative === MANIFEST_FILE) return true;
+  if (relative === MANIFEST_FILE || relative === 'README.md' || relative === 'LICENSE') return true;
   if (relative === backend) return true;
   const parts = relative.split('/');
   if (parts.some((part) => part.startsWith('.') || /^(?:node_modules|credentials?|secrets?|auth|tokens?)$/i.test(part)))
@@ -47,12 +47,16 @@ function packageManifest(files: Map<string, Buffer>): WorkbenchPluginManifest {
     const manifest = WorkbenchPluginManifestSchema.parse(JSON.parse(decodeUtf8(raw)));
     if (!safeRelative(manifest.entry) || !files.has(manifest.entry) || !safeRelative(manifest.id)) throw new Error();
     decodeUtf8(files.get(manifest.entry)!);
-    if (manifest.apiVersion === 2 && (!safeRelative(manifest.backend) || !files.has(manifest.backend)))
-      throw new Error();
+    checkBackend(manifest, files);
     return manifest;
   } catch {
     throw new WorkbenchPluginError('invalid_manifest');
   }
+}
+
+function checkBackend(manifest: WorkbenchPluginManifest, files: Map<string, Buffer>) {
+  if (manifest.apiVersion !== 2 || !manifest.backend) return;
+  if (!safeRelative(manifest.backend) || !files.has(manifest.backend)) throw new Error();
 }
 
 export async function readPluginPackage(directory: string): Promise<PluginPackage> {

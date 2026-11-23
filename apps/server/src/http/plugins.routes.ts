@@ -1,11 +1,16 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { WorkbenchPluginIdSchema, WorkbenchPluginBackendRequestSchema } from '@agentdeck/shared/plugins';
+import {
+  WorkbenchPluginIdSchema,
+  WorkbenchPluginBackendRequestSchema,
+  WorkbenchPluginHostRequestSchema,
+} from '@agentdeck/shared/plugins';
 import { WorkbenchPluginError, pluginError } from '../plugins/errors';
 import { MAX_PLUGIN_STORAGE_BYTES } from '../plugins/files';
 import type { WorkbenchPluginsService } from '../plugins/service';
 import { PluginStorageValueSchema } from '../plugins/storage';
 import { requestSignal } from './request-signal';
+import { SessionError } from '../agents/errors';
 
 export type PluginRoutesDeps = { service: WorkbenchPluginsService };
 const Query = z.object({}).strict();
@@ -32,6 +37,8 @@ async function respond(req: FastifyRequest, reply: FastifyReply, operation: () =
     if (!Query.safeParse(req.query).success) throw new WorkbenchPluginError('invalid_request');
     return await operation();
   } catch (error) {
+    if (error instanceof SessionError)
+      return reply.code(error.status).send({ code: error.code, message: error.message });
     const failure = pluginError(error);
     return reply.code(failure.status).send({ code: failure.code, message: failure.message });
   }
@@ -64,6 +71,11 @@ export function registerPluginRoutes(app: FastifyInstance, { service }: PluginRo
   app.post('/api/plugins/:id/backend', options, (req, reply) =>
     respond(req, reply, () =>
       service.backend(pluginId(req), bodyOf(WorkbenchPluginBackendRequestSchema, req.body), requestSignal(req, reply)),
+    ),
+  );
+  app.post('/api/plugins/:id/host', options, (req, reply) =>
+    respond(req, reply, () =>
+      service.host(pluginId(req), bodyOf(WorkbenchPluginHostRequestSchema, req.body), requestSignal(req, reply)),
     ),
   );
   app.delete('/api/plugins/:id', options, (req, reply) =>

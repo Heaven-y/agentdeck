@@ -30,6 +30,7 @@ import { PluginWorkspace } from '../features/plugins/PluginWorkspace';
 import { usePluginPages } from '../features/plugins/use-plugin-pages';
 import { DesktopTitleBar } from './layout/DesktopTitleBar';
 import { NativeInteractionInbox } from '../features/chat/interactions/InteractionCard';
+import { PluginHostContext } from '../features/plugins/plugin-host';
 
 const SettingsDialog = lazy(() => import('../features/settings/SettingsDialog'));
 const CommandPalette = lazy(() => import('./navigation/CommandPalette'));
@@ -153,10 +154,10 @@ export function App() {
   const reveal = useMemo(() => (openPath ? revealProjectDir(openPath) : undefined), [openPath]);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const settings = useSettingsWorkspace(!activePlugin && !archiveOpen);
-  const showPlugin = (id?: string) =>
+  const showPlugin = (id?: string, page?: string) =>
     settings.navigate(() => {
       setArchiveOpen(false);
-      plugins.show(id);
+      plugins.show(id, page);
     });
   const showArchive = () =>
     settings.navigate(() => {
@@ -219,146 +220,173 @@ export function App() {
     });
 
   return (
-    <div className="flex h-full min-w-[800px] flex-col">
-      <DesktopTitleBar />
-      <OpenPluginManager opened={plugins.managerOpen} close={() => plugins.setManagerOpen(false)} />
-      <ProjectDialogs
-        adding={addingProject}
-        managing={managingProject}
-        closeAdd={() => setAddingProject(undefined)}
-        closeManage={() => setManagingProject(undefined)}
-      />
-      <OpenPalette
-        opened={palette.opened}
-        workspace={current}
-        workspaces={projects.data}
-        close={palette.close}
-        actions={{
-          plugins: plugins.commands.map((command) => ({
-            ...command,
-            run: () =>
+    <PluginHostContext.Provider
+      value={{
+        plugins: plugins.enabledPlugins,
+        open: (plugin, page) => showPlugin(plugin.manifest.id, page.id),
+        run: (plugin, command) => {
+          settings.navigate(() => plugins.run(plugin.manifest.id, command));
+        },
+      }}
+    >
+      <div className="flex h-full min-w-[800px] flex-col">
+        <DesktopTitleBar />
+        <OpenPluginManager opened={plugins.managerOpen} close={() => plugins.setManagerOpen(false)} />
+        <ProjectDialogs
+          adding={addingProject}
+          managing={managingProject}
+          closeAdd={() => setAddingProject(undefined)}
+          closeManage={() => setManagingProject(undefined)}
+        />
+        <OpenPalette
+          opened={palette.opened}
+          workspace={current}
+          workspaces={projects.data}
+          close={palette.close}
+          actions={{
+            plugins: plugins.commands.map((command) => ({
+              ...command,
+              run: () =>
+                settings.navigate(() => {
+                  if (!command.run()) return false;
+                  setArchiveOpen(false);
+                  return true;
+                }),
+            })),
+            conversation: () =>
               settings.navigate(() => {
-                if (!command.run()) return false;
                 setArchiveOpen(false);
-                return true;
+                plugins.show(undefined);
               }),
-          })),
-          conversation: () =>
-            settings.navigate(() => {
-              setArchiveOpen(false);
-              plugins.show(undefined);
-            }),
-          newSession: () => (current ? startSession(current.id) : false),
-          openSession: (session) => (current ? openSession(current.id, session) : false),
-          selectWorkspace: (id) =>
-            settings.navigate(() => {
-              setArchiveOpen(false);
-              plugins.show(undefined);
-              useChat.getState().selectWorkspace(id, { restore: false });
-            }),
-          settings: () => {
-            // 命令面板先卸载并恢复其触发点，再记录设置页的返回焦点。
-            requestAnimationFrame(settings.open);
-            return true;
-          },
-        }}
-      />
-      <SettingsWorkspace
-        opened={settings.opened}
-        settings={<OpenSettings guardRef={settings.guardRef} close={settings.close} workspace={current} />}
-      >
-        <WorkspaceLayout
-          dockOpen={sidebarVisible}
-          dock={
-            <ConversationSidebar workspace={current} open={sidebarVisible} close={dock.hide} settings={settings.open} />
-          }
-          navigation={
-            <Sidebar
-              pages={
-                <PluginNavigation
-                  plugins={plugins.list}
-                  selected={plugins.selected}
-                  open={showPlugin}
-                  manage={() => plugins.setManagerOpen(true)}
-                />
-              }
-              search={sessionSearch}
-              onSearch={setSessionSearch}
-              sessionPages={{ hasMore, loadingMore, more }}
-              otherPages={others}
-              projects={projects.data ?? []}
-              sessionsByProject={sessionsByProject}
-              sessionErrorsByProject={errorsByProject}
-              onRetrySessions={retryProject}
-              otherSessions={others.sessions}
-              loadingOtherSessions={others.loading}
-              otherSessionsError={others.error}
-              onShowOtherSessions={setShowOtherSessions}
-              loadingSessions={sessionsLoading}
-              currentProjectId={current?.id}
-              onAddProject={(initial) => setAddingProject(initial ?? {})}
-              onManageProject={(project, action) => setManagingProject({ project, action })}
-              onNewSession={startSession}
-              onOpenConversation={openConversation}
-              onOpenSettings={settings.open}
-              onOpenCommands={palette.open}
-              onOpenArchive={showArchive}
-              onSelectSession={openSession}
-              reveal={reveal}
-            />
-          }
+            newSession: () => (current ? startSession(current.id) : false),
+            openSession: (session) => (current ? openSession(current.id, session) : false),
+            selectWorkspace: (id) =>
+              settings.navigate(() => {
+                setArchiveOpen(false);
+                plugins.show(undefined);
+                useChat.getState().selectWorkspace(id, { restore: false });
+              }),
+            settings: () => {
+              // 命令面板先卸载并恢复其触发点，再记录设置页的返回焦点。
+              requestAnimationFrame(settings.open);
+              return true;
+            },
+          }}
+        />
+        <SettingsWorkspace
+          opened={settings.opened}
+          settings={<OpenSettings guardRef={settings.guardRef} close={settings.close} workspace={current} />}
         >
-          <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
-            <ConversationTabs projects={projects.data ?? []} visible={conversationVisible} onOpen={openConversation} />
-            <div className="min-h-0 flex-1">
-              <div
-                hidden={!conversationVisible}
-                inert={!conversationVisible}
-                className={conversationVisible ? 'flex h-full min-h-0 flex-col' : 'hidden'}
-              >
-                <div
-                  id="conversation-panel"
-                  role="tabpanel"
-                  aria-label="会话内容"
-                  className="flex min-h-0 flex-1 flex-col"
-                >
-                  <TopBar workspace={current} sidebarOpen={dock.open} onToggleSidebar={dock.toggle} />
-                  <EnvironmentSummary onOpenSettings={settings.open} />
-                  <SessionPane
-                    project={current}
-                    pending={projects.isPending}
-                    error={projects.error}
-                    onAddProject={() => setAddingProject({})}
-                  />
-                </div>
-              </div>
-              <PluginWorkspace
-                plugin={activePlugin}
-                enabledPlugins={plugins.enabledPlugins}
-                project={current}
-                close={() => showPlugin(undefined)}
-                command={plugins.command}
+          <WorkspaceLayout
+            dockOpen={sidebarVisible}
+            dock={
+              <ConversationSidebar
+                workspace={current}
+                open={sidebarVisible}
+                close={dock.hide}
+                settings={settings.open}
               />
-              {archiveOpen && (
-                <Suspense
-                  fallback={
-                    <p role="status" className="p-4">
-                      正在打开归档会话…
-                    </p>
-                  }
-                >
-                  <ArchivedSessionsPage
-                    projects={projects.data ?? []}
-                    close={closeArchive}
-                    addProject={setAddingProject}
+            }
+            navigation={
+              <Sidebar
+                pages={
+                  <PluginNavigation
+                    plugins={plugins.list}
+                    selected={plugins.selected}
+                    selectedPage={plugins.activePage}
+                    open={showPlugin}
+                    manage={() => plugins.setManagerOpen(true)}
                   />
-                </Suspense>
-              )}
+                }
+                search={sessionSearch}
+                onSearch={setSessionSearch}
+                sessionPages={{ hasMore, loadingMore, more }}
+                otherPages={others}
+                projects={projects.data ?? []}
+                sessionsByProject={sessionsByProject}
+                sessionErrorsByProject={errorsByProject}
+                onRetrySessions={retryProject}
+                otherSessions={others.sessions}
+                loadingOtherSessions={others.loading}
+                otherSessionsError={others.error}
+                onShowOtherSessions={setShowOtherSessions}
+                loadingSessions={sessionsLoading}
+                currentProjectId={current?.id}
+                onAddProject={(initial) => setAddingProject(initial ?? {})}
+                onManageProject={(project, action) => setManagingProject({ project, action })}
+                onNewSession={startSession}
+                onOpenConversation={openConversation}
+                onOpenSettings={settings.open}
+                onOpenCommands={palette.open}
+                onOpenArchive={showArchive}
+                onSelectSession={openSession}
+                reveal={reveal}
+              />
+            }
+          >
+            <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
+              <ConversationTabs
+                projects={projects.data ?? []}
+                visible={conversationVisible}
+                onOpen={openConversation}
+              />
+              <div className="min-h-0 flex-1">
+                <div
+                  hidden={!conversationVisible}
+                  inert={!conversationVisible}
+                  className={conversationVisible ? 'flex h-full min-h-0 flex-col' : 'hidden'}
+                >
+                  <div
+                    id="conversation-panel"
+                    role="tabpanel"
+                    aria-label="会话内容"
+                    className="flex min-h-0 flex-1 flex-col"
+                  >
+                    <TopBar workspace={current} sidebarOpen={dock.open} onToggleSidebar={dock.toggle} />
+                    <EnvironmentSummary onOpenSettings={settings.open} />
+                    <SessionPane
+                      project={current}
+                      pending={projects.isPending}
+                      error={projects.error}
+                      onAddProject={() => setAddingProject({})}
+                    />
+                  </div>
+                </div>
+                <PluginWorkspace
+                  plugin={activePlugin}
+                  enabledPlugins={plugins.enabledPlugins}
+                  project={current}
+                  close={() => {
+                    const returning = plugins.activePage?.location === 'settings';
+                    showPlugin(undefined);
+                    if (returning) settings.open();
+                  }}
+                  page={plugins.activePage}
+                  invocations={plugins.invocations}
+                  delivered={plugins.delivered}
+                  hidden={settings.opened}
+                />
+                {archiveOpen && (
+                  <Suspense
+                    fallback={
+                      <p role="status" className="p-4">
+                        正在打开归档会话…
+                      </p>
+                    }
+                  >
+                    <ArchivedSessionsPage
+                      projects={projects.data ?? []}
+                      close={closeArchive}
+                      addProject={setAddingProject}
+                    />
+                  </Suspense>
+                )}
+              </div>
             </div>
-          </div>
-        </WorkspaceLayout>
-      </SettingsWorkspace>
-      <NativeInteractionInbox />
-    </div>
+          </WorkspaceLayout>
+        </SettingsWorkspace>
+        <NativeInteractionInbox />
+      </div>
+    </PluginHostContext.Provider>
   );
 }
