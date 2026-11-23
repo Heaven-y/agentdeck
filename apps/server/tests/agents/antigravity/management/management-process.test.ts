@@ -55,6 +55,37 @@ it('本地服务已就绪时不等待账号会话列表，仍可读取原生历�
   await stopped(f.evidence);
 });
 
+it('账号查询等原生列表就绪，首次状态读取就能拿到邮箱', async () => {
+  const f = await options('account-ready');
+  const backend = await startManagementBackend({ ...f.settings, waitForSessionList: true });
+  try {
+    expect(await backend.request('GetUserStatus', {}, 'page')).toEqual({
+      userStatus: { email: 'ready@example.invalid' },
+    });
+  } finally {
+    await backend.close();
+  }
+  await stopped(f.evidence);
+});
+
+it('账号查询等列表时可取消，未登录不误认为列表就绪', async () => {
+  for (const mode of ['list-hang', '']) {
+    const f = await options(mode);
+    const controller = new AbortController();
+    const opening = startManagementBackend({ ...f.settings, waitForSessionList: true, signal: controller.signal });
+    const result = opening.then(
+      (backend) => backend.close(),
+      (error: unknown) => error,
+    );
+    if (mode) {
+      await vi.waitFor(async () => expect(await readFile(f.evidence, 'utf8')).toContain('pid'));
+      controller.abort();
+    }
+    expect(await result).toMatchObject({ code: 'session_runtime_failed' });
+    await stopped(f.evidence);
+  }
+});
+
 it('引导列表很晚才返回协议错误时仍关闭入口并取消在途读取', async () => {
   const f = await options('list-delayed-invalid');
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });

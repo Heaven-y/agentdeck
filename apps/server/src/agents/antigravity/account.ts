@@ -15,7 +15,7 @@ export function antigravityAccountFromStatus(value: unknown): AntigravityAccount
   return status.success ? { email: status.data.userStatus.email } : {};
 }
 
-/** 原生 GetUserStatus 已在本机 AGY 1.5.11 核验；不主动调用 authenticate 或读取凭据。 */
+/** 仅从原生状态读取邮箱，不主动调用 authenticate 或读取凭据。 */
 export async function readAntigravityAccount({
   env = process.env,
   signal: request,
@@ -35,6 +35,7 @@ export async function readAntigravityAccount({
           geminiDir: profile.gemini,
           command,
           signal,
+          waitForSessionList: true,
         });
         try {
           return antigravityAccountFromStatus(await backend.request('GetUserStatus', {}, 'page'));
