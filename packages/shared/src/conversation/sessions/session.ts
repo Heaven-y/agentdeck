@@ -81,11 +81,36 @@ export type SessionHistoryPageInfo = {
   trailing?: HistoryTurnFragment;
   sameFragment?: boolean;
 };
+export type HistoryTurnFailure = {
+  message: string;
+  retryOnly?: true;
+  /** 轮尾已经输出这条明确的错误，拼齐时不再追加。 */
+  shownAtTail?: true;
+};
+
+/** 单纯重试提示不能覆盖同轮明确的失败；同一等级取后出现的原生原因。 */
+export function preferHistoryTurnFailure(
+  older?: HistoryTurnFailure,
+  newer?: HistoryTurnFailure,
+): HistoryTurnFailure | undefined {
+  return older && !older.retryOnly && newer?.retryOnly ? older : (newer ?? older);
+}
+
+export function historyTurnFailureMessage(turn: HistoryTurnFragment): string | undefined {
+  const recovered = turn.failure?.retryOnly && turn.retryRecovered && !turn.failed && !turn.cancelled && !turn.omitted;
+  return recovered ? undefined : turn.failure?.message;
+}
+
 export type HistoryTurnFragment = {
   failed: boolean;
   /** 本片段最后一次明确取消或恢复；未提供表示不改变较早片段的状态。 */
   cancelled?: boolean;
   omitted: boolean;
+  /** 此片段结束于空回复；拼齐整轮且没有更早正文时才显示。 */
+  emptyReplyMessage?: string;
+  failure?: HistoryTurnFailure;
+  /** 已见步骤均完成；有轮尾时，最后一步是完整答复。跨页还要核对其余片段。 */
+  retryRecovered?: true;
   forkPoint?: string;
 };
 export type SessionHistoryPage = SessionHistory & { page?: SessionHistoryPageInfo };

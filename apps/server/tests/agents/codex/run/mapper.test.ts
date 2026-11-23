@@ -77,6 +77,7 @@ describe('Codex 工具与思考事件', () => {
       { type: 'reasoning', delta: '分析结论' },
       { type: 'reasoning', delta: '正文思考' },
       { type: 'text', delta: '最终回复' },
+      { type: 'error', message: 'Codex 本轮执行失败。' },
       { type: 'turn_end', isError: true },
     ]);
   });
@@ -164,6 +165,7 @@ describe('Codex 原生分叉点', () => {
     const turn = { id: 'native-turn-id', status, items: [] };
     expect(turnEnd(turn)).toMatchObject({ type: 'turn_end', forkPoint: 'native-turn-id' });
     expect(new CodexEventMapper().history(turn)).toEqual([
+      ...(status === 'failed' ? [{ type: 'error', message: 'Codex 本轮执行失败。' }] : []),
       { type: 'turn_end', isError: status !== 'completed', forkPoint: 'native-turn-id' },
     ]);
   });

@@ -222,3 +222,43 @@ it('未完成工具和缺失统计不填零，不生成成功结果或 tok/s', (
   expect(events.at(-1)).not.toHaveProperty('usage');
   expect(events.at(-1)).not.toHaveProperty('durationMs');
 });
+
+it('工具自己的 HTTP 524 仅留在工具卡片，不把完整回复变成回合失败', () => {
+  const cwd = path.join(tmpdir(), 'agentdeck-tool-error');
+  const mapper = new AntigravityMapper(cwd);
+  mapper.map({ event: 'init', conversation_id: 'fixture', init: { cwd } });
+  const message = 'HTTP 524: 工具服务超时; token=synthetic-secret';
+  const output = '工具请求超时（HTTP 524）。';
+  const live = mapper.map({
+    event: 'step_update',
+    step_update: {
+      conversation_id: 'fixture',
+      step_index: 1,
+      step_type: 'tool',
+      tool_name: 'run_command',
+      state: 'ERROR',
+      tool_info: { name: 'run_command', error: { type: 'TOOL_ERROR', message } },
+    },
+  });
+  expect(live).toContainEqual(expect.objectContaining({ type: 'tool_result', isError: true, output }));
+  expect(live.some((event) => event.type === 'error')).toBe(false);
+  const replay = antigravityHistory({
+    steps: [
+      { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { query: '测试' } },
+      {
+        type: 'CORTEX_STEP_TYPE_RUN_COMMAND',
+        status: 'CORTEX_STEP_STATUS_ERROR',
+        error: { type: 'TOOL_ERROR', userErrorMessage: message },
+      },
+      {
+        type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+        status: 'CORTEX_STEP_STATUS_DONE',
+        plannerResponse: { response: '已说明结果' },
+      },
+    ],
+  });
+  expect(replay).toContainEqual(expect.objectContaining({ type: 'tool_result', isError: true, output }));
+  expect(JSON.stringify([live, replay])).not.toContain('synthetic-secret');
+  expect(replay.some((event) => event.type === 'error')).toBe(false);
+  expect(replay.at(-1)).toMatchObject({ type: 'turn_end', isError: false });
+});

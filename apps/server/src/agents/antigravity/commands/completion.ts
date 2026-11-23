@@ -6,9 +6,9 @@ import {
 import type { AntigravitySessionManagement } from '../history/session-management-types';
 import {
   ANTIGRAVITY_PERMISSION_NOTICE,
-  additionalServiceDiagnostic,
+  ANTIGRAVITY_TURN_FAILED,
   antigravityDiagnostic,
-  rateLimitFailure,
+  antigravityToolDiagnostic,
   rateLimitOnlyFailure,
 } from '../run/diagnostics';
 
@@ -51,7 +51,7 @@ const FAILED_STATES = new Set([
   'CORTEX_STEP_STATUS_INTERRUPTED',
 ]);
 
-function completedStep(step: ManagementRecord): boolean {
+export function completedStep(step: ManagementRecord): boolean {
   if (step.status !== DONE || step.error || step.type === INPUT || step.type === 'CORTEX_STEP_TYPE_ERROR_MESSAGE')
     return false;
   const command = object(step.runCommand);
@@ -80,7 +80,7 @@ function completedRound(current: ManagementRecord[], requiresRateLimit: boolean)
   return finalResponse(current.at(-1)!);
 }
 
-function finalResponse(last: ManagementRecord): boolean {
+export function finalResponse(last: ManagementRecord): boolean {
   const response = object(last.plannerResponse);
   return (
     last.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' &&
@@ -89,7 +89,7 @@ function finalResponse(last: ManagementRecord): boolean {
 }
 
 /** 错误步骤保留在轨迹中；只有已终止的明确 429 可由同轮更后的完整答复确认恢复。 */
-function rateLimitedStep(step: ManagementRecord): boolean {
+export function rateLimitedStep(step: ManagementRecord): boolean {
   return (
     step.type === 'CORTEX_STEP_TYPE_ERROR_MESSAGE' &&
     step.status === DONE &&
@@ -99,7 +99,7 @@ function rateLimitedStep(step: ManagementRecord): boolean {
   );
 }
 
-function toolStep(step: ManagementRecord): boolean {
+export function recordedToolStep(step: ManagementRecord): boolean {
   return (
     TOOL_STEPS.has(text(step.type)) ||
     !!text(object(object(step.metadata).toolCall).name) ||
@@ -107,13 +107,9 @@ function toolStep(step: ManagementRecord): boolean {
   );
 }
 
-function toolServiceFailure(step: ManagementRecord): { type: 'error'; message: string } | undefined {
-  const error = object(step.error);
-  const type = text(error.type);
-  if (!type || type === 'TOOL_ERROR' || (step.status !== DONE && !FAILED_STATES.has(text(step.status)))) return;
-  // 只识别结构化的服务诊断；工具正文和普通 HTTP 500 不代表模型服务错误。
-  const diagnostic = antigravityDiagnostic(text(error.message), 'tool');
-  return diagnostic?.type === 'error' ? diagnostic : undefined;
+export function recordedToolFailure(step: ManagementRecord) {
+  if (step.status !== DONE && !FAILED_STATES.has(text(step.status))) return;
+  return antigravityToolDiagnostic(object(step.error))?.failure;
 }
 
 function definiteFailure(step: ManagementRecord): boolean {
@@ -126,7 +122,7 @@ function definiteFailure(step: ManagementRecord): boolean {
   )
     return true;
   // 工具自身失败可能已由模型处理；不能把它直接归为模型回合失败。
-  if (toolStep(step)) return !!toolServiceFailure(step);
+  if (recordedToolStep(step)) return !!recordedToolFailure(step);
   return FAILED_STATES.has(text(step.status)) || !!step.error;
 }
 
@@ -148,33 +144,24 @@ function errorTexts(step: ManagementRecord): string[] {
   ].filter((value): value is string => typeof value === 'string' && !!value.trim());
 }
 
-function diagnosedError(value: string): { message: string; limited: boolean } | undefined {
-  const limited = rateLimitOnlyFailure(value);
-  if (rateLimitFailure(value) && !limited) {
-    const other = value.replace(/\b429\b/g, '');
-    const diagnostic = antigravityDiagnostic(other);
-    return {
-      message: diagnostic?.type === 'error' ? diagnostic.message : additionalServiceDiagnostic(other).message,
-      limited,
-    };
+/** 只把原生错误字段分类，不显示其中的内部正文。 */
+export function recognizedRecordedError(step: ManagementRecord): string | undefined {
+  let limited: string | undefined;
+  for (const value of errorTexts(step)) {
+    const diagnostic = antigravityDiagnostic(value);
+    if (diagnostic?.type !== 'error') continue;
+    if (!rateLimitOnlyFailure(value)) return diagnostic.message;
+    limited = diagnostic.message;
   }
-  const diagnostic = antigravityDiagnostic(value);
-  return diagnostic?.type === 'error' ? { message: diagnostic.message, limited } : undefined;
+  return limited;
 }
 
 function currentErrorMessage(step: ManagementRecord): string {
   if (object(step.runCommand).userRejected === true || object(step.mcpTool).userRejected === true)
     return ANTIGRAVITY_PERMISSION_NOTICE;
-  const toolDiagnostic = toolStep(step) ? toolServiceFailure(step) : undefined;
+  const toolDiagnostic = recordedToolStep(step) ? recordedToolFailure(step) : undefined;
   if (toolDiagnostic) return toolDiagnostic.message;
-  let limited: string | undefined;
-  for (const value of errorTexts(step)) {
-    const diagnostic = diagnosedError(value);
-    if (!diagnostic) continue;
-    if (!diagnostic.limited) return diagnostic.message;
-    limited = diagnostic.message;
-  }
-  return limited ?? 'Antigravity 本轮执行失败。';
+  return recognizedRecordedError(step) ?? ANTIGRAVITY_TURN_FAILED;
 }
 
 function validBoundary(boundary: CompletionBoundary, sessionId: string): boolean {

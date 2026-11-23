@@ -12,10 +12,11 @@ import {
 } from './models/model-launch';
 import { AntigravityInvocationError, antigravityInvocationText } from './commands/commands';
 import {
-  additionalServiceDiagnostic,
+  ANTIGRAVITY_EMPTY_REPLY,
+  ANTIGRAVITY_TURN_FAILED,
   antigravityDiagnostic,
   rateLimitOnlyFailure,
-  serviceFailure,
+  transientServiceFailure,
 } from './run/diagnostics';
 import { antigravityBackgroundEnvironment } from './run/process-environment';
 import { reviewAntigravityCurrentTurn, type CurrentTurnReview, type TrajectoryReader } from './commands/completion';
@@ -79,6 +80,7 @@ function argumentsFor(input: AgentTurnInput, settings?: string): string[] {
   return args;
 }
 
+type FailureEvent = Extract<AgentEvent, { type: 'error' }>;
 type ResultExit = 'success' | 'native-failure' | 'cleanup' | 'abnormal';
 
 /** 每轮关闭 stdin，下一轮以原生 id 续接；不保存第二份会话正文。 */
@@ -94,11 +96,11 @@ class AntigravityTurn {
   private finishing = false;
   private failed = false;
   private readonly notices = new Set<string>();
-  private reportedError = false;
+  private observedFailure?: FailureEvent;
+  private reportedFailure = false;
   private nativeFailure = false;
   /** 服务型故障先暂存：原生可能已自行重试成功，本轮结束前不写成永久错误。 */
-  private pendingService?: Extract<AgentEvent, { type: 'error' }>;
-  private pendingServiceRateLimitOnly = true;
+  private pendingService?: { event: FailureEvent; only429: boolean };
   /** 服务错误后长期没有任何输出时收尾：agy 会挂住既不重试也不退出。 */
   private stallTimer?: NodeJS.Timeout;
   /** 原生结果已经确认时，进程清理与模型回合成功是两个独立状态。 */
@@ -198,7 +200,7 @@ class AntigravityTurn {
     clearTimeout(this.stallTimer);
     this.stallTimer = setTimeout(() => {
       if (this.ended || this.finishing || this.failed || this.mapper.result) return;
-      this.fail('Antigravity 服务返回错误后长时间没有进展，本轮已终止；请稍后重试。');
+      this.fail(this.observedFailure?.message ?? this.pendingService?.event.message ?? ANTIGRAVITY_TURN_FAILED);
     }, STALL_AFTER_SERVICE_ERROR_MS);
     this.stallTimer.unref();
   }
@@ -239,51 +241,41 @@ class AntigravityTurn {
   private diagnostic(line: string): void {
     const event = antigravityDiagnostic(line);
     // 服务型故障不代表本轮一定失败：先暂存，等回合结束再按是否有结果决定报不报。
-    if (event?.type === 'error' && serviceFailure(line) && this.deferService(line, event)) return;
+    if (event?.type === 'error' && transientServiceFailure(line)) {
+      this.deferService(line, event);
+      return;
+    }
     this.nativeFailure ||=
       event?.type === 'error' || /^(?:error\s*:|AGY_ERROR\s*:)/i.test(stripVTControlCharacters(line).trim());
     if (event) this.notice(event);
   }
 
-  private deferService(line: string, event: Extract<AgentEvent, { type: 'error' }>): boolean {
-    const plain = stripVTControlCharacters(line);
-    const withoutService = plain
-      .replace(/\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:429|500|503|524)\b/gi, '')
-      .replace(/\bstatus\s*[:=]\s*UNAVAILABLE\b|"status"\s*:\s*"UNAVAILABLE"/gi, '');
-    // 同一行还包含认证等明确失败时，不能按可重试服务错误暂存。
-    if (antigravityDiagnostic(withoutService)?.type === 'error') return false;
-    const withoutRateLimit = plain.replace(/\b429\b/g, '');
-    const rateLimitOnly = rateLimitOnlyFailure(plain);
-    const other =
-      antigravityDiagnostic(withoutRateLimit) ??
-      (rateLimitOnly ? undefined : additionalServiceDiagnostic(withoutRateLimit));
-    this.rememberService(event, other, rateLimitOnly);
+  private deferService(line: string, event: FailureEvent): void {
+    const only429 = rateLimitOnlyFailure(line);
+    if (!this.pendingService || this.pendingService.only429 || !only429) this.pendingService = { event, only429 };
     this.armStall();
-    return true;
-  }
-
-  private rememberService(
-    event: Extract<AgentEvent, { type: 'error' }>,
-    other: ReturnType<typeof antigravityDiagnostic>,
-    rateLimitOnly: boolean,
-  ): void {
-    if (!this.pendingService || (this.pendingServiceRateLimitOnly && !rateLimitOnly))
-      this.pendingService = other?.type === 'error' && !rateLimitOnly ? other : event;
-    this.pendingServiceRateLimitOnly &&= rateLimitOnly;
   }
 
   private notice(event: Extract<AgentEvent, { type: 'error' | 'activity' }>): void {
-    const key = event.type === 'error' ? event.message : event.id;
-    if (this.notices.has(key)) return;
-    this.notices.add(key);
-    if (event.type === 'error') this.reportedError = true;
+    if (event.type === 'error') {
+      this.observedFailure = event;
+      return;
+    }
+    if (this.notices.has(event.id)) return;
+    this.notices.add(event.id);
+    this.input.emit(event);
+  }
+
+  private showFailure(event: FailureEvent): void {
+    if (this.reportedFailure) return;
+    this.reportedFailure = true;
     this.input.emit(event);
   }
 
   private fail(message: string): void {
     if (this.ended || this.failed) return;
     this.failed = true;
-    this.notice({ type: 'error', message });
+    this.showFailure({ type: 'error', message });
     this.stop();
   }
 
@@ -320,7 +312,7 @@ class AntigravityTurn {
       this.stderr.end();
     } catch {
       this.failed = true;
-      this.notice({ type: 'error', message: 'Antigravity 结束时返回了不完整的协议数据。' });
+      this.showFailure({ type: 'error', message: 'Antigravity 结束时返回了不完整的协议数据。' });
     }
   }
 
@@ -340,30 +332,41 @@ class AntigravityTurn {
   }
 
   private finishTurn(code: number | null, signal: NodeJS.Signals | null): void {
-    const result = this.mapper.result;
-    const isError = this.failed || !result || result.isError || this.abnormalExit(code, signal);
-    if (isError && result?.outcome !== 'unconfirmed') this.reportFailure(result);
-    this.input.emit({
-      ...(result ?? { type: 'turn_end' as const }),
-      isError,
-    });
+    const nativeResult = this.mapper.result;
+    const result: Extract<AgentEvent, { type: 'turn_end' }> = nativeResult ?? { type: 'turn_end', isError: true };
+    const failed = this.failed || result.isError || this.abnormalExit(code, signal);
+    const emptyReply = !failed && this.hasEmptyReply();
+    const isError = failed || emptyReply;
+    if (result.outcome !== 'unconfirmed') {
+      if (isError) this.reportFailure(nativeResult, emptyReply);
+      else if (this.observedFailure) this.showFailure(this.observedFailure);
+    }
+    this.input.emit({ ...result, isError });
   }
 
-  private reportFailure(result: Extract<AgentEvent, { type: 'turn_end' }> | undefined): void {
-    // 暂存的服务故障只在确实失败时报出，具体原因优先于下面的泛化文案。
-    if (this.pendingService) this.notice(this.pendingService);
-    // stdout 与 stderr 顺序不固定；排空后才兜底，避免覆盖稍后到达的具体原因。
-    if (this.failed || this.reportedError) return;
-    if (this.mapper.resultDiagnostic?.type === 'error') {
-      this.notice(this.mapper.resultDiagnostic);
-      return;
-    }
-    this.notice({
-      type: 'error',
-      message: result
-        ? 'Antigravity 未能完成本轮。'
-        : 'Antigravity 提前退出，回复可能不完整。可重新读取会话查看已保存内容。',
-    });
+  private hasEmptyReply(): boolean {
+    return !this.input.invocation && !this.mapper.hasReply && !this.observedFailure;
+  }
+
+  private reportFailure(result: Extract<AgentEvent, { type: 'turn_end' }> | undefined, emptyReply: boolean): void {
+    if (this.reportedFailure) return;
+    const diagnostic = this.primaryFailure(result?.isError === true);
+    if (diagnostic) this.showFailure(diagnostic);
+    else if (!this.failed) this.showFailure({ type: 'error', message: this.failureFallback(!!result, emptyReply) });
+  }
+
+  private primaryFailure(nativeFailed: boolean): FailureEvent | undefined {
+    if (this.observedFailure) return this.observedFailure;
+    const pending = this.pendingService;
+    const terminal = nativeFailed && !this.failed ? this.mapper.resultDiagnostic : undefined;
+    // 同轮已确认的错误优先；纯 429 不能盖过最终明确原因。
+    if (terminal?.type === 'error' && (!this.mapper.rateLimitedResult || pending?.only429 !== false)) return terminal;
+    return pending?.event;
+  }
+
+  private failureFallback(hasResult: boolean, emptyReply: boolean): string {
+    if (emptyReply && !this.nativeFailure && !this.mapper.currentStepFailure) return ANTIGRAVITY_EMPTY_REPLY;
+    return hasResult ? ANTIGRAVITY_TURN_FAILED : 'Antigravity 提前退出，回复可能不完整。可重新读取会话查看已保存内容。';
   }
 
   private resultExit(code: number | null, signal: NodeJS.Signals | null): ResultExit {
@@ -374,55 +377,36 @@ class AntigravityTurn {
   }
 
   private async completeResult(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
-    if (!this.mapper.result?.isError || this.failed || this.reportedError || this.hasDecisiveFailure()) return;
+    if (!this.mapper.result?.isError || this.failed || this.observedFailure || this.hasDecisiveFailure()) return;
     const exit = this.resultExit(code, signal);
     const review = exit === 'success' || exit === 'native-failure' ? await this.reviewCompletion() : undefined;
     if (!this.failed) this.applyCompletion(review, exit);
   }
 
   private hasDecisiveFailure(): boolean {
-    return this.nativeFailure || (!!this.pendingService && !this.pendingServiceRateLimitOnly);
+    return this.nativeFailure || this.pendingService?.only429 === false;
   }
 
   private applyCompletion(review: CurrentTurnReview | undefined, exit: ResultExit): void {
-    const completed = review?.status === 'completed' && !this.mapper.terminalFailure ? review : undefined;
-    if (exit === 'success' && completed?.recoveredRateLimit && this.mapper.canRecoverCompletion) {
-      for (const event of this.mapper.confirmCompletion(completed)) this.emit(event);
+    if (review?.status === 'error') {
+      this.observedFailure = { type: 'error', message: review.message };
       return;
     }
-    if (!this.reportCurrentFailure(review, !!completed)) this.reportRemainingResult(completed, exit);
+    if (review?.status !== 'completed' || this.mapper.terminalFailure || exit !== 'success') return;
+    if (review.recoveredRateLimit && this.mapper.canRecoverCompletion) {
+      for (const event of this.mapper.confirmCompletion(review)) this.emit(event);
+    } else this.resolveHistoricalConflict(review);
   }
 
-  private reportRemainingResult(
-    completed: Extract<CurrentTurnReview, { status: 'completed' }> | undefined,
-    exit: ResultExit,
-  ) {
-    if (
-      this.mapper.resumedResultError &&
-      completed?.historicalErrorMatch &&
-      exit === 'success' &&
-      (!this.pendingService || completed.verifiedCompletion)
-    ) {
-      // 仅核实旧错误与当前完整轨迹冲突时保留未知；同文不等于已证明本轮成功。
+  private resolveHistoricalConflict(completed: Extract<CurrentTurnReview, { status: 'completed' }>): void {
+    if (!this.mapper.resumedResultError || !completed.historicalErrorMatch) return;
+    if (this.pendingService && !completed.verifiedCompletion) {
+      // 本轮实际报告的故障未恢复；不能让与旧轮同文的 result 掩盖它。
+      this.observedFailure = this.pendingService.event;
+    } else {
+      // 同文不证明本轮成功，也不足以把旧错误贴到新回复上。
       for (const event of this.mapper.markUnconfirmed(completed)) this.emit(event);
-    } else if (!this.pendingService && this.mapper.resultDiagnostic) {
-      this.notice(this.mapper.resultDiagnostic);
     }
-  }
-
-  private reportCurrentFailure(review: CurrentTurnReview | undefined, completed: boolean): boolean {
-    if (review?.status === 'error') {
-      this.notice({ type: 'error', message: review.message });
-      return true;
-    }
-    if (!this.mapper.currentStepFailure || completed) return false;
-    if (!this.pendingService)
-      this.notice(
-        this.mapper.resultDiagnostic?.type === 'error'
-          ? this.mapper.resultDiagnostic
-          : { type: 'error', message: 'Antigravity 本轮执行失败。' },
-      );
-    return true;
   }
 
   private reviewCompletion(): Promise<CurrentTurnReview> | undefined {

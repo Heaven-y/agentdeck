@@ -1,4 +1,11 @@
-import type { SessionHistoryPageInfo, AgentEvent } from '@agentdeck/shared/conversation';
+import {
+  historyTurnFailureMessage,
+  preferHistoryTurnFailure,
+  type HistoryTurnFailure,
+  type HistoryTurnFragment,
+  type SessionHistoryPageInfo,
+  type AgentEvent,
+} from '@agentdeck/shared/conversation';
 import { mediaReference } from '../../common/media/native-media';
 import {
   managementObject as object,
@@ -9,19 +16,19 @@ import { contextEvent, historyResponseTiming, historyTiming, stepUsage } from '.
 import { historyGeneration } from '../run/generation-timing';
 import { historyResponseModel } from '../run/generation-model';
 import { OMITTED_HISTORY_STEP } from '../management/history-window';
-import { antigravityDiagnostic } from '../run/diagnostics';
+import { ANTIGRAVITY_EMPTY_REPLY, antigravityToolDiagnostic } from '../run/diagnostics';
+import {
+  completedStep,
+  finalResponse,
+  rateLimitedStep,
+  recognizedRecordedError,
+  recordedToolFailure,
+  recordedToolStep,
+} from '../commands/completion';
 
 const DONE = 'CORTEX_STEP_STATUS_DONE';
 const FAILED = new Set(['CORTEX_STEP_STATUS_ERROR', 'CORTEX_STEP_STATUS_INVALID']);
 const CANCELLED = new Set(['CORTEX_STEP_STATUS_CANCELED', 'CORTEX_STEP_STATUS_INTERRUPTED']);
-const TOOL_TYPES = new Set([
-  'CORTEX_STEP_TYPE_RUN_COMMAND',
-  'CORTEX_STEP_TYPE_VIEW_FILE',
-  'CORTEX_STEP_TYPE_FILE_CHANGE',
-  'CORTEX_STEP_TYPE_WRITE_TO_FILE',
-  'CORTEX_STEP_TYPE_MCP_TOOL',
-  'CORTEX_STEP_TYPE_GENERIC',
-]);
 const clip = (value: string, preserve = false) =>
   !preserve && value.length > 20_000 ? `${value.slice(0, 20_000)}\n[输出已截断]` : value;
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
@@ -115,11 +122,14 @@ function toolEvents(step: ManagementRecord, index: number, preserve: boolean): A
   const id = `agy-step-${index}`;
   const events: AgentEvent[] = [{ type: 'tool_call', id, name: value.name, input: value.input }];
   if (step.status !== DONE && !FAILED.has(text(step.status))) return events;
+  const error = object(step.error);
+  const visible = text(error.userErrorMessage);
+  const diagnostic = antigravityToolDiagnostic({ type: error.type, message: visible });
   events.push({
     type: 'tool_result',
     id,
-    output: clip(value.output || text(object(step.error).userErrorMessage), preserve),
-    isError: FAILED.has(text(step.status)) || ('failed' in value && value.failed === true),
+    output: clip(value.output || diagnostic?.message || visible, preserve),
+    isError: FAILED.has(text(step.status)) || !!text(error.type) || ('failed' in value && value.failed === true),
     ...historyTiming(step.metadata),
   });
   return events;
@@ -178,7 +188,7 @@ function recordedCancellation(step: ManagementRecord): boolean | undefined {
 function response(step: ManagementRecord, index: number, trajectory: ManagementRecord): AgentEvent[] {
   const content = responseContent(step);
   const responseModel = historyResponseModel(trajectory, step, index);
-  const events: AgentEvent[] = content
+  const events: AgentEvent[] = content.trim()
     ? [{ type: 'text', id: `agy-step-${index}`, delta: content, ...(responseModel ? { responseModel } : {}) }]
     : [];
   const usage = stepUsage(object(step.metadata).modelUsage);
@@ -195,14 +205,16 @@ function response(step: ManagementRecord, index: number, trajectory: ManagementR
   return events;
 }
 
-function toolOrActivity(step: ManagementRecord, index: number, preserve: boolean): AgentEvent[] {
-  return TOOL_TYPES.has(text(step.type)) || text(object(object(step.metadata).toolCall).name)
-    ? toolEvents(step, index, preserve)
-    : activity(step, index);
+function emptyFinalResponse(step: ManagementRecord): boolean {
+  if (step.type !== 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' || step.status !== DONE || step.error) return false;
+  const reply = object(step.plannerResponse);
+  return (
+    reply.stopReason === 'STOP_REASON_STOP_PATTERN' && !list(reply.toolCalls).length && !responseContent(step).trim()
+  );
 }
 
-function failedStep(step: ManagementRecord) {
-  return FAILED.has(text(step.status)) || !!errorMessage(step);
+function toolOrActivity(step: ManagementRecord, index: number, preserve: boolean): AgentEvent[] {
+  return recordedToolStep(step) ? toolEvents(step, index, preserve) : activity(step, index);
 }
 
 function errorMessage(step: ManagementRecord): string {
@@ -225,13 +237,8 @@ function stepEvents(
       return response(step, index, trajectory);
     case 'CORTEX_STEP_TYPE_CHECKPOINT':
       return checkpoint(step);
-    case 'CORTEX_STEP_TYPE_ERROR_MESSAGE': {
-      const message = errorMessage(step);
-      const diagnostic = antigravityDiagnostic(message);
-      return message
-        ? [{ type: 'error', message: diagnostic?.type === 'error' ? diagnostic.message : clip(message) }]
-        : [];
-    }
+    case 'CORTEX_STEP_TYPE_ERROR_MESSAGE':
+      return []; // 同轮错误在结算时选一条，重试步骤不单独挂红条。
     default:
       return toolOrActivity(step, index, preserve);
   }
@@ -260,45 +267,134 @@ export function antigravityHistory(trajectory: ManagementRecord, options: Replay
   return projectAntigravityHistory(trajectory, options).events;
 }
 
+function historyEmptyReply(
+  fragment: HistoryTurnFragment,
+  tail: { step: ManagementRecord; hasReply: boolean; knownStart: boolean },
+  trailing: boolean,
+): string | undefined {
+  if (
+    trailing ||
+    !tail.knownStart ||
+    tail.hasReply ||
+    fragment.failed ||
+    fragment.failure ||
+    fragment.cancelled ||
+    fragment.omitted
+  )
+    return;
+  return emptyFinalResponse(tail.step) ? ANTIGRAVITY_EMPTY_REPLY : undefined;
+}
+
+function historyTurnEnd(turn: HistoryTurnFragment): AgentEvent[] {
+  const message = historyTurnFailureMessage(turn) ?? turn.emptyReplyMessage;
+  const events: AgentEvent[] = message ? [{ type: 'error', message }] : [];
+  if (!turn.omitted)
+    events.push({
+      type: 'turn_end',
+      isError: turn.failed || !!turn.cancelled || !!message,
+      ...(turn.forkPoint ? { forkPoint: turn.forkPoint } : {}),
+    });
+  return events;
+}
+
+function showTailFailure(turn: HistoryTurnFragment, events: AgentEvent[]): void {
+  const failure = turn.failure;
+  if (!failure || failure.retryOnly) return;
+  turn.failure = { ...failure, shownAtTail: true };
+  events.push({ type: 'error', message: failure.message });
+}
+
+function historyForkPoint(step: ManagementRecord, index: number) {
+  return step.status === DONE && step.type !== 'CORTEX_STEP_TYPE_USER_INPUT' ? String(index) : undefined;
+}
+
+function historyStepFailure(
+  step: ManagementRecord,
+  only429: boolean,
+): { failed: boolean; failure?: HistoryTurnFailure } {
+  if (recordedToolStep(step)) {
+    const diagnostic = recordedToolFailure(step);
+    return { failed: !!diagnostic, failure: diagnostic && { message: diagnostic.message } };
+  }
+  const visible = step.type === 'CORTEX_STEP_TYPE_ERROR_MESSAGE' ? errorMessage(step).trim() : '';
+  return {
+    failed: !only429 && (!!visible || FAILED.has(text(step.status))),
+    failure: visible
+      ? { message: recognizedRecordedError(step) ?? clip(visible), ...(only429 ? { retryOnly: true } : {}) }
+      : undefined,
+  };
+}
+
 /** 跨页片段仅保存用来核对整轮的事实；读到真实轮头才结算，不制造实时“结果待核实”。 */
 export function projectAntigravityHistory(trajectory: ManagementRecord, options: ReplayOptions) {
   const events: AgentEvent[] = pageNotice(options);
   const fragments: Pick<SessionHistoryPageInfo, 'leading' | 'trailing' | 'sameFragment'> = {};
   let forkPoint: string | undefined;
   let failed = false;
+  let failure: HistoryTurnFailure | undefined;
+  let stepsCompleted = true;
   let omitted = false;
   let cancelled: boolean | undefined;
   let started = false;
   let leading = !!options.partialStart;
+  let hasUser = false;
+  let hasReply = false;
+  let last: ManagementRecord = {};
   const finish = (trailing: boolean) => {
-    const fragment = { failed, cancelled, omitted, forkPoint: trailing ? undefined : forkPoint };
+    const fragment: HistoryTurnFragment = {
+      failed,
+      cancelled,
+      omitted,
+      forkPoint: trailing ? undefined : forkPoint,
+      failure,
+    };
+    if (stepsCompleted && (trailing || finalResponse(last))) fragment.retryRecovered = true;
+    fragment.emptyReplyMessage = historyEmptyReply(
+      fragment,
+      { step: last, hasReply, knownStart: hasUser || leading },
+      trailing,
+    );
     if (leading) fragments.leading = fragment;
     if (trailing) {
       fragments.trailing = fragment;
       if (leading) fragments.sameFragment = true;
-    }
-    if (!leading && !trailing && !omitted)
-      events.push({ type: 'turn_end', isError: failed || !!cancelled, ...(forkPoint ? { forkPoint } : {}) });
+    } else if (!leading) events.push(...historyTurnEnd(fragment));
+    else showTailFailure(fragment, events);
+  };
+  const recordStep = (step: ManagementRecord, index: number) => {
+    started = true;
+    last = step;
+    omitted ||= step.type === OMITTED_HISTORY_STEP;
+    forkPoint = historyForkPoint(step, index);
+    cancelled = recordedCancellation(step) ?? cancelled;
+    const only429 = rateLimitedStep(step);
+    stepsCompleted &&=
+      step.type === 'CORTEX_STEP_TYPE_USER_INPUT' ? step.status === DONE : only429 || completedStep(step);
+    const outcome = historyStepFailure(step, only429);
+    failed ||= outcome.failed;
+    failure = preferHistoryTurnFailure(failure, outcome.failure);
   };
   list(trajectory.steps).forEach((value, position) => {
     const index = (options.offset ?? 0) + position;
     const step = object(value);
-    if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && started) {
-      finish(false);
-      forkPoint = undefined;
-      failed = false;
-      omitted = false;
-      cancelled = undefined;
-      leading = false;
+    if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT') {
+      if (started) {
+        finish(false);
+        forkPoint = undefined;
+        failed = false;
+        failure = undefined;
+        stepsCompleted = true;
+        omitted = false;
+        cancelled = undefined;
+        leading = false;
+        hasReply = false;
+      }
+      hasUser = true;
     }
-    started = true;
-    omitted ||= step.type === OMITTED_HISTORY_STEP;
-    const status = text(step.status);
-    if (status === DONE && step.type !== 'CORTEX_STEP_TYPE_USER_INPUT') forkPoint = String(index);
-    else forkPoint = undefined;
-    cancelled = recordedCancellation(step) ?? cancelled;
-    failed ||= failedStep(step);
-    events.push(...stepEvents(step, index, options.preserveToolContent ?? false, trajectory));
+    recordStep(step, index);
+    const projected = stepEvents(step, index, options.preserveToolContent ?? false, trajectory);
+    hasReply ||= projected.some((event) => event.type === 'text');
+    events.push(...projected);
   });
   if (started) finish(!!options.partialEnd);
   if (options.includeContext !== false) {
