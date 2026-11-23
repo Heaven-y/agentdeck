@@ -20,7 +20,6 @@ afterEach(() => {
 });
 it('安装副本保持停用，启用需明确确认且刷新真实查询缓存', async () => {
   const plugin: WorkbenchPlugin = {
-    builtin: false,
     enabled: false,
     manifest: {
       id: 'fixture',
@@ -45,7 +44,7 @@ it('安装副本保持停用，启用需明确确认且刷新真实查询缓存'
     </QueryClientProvider>,
   );
   fireEvent.change(screen.getByLabelText('本地插件目录'), { target: { value: 'fixtures/plugin' } });
-  fireEvent.click(screen.getByRole('button', { name: '安装本地插件' }));
+  fireEvent.click(screen.getByRole('button', { name: '安装或更新插件' }));
   await screen.findByText('1.0.0 · 已停用');
   expect(toggle).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '启用 示例插件' }));
@@ -59,7 +58,6 @@ it('安装副本保持停用，启用需明确确认且刷新真实查询缓存'
 
 it('停用 SSH Console 前说明影响范围，确认后才切换', async () => {
   const plugin: WorkbenchPlugin = {
-    builtin: true,
     enabled: true,
     manifest: {
       id: 'ssh-console',
@@ -87,8 +85,8 @@ it('停用 SSH Console 前说明影响范围，确认后才切换', async () => 
   fireEvent.click(disable);
   const message = confirm.mock.calls[0]?.[0] as string;
   // 页面状态随插件卸载释放；服务器档案与保存的凭据留在后端，停用不该暗示数据会消失。
-  expect(message).toContain('控制台');
-  expect(message).toContain('服务器档案与保存的凭据保留');
+  expect(message).toContain('运行服务');
+  expect(message).toContain('插件数据保留');
   expect(message).not.toContain('项目服务器工具');
   expect(toggle).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);

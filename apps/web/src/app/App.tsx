@@ -334,7 +334,7 @@ export function App() {
               </div>
               <PluginWorkspace
                 plugin={activePlugin}
-                builtinPlugins={plugins.builtinPlugins}
+                enabledPlugins={plugins.enabledPlugins}
                 project={current}
                 close={() => showPlugin(undefined)}
                 command={plugins.command}

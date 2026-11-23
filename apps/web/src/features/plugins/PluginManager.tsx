@@ -5,14 +5,13 @@ import { DetailDialog } from '../../ui/DetailDialog';
 import { buttonClass, inputClass } from '../../ui/styles';
 import { pluginApi, pluginsKey } from './plugin-api';
 import { useWorkbenchPlugins } from './use-workbench-plugins';
-import { builtinPlugins } from '../../builtin-plugins/registry';
 
-const permissions = { storage: '插件自己的本机设置', 'project-context': '当前项目名称和目录' };
-async function togglePlugin(plugin: WorkbenchPlugin, revision: string) {
-  const catalog = await pluginApi.setEnabled(plugin.manifest.id, !plugin.enabled, revision);
-  if (plugin.enabled && plugin.builtin) builtinPlugins[plugin.manifest.id]?.onDisabled();
-  return catalog;
-}
+const permissions = {
+  storage: '插件自己的本机设置',
+  'project-context': '当前项目名称和目录',
+  backend: '运行本机服务，访问本机文件和网络',
+  clipboard: '读取与写入剪贴板',
+};
 
 function PluginEntry({
   plugin,
@@ -30,7 +29,7 @@ function PluginEntry({
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-medium">{plugin.manifest.name}</h3>
         <span className="text-xs text-muted-foreground">
-          {plugin.builtin ? '内置' : plugin.manifest.version} · {plugin.enabled ? '已启用' : '已停用'}
+          {plugin.manifest.version} · {plugin.enabled ? '已启用' : '已停用'}
         </span>
       </div>
       <p className="text-sm text-muted-foreground">{plugin.manifest.description}</p>
@@ -41,11 +40,11 @@ function PluginEntry({
         <button type="button" className={buttonClass('outline')} disabled={busy} onClick={toggle}>
           {plugin.enabled ? `停用 ${plugin.manifest.name}` : `启用 ${plugin.manifest.name}`}
         </button>
-        {!plugin.builtin && (
+        {
           <button type="button" className={buttonClass('danger')} disabled={busy} onClick={remove}>
             卸载 {plugin.manifest.name}
           </button>
-        )}
+        }
       </div>
     </li>
   );
@@ -68,6 +67,7 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
       client.setQueryData(pluginsKey, await action());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '插件操作失败，请重新读取');
+      await client.invalidateQueries({ queryKey: pluginsKey });
     } finally {
       lock.current = false;
       setBusy(false);
@@ -76,13 +76,18 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
   const toggle = (plugin: WorkbenchPlugin) => {
     if (!query.data) return;
     const text = plugin.enabled
-      ? (plugin.builtin && builtinPlugins[plugin.manifest.id]?.disableConfirmation(plugin)) ||
-        `停用“${plugin.manifest.name}”将关闭它的页面与资源。插件设置保留。继续吗？`
+      ? `停用“${plugin.manifest.name}”会关闭它的页面与运行服务，插件数据保留。继续吗？`
       : `启用“${plugin.manifest.name}”，允许访问：${plugin.manifest.permissions.map((item) => permissions[item]).join('、') || '仅插件页面'}？`;
-    if (window.confirm(text)) void perform(() => togglePlugin(plugin, query.data.revision));
+    if (window.confirm(text))
+      void perform(() => pluginApi.setEnabled(plugin.manifest.id, !plugin.enabled, query.data.revision));
   };
   const remove = (plugin: WorkbenchPlugin) => {
-    if (query.data && window.confirm(`卸载“${plugin.manifest.name}”？这会清理插件副本与插件自己的设置。`))
+    if (
+      query.data &&
+      window.confirm(
+        `卸载“${plugin.manifest.name}”？${plugin.manifest.apiVersion === 2 ? '插件程序将被移除，数据保留。' : '插件副本与设置将被清理。'}`,
+      )
+    )
       void perform(() => pluginApi.remove(plugin.manifest.id, query.data.revision));
   };
   return (
@@ -93,7 +98,7 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            if (directory.trim()) void perform(() => pluginApi.install(directory.trim()));
+            if (directory.trim()) void perform(() => pluginApi.install(directory.trim(), query.data?.revision));
           }}
         >
           <label className="block space-y-2 text-sm">
@@ -107,7 +112,7 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
             />
           </label>
           <button type="submit" className={buttonClass('primary')} disabled={busy || !directory.trim()}>
-            安装本地插件
+            安装或更新插件
           </button>
           <p className="text-xs text-muted-foreground">安装后，选择“启用”开始使用。</p>
         </form>
@@ -131,14 +136,6 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          className={buttonClass('outline')}
-          disabled={busy || query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          重新读取插件
-        </button>
       </div>
     </DetailDialog>
   );

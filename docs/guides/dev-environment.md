@@ -21,10 +21,9 @@ Windows 10/11、Node.js 22+ 与 Git 是开发基础。按需安装 `claude`、`c
 
 | 功能 | 当前选择 | 主要理由 |
 |---|---|---|
-| 后端与协议 | Fastify、WebSocket、zod、TypeScript | 协调 CLI 与 SSH，复用前后端类型，见[技术选择](../engineering/decisions.md#electron-加壳沿用-node-与-react) |
+| 后端与协议 | Fastify、WebSocket、zod、TypeScript | 协调 CLI 与工作台插件，复用前后端类型，见[技术选择](../engineering/decisions.md#electron-加壳沿用-node-与-react) |
 | 桌面 | Electron、electron-vite、electron-builder | 业务服务保持一份实现；本地构建 NSIS/portable，不执行发布 |
 | CLI | Claude Agent SDK、Codex app-server、Antigravity 本机接口 | 保留原生会话与行为，不重建模型引擎 |
-| SSH | ssh2、ssh-config | 连接/PTY/SFTP 与 OpenSSH Host 解析；known_hosts 小型校验保留本地实现，覆盖哈希和吊销条目 |
 | 数据与连接 | TanStack Query、zustand、partysocket | 分离服务缓存和交互状态；关闭 WS 发送缓冲避免重发 |
 | 消息 | streamdown、react-virtuoso | 流式 Markdown、动态高度列表和滚动跟随 |
 | 配置 | CodeMirror 6、smol-toml、toml-eslint-parser | 原文高亮与校验，模型表单通过 TOML AST 定点编辑并保留注释与未知配置 |
@@ -63,9 +62,9 @@ Windows 10/11、Node.js 22+ 与 Git 是开发基础。按需安装 `claude`、`c
 
 重构后按目录增加独立聚合门槛（行/语句/函数/分支）：platform、Claude、Codex、chat/sessions 为 90/90/90/80；Antigravity、agents/common、plugins 宿主、web/cli 为 85/85/85/75。shared 与 HTTP 安全模块继续使用原更高门槛，总体门槛仍保留。目录分组能防止一个高覆盖模块掩盖另一个适配器退步，不要求复制相同测试到每一层。
 
-jscpd 递归扫描 server/web/desktop 的 src、shared/src、scripts/dev 与 scripts/packaging，新 CLI、platform、内置插件无需额外登记单文件。仍检查跨目录重复，限制 3%；合理的协议差异不强行抽象成全能基类。构建产物、依赖和测试不计入生产重复率。
+jscpd 递归扫描 server/web/desktop 的 src、shared/src、scripts/dev 与 scripts/packaging，新 CLI 与 platform 模块无需额外登记单文件。仍检查跨目录重复，限制 3%；合理的协议差异不强行抽象成全能基类。构建产物、依赖和测试不计入生产重复率。
 
-覆盖率排除项由根 Vitest 配置统一维护：进程入口、需要真实 SSH 的池、前端组件及特定浏览器封装分别由相应验证覆盖。不得放宽全局门槛；必要的局部 lint 例外写明原因。jsdom 放根开发依赖，组件测试用 Testing Library，普通逻辑使用 Node 环境。
+覆盖率排除项由根 Vitest 配置统一维护：进程入口、前端组件及特定浏览器封装分别由相应验证覆盖。不得放宽全局门槛；必要的局部 lint 例外写明原因。jsdom 放根开发依赖，组件测试用 Testing Library，普通逻辑使用 Node 环境。
 
 ### 1.4 删除一个概念时的闭包
 
@@ -88,7 +87,7 @@ jscpd 递归扫描 server/web/desktop 的 src、shared/src、scripts/dev 与 scr
 
 ### 1.6 后端与远程环境
 
-本地 Fastify 负责访问控制、原生适配、轮次与 SSH；长时间操作必须异步、可取消且有界。并发边界、资源预算、主机信任和凭据规则见[架构](../engineering/architecture.md)。
+本地 Fastify 负责访问控制、原生适配、轮次与插件运行；长时间操作必须异步、可取消且有界。并发边界、资源预算、主机信任和凭据规则见[架构](../engineering/architecture.md)。
 
 服务器使用已有工具和 Python 环境，不为监控安装 `nvitop` 或常驻采集器。远端操作、资源观察和对话互不代替，独立成功不能证明所有组合都通过。
 
@@ -175,7 +174,6 @@ powershell -ExecutionPolicy Bypass -File scripts\dev\install-skills.ps1
 | 浏览器热更新 | `npm.cmd run dev` |
 | 本机静态托管 | `npm.cmd start` |
 | 指定关联测试 | `npm.cmd test -- apps/server/tests/chat/turn-manager.test.ts` |
-| 控制台受控夹具 | `node --import tsx scripts/dev/e2e/e2e-console.ts` |
 | Windows 本地包 | `npm.cmd run package:desktop` |
 | 解包目录与冒烟 | `npm.cmd run package:desktop:dir`，再按本地安装指南运行冒烟检查 |
 
@@ -194,17 +192,16 @@ powershell -ExecutionPolicy Bypass -File scripts\dev\install-skills.ps1
 | 后端、桌面主进程及其共享源码 | 重新构建并自动启动新 Electron 进程 |
 | 依赖或启动/构建配置 | 按变更安装依赖后停止并重新执行开发命令 |
 
-后端重启会中断本次运行中的模型回合、SSH 通道和终端。不要在真实任务运行时编辑会触发重启的文件；原生历史与工作台已保存数据继续按各自存储规则保留。热更新只适用于源码开发，已生成的安装包和便携包不会随源码变化。
+后端重启会中断本次运行中的模型回合与插件服务。不要在真实任务运行时编辑会触发重启的文件；原生历史与工作台已保存数据继续按各自存储规则保留。热更新只适用于源码开发，已生成的安装包和便携包不会随源码变化。
 
 开发代理要求固定后端端口，使用 `AGENTDECK_HOST` 和 `AGENTDECK_PORT`，默认回环端口 4317；桌面热更新不接受端口 0。5173 被占用时明确启动失败，不自动连接其他开发服务，因此不要同时运行浏览器开发与桌面开发。安装版和静态预览仍使用系统分配的端口。
 
 原生配置接线脚本为 `e2e-claude-config.ts` 与 `e2e-agent-config.ts`。Codex 可通过 `--config` 与 `--codex` 指定隔离来源；只有已授权真实模型验证才追加 `--with-model`。复制认证材料必须明确指定、核对源摘要，清理只触及自身副本，不绕过策略拒绝。
 
-原生资源、插件与独立控制台的组件和服务测试使用临时目录、合成运行器或假 SSH 通道。浏览器验证覆盖真实组件布局和键盘操作；终端搜索用本机输出缓冲，不需要连接真实服务器。外部静态插件的样例与权限边界见[插件契约](../engineering/workbench-plugins.md)。
+原生资源与插件宿主的组件和服务测试使用临时目录及合成运行器，浏览器验证覆盖实际布局和键盘操作。具体扩展在其仓库验证；宿主接口见[插件契约](../engineering/workbench-plugins.md)。
 
 升版本、制作安装包和发布前，确认范围与版本。打包命令生成本地 Windows x64 产物，使用本机 CLI，用户数据独立保存。当前包的版本及证据以[本地安装指南](local-installation.md)为准；包内启动、安装和卸载分别验收。
 
-SSH 验证使用合成服务或授权目标，核对主机信任和凭据流程。当前控制台文件页只读；终端中的真实写操作先预检，结果不明时先核对远端状态。
 
 ## 4. 已知开发约束
 

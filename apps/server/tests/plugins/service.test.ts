@@ -1,4 +1,3 @@
-import { sshConsoleDefinition } from '../../src/builtin-plugins/ssh-console/manifest';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +16,7 @@ const manifest: WorkbenchPluginManifest = {
   commands: [{ id: 'open-demo', title: '打开示例' }],
 };
 const html = '<!doctype html><html lang="zh"><body><script>document.body.dataset.ready="yes"</script></body></html>';
-async function fixture(onDisable?: (id: string) => Promise<void>) {
+async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workbench-plugins-'));
   roots.push(root);
   const directory = path.join(root, 'package');
@@ -29,7 +28,7 @@ async function fixture(onDisable?: (id: string) => Promise<void>) {
     root,
     directory,
     configDir,
-    service: createWorkbenchPlugins({ builtins: [sshConsoleDefinition], configDir, onDisable }),
+    service: createWorkbenchPlugins({ configDir }),
   };
 }
 afterEach(async () => {
@@ -37,74 +36,17 @@ afterEach(async () => {
 });
 
 describe('工作台插件宿主', () => {
-  it('读取前保守禁用，清理中的插件同步阻止新资源，完成后采用磁盘状态', async () => {
-    let enter!: () => void;
-    let release!: () => void;
-    const entered = new Promise<void>((resolve) => {
-      enter = resolve;
-    });
-    const { service } = await fixture(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-          enter();
-        }),
-    );
-    expect(service.isEnabled('ssh-console')).toBe(false);
-    const initial = await service.list();
-    expect(service.isEnabled('ssh-console')).toBe(true);
-    const disabling = service.update('ssh-console', { enabled: false, revision: initial.revision });
-    await entered;
-    expect(service.isEnabled('ssh-console')).toBe(false);
-    release();
-    await disabling;
-    expect(service.isEnabled('ssh-console')).toBe(false);
-  });
-  it('内置 SSH 默认启用且不可卸载，外部安装仅复制并保持停用', async () => {
+  it('全新安装为空，外部插件安装后保持停用，修改源目录不改变已安装副本', async () => {
     const { service, directory, configDir } = await fixture();
-    const initial = await service.list();
-    expect(initial).toMatchObject({
-      revision: 'missing',
-      plugins: [{ builtin: true, enabled: true, manifest: { id: 'ssh-console' } }],
-    });
-    await expect(service.remove('ssh-console', { revision: initial.revision })).rejects.toMatchObject({
-      code: 'builtin_plugin',
-    });
-    const catalog = await service.install({ directory });
-    expect(catalog.plugins.find((plugin) => plugin.manifest.id === 'demo-plugin')).toMatchObject({
-      builtin: false,
-      enabled: false,
-    });
-    await expect(service.page('demo-plugin')).rejects.toMatchObject({ code: 'plugin_disabled' });
-    expect(await createWorkbenchPlugins({ builtins: [sshConsoleDefinition], configDir }).list()).toEqual(catalog);
-    await fs.writeFile(path.join(directory, 'index.html'), '外部包被修改');
-    const enabled = await service.update('demo-plugin', { enabled: true, revision: catalog.revision });
-    expect(enabled.plugins.find((plugin) => plugin.manifest.id === 'demo-plugin')?.enabled).toBe(true);
-    expect(await service.page('demo-plugin')).toEqual({ html });
-  });
-
-  it('停用先完成资源清理，清理失败保持启用状态且不泄露异常', async () => {
-    const cleaned: string[] = [];
-    let fails = true;
-    const { service, directory } = await fixture(async (id) => {
-      cleaned.push(id);
-      if (fails) throw new Error('secret-private');
-    });
+    expect((await service.list()).plugins).toEqual([]);
     const installed = await service.install({ directory });
-    const enabled = await service.update('demo-plugin', { enabled: true, revision: installed.revision });
-    const failure: unknown = await service
-      .update('demo-plugin', { enabled: false, revision: enabled.revision })
-      .catch((error: unknown) => error);
-    expect(failure).toMatchObject({ code: 'cleanup_failed' });
-    expect(String(failure)).not.toContain('secret-private');
-    expect(service.isEnabled('demo-plugin')).toBe(true);
-    expect((await service.list()).plugins.find((plugin) => plugin.manifest.id === 'demo-plugin')?.enabled).toBe(true);
-    fails = false;
-    const disabled = await service.update('demo-plugin', { enabled: false, revision: enabled.revision });
-    expect(disabled.plugins.find((plugin) => plugin.manifest.id === 'demo-plugin')?.enabled).toBe(false);
-    expect(cleaned).toEqual(['demo-plugin', 'demo-plugin']);
+    expect(installed.plugins).toMatchObject([{ enabled: false }]);
+    expect(await createWorkbenchPlugins({ configDir }).list()).toEqual(installed);
+    await fs.writeFile(path.join(directory, 'index.html'), 'changed');
+    await service.update('demo-plugin', { enabled: true, revision: installed.revision });
+    expect(await service.page('demo-plugin')).toEqual({ html });
+    await service.dispose();
   });
-
   it('存储隔离在已启用且有权限的插件，修订冲突不覆盖；卸载仅删除自有文件', async () => {
     const { service, directory } = await fixture();
     const installed = await service.install({ directory });
@@ -119,9 +61,9 @@ describe('工作台插件宿主', () => {
     await expect(
       service.saveStorage('demo-plugin', { value: { text: 'a'.repeat(65536) }, revision: saved.revision }),
     ).rejects.toMatchObject({ code: 'too_large' });
-    await expect(service.readStorage('ssh-console')).rejects.toMatchObject({ code: 'permission_denied' });
+    await expect(service.readStorage('missing-plugin')).rejects.toMatchObject({ code: 'plugin_missing' });
     const removed = await service.remove('demo-plugin', { revision: enabled.revision });
-    expect(removed.plugins).toHaveLength(1);
+    expect(removed.plugins).toHaveLength(0);
     expect(await fs.readFile(path.join(directory, 'index.html'), 'utf8')).toBe(html);
     await expect(service.page('demo-plugin')).rejects.toMatchObject({ code: 'plugin_missing' });
   });
@@ -150,7 +92,7 @@ describe('工作台插件宿主', () => {
       await expect(other.service.install({ directory: other.directory })).rejects.toMatchObject({
         code: 'invalid_manifest',
       });
-      expect((await other.service.list()).plugins).toHaveLength(1);
+      expect((await other.service.list()).plugins).toHaveLength(0);
     }
     for (const name of ['.env', 'private.key', 'package.json', 'credentials.json', 'server.ts']) {
       const other = await fixture();
@@ -194,29 +136,15 @@ describe('工作台插件宿主', () => {
   });
 });
 
-it('内置注册项各自保存状态，v1 停用选择迁移后不丢失且不回写旧格式', async () => {
-  const { configDir } = await fixture();
+it('读取旧登记表时只保留已安装记录，下次写入清理退出的内置字段', async () => {
+  const { configDir, directory, service } = await fixture();
   const folder = path.join(configDir, 'workbench-plugins');
   await fs.mkdir(folder, { recursive: true });
-  const registryFile = path.join(folder, 'registry.json');
-  const previous = JSON.stringify({ version: 1, sshConsoleEnabled: false, plugins: [] });
-  await fs.writeFile(registryFile, previous);
-  const builtins = [
-    { manifest: { ...manifest, id: 'ssh-console' }, defaultEnabled: true },
-    { manifest: { ...manifest, id: 'other-builtin' }, defaultEnabled: true },
-  ];
-  const service = createWorkbenchPlugins({ configDir, builtins });
-  const old = await service.list();
-  expect(old.plugins.map((entry) => [entry.manifest.id, entry.enabled])).toEqual([
-    ['ssh-console', false],
-    ['other-builtin', true],
-  ]);
-  expect(await fs.readFile(registryFile, 'utf8')).toBe(previous);
-  const updated = await service.update('other-builtin', { enabled: false, revision: old.revision });
-  expect(updated.plugins.every((entry) => !entry.enabled)).toBe(true);
-  expect(JSON.parse(await fs.readFile(registryFile, 'utf8'))).toMatchObject({
-    version: 2,
-    builtinEnabled: { 'ssh-console': false, 'other-builtin': false },
-  });
-  expect(await createWorkbenchPlugins({ configDir, builtins }).list()).toEqual(updated);
+  const file = path.join(folder, 'registry.json');
+  await fs.writeFile(file, JSON.stringify({ version: 2, builtinEnabled: { retired: true }, plugins: [] }));
+  expect((await service.list()).plugins).toEqual([]);
+  await service.install({ directory });
+  const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+  expect(saved.version).toBe(3);
+  expect(saved).not.toHaveProperty('builtinEnabled');
 });

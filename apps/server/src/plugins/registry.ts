@@ -1,11 +1,6 @@
-import type { BuiltinPluginDefinition } from './contracts';
 import path from 'node:path';
 import { z } from 'zod';
-import {
-  WorkbenchPluginManifestSchema,
-  type WorkbenchPlugin,
-  type WorkbenchPluginCatalog,
-} from '@agentdeck/shared/plugins';
+import { WorkbenchPluginManifestSchema, type WorkbenchPluginCatalog } from '@agentdeck/shared/plugins';
 import {
   assertDirectoryUnchanged,
   inspectDirectory,
@@ -16,64 +11,35 @@ import {
 import { WorkbenchPluginError } from './errors';
 import { safeRelative } from './files';
 
-const InstalledPluginSchema = z
-  .object({
-    manifest: WorkbenchPluginManifestSchema,
-    enabled: z.boolean(),
-    installedAt: z.number().int().nonnegative(),
-    entryRevision: z.string().regex(/^[a-f0-9]{64}$/),
-  })
-  .strict();
-const LegacyRegistrySchema = z.strictObject({
-  version: z.literal(1),
-  sshConsoleEnabled: z.boolean(),
+const InstalledPluginSchema = z.strictObject({
+  manifest: WorkbenchPluginManifestSchema,
+  enabled: z.boolean(),
+  installedAt: z.number().int().nonnegative(),
+  entryRevision: z.string().regex(/^[a-f0-9]{64}$/),
+  packageRevision: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+});
+// 旧格式只取实际安装记录；下次保存时移除已退出的内置配置。
+const RegistrySchema = z.object({
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   plugins: z.array(InstalledPluginSchema).max(64),
 });
-const RegistrySchema = z.strictObject({
-  version: z.literal(2),
-  builtinEnabled: z.record(z.string(), z.boolean()),
-  plugins: z.array(InstalledPluginSchema).max(64),
-});
-function parseRegistry(value: unknown, builtins: BuiltinPluginDefinition[]) {
-  const legacy = LegacyRegistrySchema.safeParse(value);
-  const state = legacy.success
-    ? {
-        version: 2 as const,
-        builtinEnabled: { 'ssh-console': legacy.data.sshConsoleEnabled },
-        plugins: legacy.data.plugins,
-      }
-    : RegistrySchema.parse(value);
-  const ids = state.plugins.map((plugin) => plugin.manifest.id);
-  if (
-    new Set(ids).size !== ids.length ||
-    ids.some((id) => builtins.some((entry) => entry.manifest.id === id)) ||
-    !state.plugins.every((plugin) => safeRelative(plugin.manifest.id) && safeRelative(plugin.manifest.entry))
-  )
-    throw new WorkbenchPluginError('registry_invalid');
-  return state;
-}
-export type PluginRegistry = z.infer<typeof RegistrySchema>;
 export type InstalledPlugin = z.infer<typeof InstalledPluginSchema>;
+export type PluginRegistry = { version: 3; plugins: InstalledPlugin[] };
 export type RegistrySnapshot = Awaited<ReturnType<ReturnType<typeof createPluginRegistry>['load']>>;
-
-export function publicPlugin(plugin: InstalledPlugin): WorkbenchPlugin {
-  return { manifest: plugin.manifest, enabled: plugin.enabled, installedAt: plugin.installedAt, builtin: false };
-}
 export function registryCatalog(current: RegistrySnapshot): WorkbenchPluginCatalog {
   return {
     revision: current.snapshot.revision,
-    plugins: [
-      ...current.builtins.map(({ manifest, defaultEnabled }) => ({
-        manifest: structuredClone(manifest),
-        builtin: true,
-        enabled: current.state.builtinEnabled[manifest.id] ?? defaultEnabled,
-      })),
-      ...current.state.plugins.map(publicPlugin),
-    ],
+    plugins: current.state.plugins.map((entry) => ({
+      manifest: entry.manifest,
+      enabled: entry.enabled,
+      installedAt: entry.installedAt,
+    })),
   };
 }
-
-export function createPluginRegistry(directory: string, builtins: BuiltinPluginDefinition[]) {
+export function createPluginRegistry(directory: string) {
   const file = path.join(directory, 'registry.json');
   async function load() {
     const parents = await inspectDirectory(directory);
@@ -81,14 +47,19 @@ export function createPluginRegistry(directory: string, builtins: BuiltinPluginD
     if (parents) await assertDirectoryUnchanged(parents);
     let state: PluginRegistry;
     try {
-      state =
-        snapshot.revision === 'missing'
-          ? { version: 2, builtinEnabled: {}, plugins: [] }
-          : parseRegistry(JSON.parse(snapshot.content), builtins);
+      const parsed =
+        snapshot.revision === 'missing' ? { plugins: [] } : RegistrySchema.parse(JSON.parse(snapshot.content));
+      const ids = parsed.plugins.map((entry) => entry.manifest.id);
+      if (
+        new Set(ids).size !== ids.length ||
+        !parsed.plugins.every(({ manifest }) => safeRelative(manifest.id) && safeRelative(manifest.entry))
+      )
+        throw new Error();
+      state = { version: 3, plugins: parsed.plugins };
     } catch {
       throw new WorkbenchPluginError('registry_invalid');
     }
-    return { state, snapshot, builtins };
+    return { state, snapshot };
   }
   return {
     load,

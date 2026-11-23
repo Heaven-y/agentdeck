@@ -17,7 +17,7 @@
 
 | 要修改的内容 | 从哪里开始 | 通常还要看哪里 |
 |---|---|---|
-| 内置 SSH Console 插件 | [内置插件后端](../../apps/server/src/builtin-plugins/ssh-console/registration.ts)、[内置页面](../../apps/web/src/builtin-plugins/ssh-console/Workspace.tsx) | 后端 `ssh` 管连接、档案与信任，`console` 管监控、作业与终端，前端插件按文件、监控和终端分组 |
+| 工作台插件宿主 | [通用后端装配](../../apps/server/src/bootstrap/plugins.ts)、[页面容器](../../apps/web/src/features/plugins/PluginWorkspace.tsx) | 接口与生命周期见[工作台插件](../engineering/workbench-plugins.md)；业务扩展在 [agentdeck-plugins](https://github.com/Heaven-y/agentdeck-plugins) 仓库 |
 | 增加普通工作台插件 | [外部插件示例](../../examples/workbench-plugin/agentdeck.plugin.json) | 页面与命令使用[插件接口](../engineering/workbench-plugins.md)，宿主根据清单加载 |
 
 ## 测试与开发工具

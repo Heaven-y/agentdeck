@@ -16,7 +16,6 @@ it('命令绑定来源插件，侧栏打开另一插件不重放旧命令', asyn
     revision: 'missing',
     plugins: ['first', 'second'].map((id) => ({
       enabled: true,
-      builtin: false,
       manifest: {
         id,
         name: id,

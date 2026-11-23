@@ -1,4 +1,3 @@
-import { sshConsoleDefinition } from '../../src/builtin-plugins/ssh-console/manifest';
 import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,7 +30,7 @@ async function setup() {
   fixtures.push({ root, app });
   registerSecurity(app, { token: 'test-token', port: 24455 });
   registerPluginRoutes(app, {
-    service: createWorkbenchPlugins({ builtins: [sshConsoleDefinition], configDir: path.join(root, 'config') }),
+    service: createWorkbenchPlugins({ configDir: path.join(root, 'config') }),
   });
   return { app, directory };
 }
@@ -82,7 +81,7 @@ describe('工作台插件 HTTP 接口', () => {
       headers,
       payload: { revision: enabled.json<WorkbenchPluginCatalog>().revision },
     });
-    expect(removed.json<WorkbenchPluginCatalog>().plugins).toHaveLength(1);
+    expect(removed.json<WorkbenchPluginCatalog>().plugins).toHaveLength(0);
   });
 
   it('沙箱来源、匿名请求及任意资源路径不能绕过主接口检查', async () => {
@@ -105,6 +104,25 @@ describe('工作台插件 HTTP 接口', () => {
     expect((await app.inject({ method: 'GET', url: '/api/plugins/demo/assets/index.html', headers })).statusCode).toBe(
       404,
     );
+  });
+
+  it('插件后端请求同样要求本机会话和有效来源，拒绝响应不缓存', async () => {
+    const { app } = await setup();
+    for (const [requestHeaders, status] of [
+      [{ ...headers, cookie: '' }, 401],
+      [{ ...headers, origin: 'null' }, 403],
+      [{ ...headers, origin: 'https://other.invalid' }, 403],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/plugins/demo/backend',
+        headers: requestHeaders,
+        payload: { method: 'POST', url: '/private-data', body: { value: 'synthetic-value' } },
+      });
+      expect(response.statusCode).toBe(status);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.body).not.toContain('synthetic-value');
+    }
   });
 
   it('固定请求字段与匿名错误覆盖解析失败，状态冲突保留409', async () => {

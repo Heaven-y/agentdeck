@@ -1,12 +1,27 @@
 import { request } from '../../lib/http';
-import type { WorkbenchPluginCatalog, WorkbenchPluginPage, WorkbenchPluginStorage } from '@agentdeck/shared/plugins';
+import type {
+  WorkbenchPluginBackendRequest,
+  WorkbenchPluginBackendResponse,
+  WorkbenchPluginCatalog,
+  WorkbenchPluginPage,
+  WorkbenchPluginStorage,
+} from '@agentdeck/shared/plugins';
 
 const pluginUrl = (id: string) => `/api/plugins/${encodeURIComponent(id)}`;
 export const pluginsKey = ['workbench-plugins'] as const;
 export const pluginApi = {
   list: (signal?: AbortSignal) => request<WorkbenchPluginCatalog>('/api/plugins', { signal, cache: 'no-store' }),
-  install: (directory: string) =>
-    request<WorkbenchPluginCatalog>('/api/plugins/install', { method: 'POST', body: JSON.stringify({ directory }) }),
+  install: (directory: string, revision?: string) =>
+    request<WorkbenchPluginCatalog>('/api/plugins/install', {
+      method: 'POST',
+      body: JSON.stringify({ directory, revision }),
+    }),
+  backend: (id: string, input: WorkbenchPluginBackendRequest, signal?: AbortSignal) =>
+    request<WorkbenchPluginBackendResponse>(`${pluginUrl(id)}/backend`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      signal,
+    }),
   setEnabled: (id: string, enabled: boolean, revision: string) =>
     request<WorkbenchPluginCatalog>(pluginUrl(id), { method: 'PUT', body: JSON.stringify({ enabled, revision }) }),
   remove: (id: string, revision: string) =>

@@ -9,8 +9,7 @@
     "./conversation": "./src/conversation/index.ts",
     "./projects": "./src/projects/index.ts",
     "./settings": "./src/settings/index.ts",
-    "./plugins": "./src/plugins/index.ts",
-    "./ssh": "./src/ssh/index.ts"
+    "./plugins": "./src/plugins/index.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
