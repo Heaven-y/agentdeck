@@ -1,3 +1,4 @@
+import { pluginHelp } from './plugin-help';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,8 +51,9 @@ it('AGY 本地安装、启停、验证、卸载按真实列表核实，不提供
     run: async (_exe, args) => {
       calls.push(args);
       let value: unknown = {};
-      if (args[0] === '--version') value = '1.5.3';
-      else if (args[1] === 'list')
+      const help = pluginHelp('antigravity', args);
+      if (help !== undefined) return { stdout: Buffer.alloc(0), stderr: Buffer.from(help), exitCode: 0 };
+      if (args[1] === 'list')
         value = installed
           ? [{ name: 'demo', source: 'antigravity', path: root, version: '1.0.0', enabled, skills: ['demo'] }]
           : [];
@@ -106,7 +108,8 @@ it('Claude 市场增删刷新只选指定来源和作用域，卸载始终保留
     run: async (_exe, args) => {
       calls.push(args);
       let value: unknown = {};
-      if (args[0] === '--version') value = '2.1.317';
+      const help = pluginHelp('claude', args);
+      if (help !== undefined) value = help;
       else if (args[1] === 'list')
         value = installed
           ? [
@@ -203,11 +206,10 @@ it('等待原生命令确认期间持有维护与项目租约，取消退出后�
     run: (_exe, args) =>
       Promise.resolve({
         stdout: Buffer.from(
-          args[0] === '--version'
-            ? '2.1.317'
-            : args[1] === 'list'
+          pluginHelp('claude', args) ??
+            (args[1] === 'list'
               ? '[]'
-              : JSON.stringify({ shownCommand: { command: 'fixture-path', sha256: 'a'.repeat(64) } }),
+              : JSON.stringify({ shownCommand: { command: 'fixture-path', sha256: 'a'.repeat(64) } })),
         ),
         stderr: Buffer.alloc(0),
         exitCode: args[1] === 'install' ? 1 : 0,
@@ -267,9 +269,8 @@ it('能力失效仍在进行时不提前发布终态，重开列表可以持续�
       if (args[1] === 'disable') enabled = false;
       return Promise.resolve({
         stdout: Buffer.from(
-          args[0] === '--version'
-            ? '2.1.317'
-            : args[1] === 'list'
+          pluginHelp('claude', args) ??
+            (args[1] === 'list'
               ? JSON.stringify([
                   {
                     id: 'demo@fixture',
@@ -279,7 +280,7 @@ it('能力失效仍在进行时不提前发布终态，重开列表可以持续�
                     enabled,
                   },
                 ])
-              : '{}',
+              : '{}'),
         ),
         stderr: Buffer.alloc(0),
         exitCode: 0,
@@ -321,7 +322,7 @@ it('取消与原生命令确认准备竞争时，不重新进入等待确认', a
           release = resolve;
         });
       }
-      return { stdout: Buffer.from(args[0] === '--version' ? '2.1.317' : '[]'), stderr: Buffer.alloc(0), exitCode: 0 };
+      return { stdout: Buffer.from(pluginHelp('claude', args) ?? '[]'), stderr: Buffer.alloc(0), exitCode: 0 };
     },
   });
   const c = await service.read('claude'),

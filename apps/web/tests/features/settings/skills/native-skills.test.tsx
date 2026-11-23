@@ -50,8 +50,8 @@ it('新建或编辑另一技能时先保护同页导入与其他可见性草稿'
         {
           id: 'root',
           kind: 'skills',
-          scope: 'user',
-          label: '用户技能',
+          scope: 'project',
+          label: '项目技能',
           displayPath: '~/.claude/skills',
           editable: true,
         },
@@ -60,12 +60,21 @@ it('新建或编辑另一技能时先保护同页导入与其他可见性草稿'
   );
   render(
     <SettingsNavigationContext value={guards}>
-      <NativeSkillsPanel context={{ agent: 'claude' }} reload={0} onEdit={edit} onCreate={create} onChanged={vi.fn()} />
+      <NativeSkillsPanel
+        context={{ agent: 'claude', projectId: 'project' }}
+        reload={0}
+        onEdit={edit}
+        onCreate={create}
+        onChanged={vi.fn()}
+      />
     </SettingsNavigationContext>,
   );
-  fireEvent.click(await screen.findByText('导入本地技能目录'));
+  fireEvent.click(await screen.findByText('添加技能'));
+  fireEvent.click(screen.getByText('导入本地技能目录'));
+  fireEvent.click(screen.getByText('demo'));
+  fireEvent.click(screen.getByText('other'));
   fireEvent.change(screen.getByLabelText('导入技能名称'), { target: { value: 'draft-import' } });
-  fireEvent.click(screen.getByRole('button', { name: '新建 Skill · 用户' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建技能' }));
   fireEvent.click(screen.getAllByRole('button', { name: '编辑 SKILL.md' })[1]!);
   expect(create).not.toHaveBeenCalled();
   expect(edit).not.toHaveBeenCalled();
@@ -76,7 +85,7 @@ it('新建或编辑另一技能时先保护同页导入与其他可见性草稿'
   expect(edit).not.toHaveBeenCalled();
   confirm.mockClear().mockReturnValue(true);
   fireEvent.click(screen.getAllByRole('button', { name: '编辑 SKILL.md' })[1]!);
-  expect(edit).toHaveBeenCalledWith('other');
+  expect(edit).toHaveBeenCalledWith('other', 'other', expect.stringMatching(/SKILL.md$/));
   expect(confirm).toHaveBeenCalledOnce();
 });
 it('技能目录与名称草稿保护统一导航，目录编码期间无法离开，成功后清除保护', async () => {
@@ -134,7 +143,7 @@ it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止�
   render(
     <SettingsNavigationContext value={guards}>
       <NativeSkillsPanel
-        context={{ agent: 'claude' }}
+        context={{ agent: 'claude', projectId: 'project' }}
         reload={0}
         onEdit={edit}
         onCreate={vi.fn()}
@@ -142,7 +151,7 @@ it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止�
       />
     </SettingsNavigationContext>,
   );
-  await screen.findByText('demo');
+  fireEvent.click(await screen.findByText('demo'));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'off' } });
   act(() => guardSettingsNavigation(guards, navigate));
   fireEvent.click(screen.getByRole('button', { name: '编辑 SKILL.md' }));
@@ -152,7 +161,7 @@ it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止�
   expect(screen.getByLabelText<HTMLSelectElement>('demo 可见性').value).toBe('off');
   confirm.mockReturnValue(true);
   fireEvent.click(screen.getByRole('button', { name: '编辑 SKILL.md' }));
-  expect(edit).toHaveBeenCalledWith('demo');
+  expect(edit).toHaveBeenCalledWith('demo', 'demo', expect.stringMatching(/SKILL.md$/));
   fireEvent.click(screen.getByRole('button', { name: '应用 demo 设置' }));
   act(() => guardSettingsNavigation(guards, navigate));
   expect(navigate).not.toHaveBeenCalled();
@@ -179,7 +188,7 @@ it('四态与继承保持原生语义，失败后保留用户选择，删除必�
       onChanged={vi.fn()}
     />,
   );
-  await screen.findByText('demo');
+  fireEvent.click(await screen.findByText('demo'));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'user-invocable-only' } });
   fireEvent.click(screen.getByRole('button', { name: '应用 demo 设置' }));
   await screen.findByText('文件已被修改');
@@ -209,7 +218,7 @@ function changingCatalog() {
     return Response.json(current);
   });
   const props = {
-    context: { agent: 'claude' as const },
+    context: { agent: 'claude' as const, projectId: 'project' },
     reload: 0,
     onEdit: vi.fn(),
     onCreate: vi.fn(),
@@ -226,9 +235,9 @@ function changingCatalog() {
 }
 it('未编辑状态在刷新后同步最新值，不会以新revision重新提交旧选择', async () => {
   const { requests, refresh } = changingCatalog();
-  await screen.findByText('demo');
+  fireEvent.click(await screen.findByText('demo'));
   refresh();
-  await screen.findByText('自有目录 · 当前项目 · 隐藏并停用');
+  await screen.findByText('隐藏并停用');
   expect(screen.getByLabelText<HTMLSelectElement>('demo 可见性').value).toBe('off');
   fireEvent.click(screen.getByRole('button', { name: '应用 demo 设置' }));
   await waitFor(() => expect(requests).toHaveLength(1));
@@ -236,10 +245,10 @@ it('未编辑状态在刷新后同步最新值，不会以新revision重新提�
 });
 it('刷新保留真实草稿与原始revision，明确放弃后才采用最新设置', async () => {
   const { requests, refresh } = changingCatalog();
-  await screen.findByText('demo');
+  fireEvent.click(await screen.findByText('demo'));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'name-only' } });
   refresh();
-  await screen.findByText('自有目录 · 当前项目 · 隐藏并停用');
+  await screen.findByText('隐藏并停用');
   expect(screen.getByLabelText<HTMLSelectElement>('demo 可见性').value).toBe('name-only');
   fireEvent.click(screen.getByRole('button', { name: '应用 demo 设置' }));
   await screen.findByText('文件已被修改');

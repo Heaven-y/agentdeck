@@ -20,7 +20,13 @@ export async function antigravityPlugins(c: PluginContext): Promise<PluginInvent
       selector: name,
       name,
       root,
-      scope: writable ? 'user' : 'directory',
+      scope: writable
+        ? 'user'
+        : c.project &&
+            path.isAbsolute(root) &&
+            resourcePathKey(path.dirname(root)) === resourcePathKey(path.join(c.project.dir, '.agents/plugins'))
+          ? 'project'
+          : 'external',
       source: string(record.source) || '原生来源',
       version: typeof record.version === 'string' ? record.version : null,
       enabled: typeof record.enabled === 'boolean' ? record.enabled : null,
@@ -31,7 +37,6 @@ export async function antigravityPlugins(c: PluginContext): Promise<PluginInvent
           : [],
       ),
       actions: writable ? ['enable', 'disable', 'uninstall', 'validate'] : [],
-      reason: writable ? undefined : '此插件需在 Antigravity 中管理。',
     };
   });
   return {

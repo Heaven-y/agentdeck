@@ -15,8 +15,9 @@ export type NativeSkillEntry = {
   stateByScope?: Partial<Record<NativeResourceScope, NativeSkillState>>;
   revision: string;
   resourceId?: string;
-  /** 原生按名称修改时明确告知影响范围；不能将其伪装成路径级开关。 */
   description: string;
+  /** 本地文件或插件资源，不据此判断 CLI 是否已经加载此技能。 */
+  fileOnly?: boolean;
   actions: { edit: boolean; delete: boolean; states: NativeSkillState[]; stateScopes: NativeResourceScope[] };
   unavailableReason?: string;
 };

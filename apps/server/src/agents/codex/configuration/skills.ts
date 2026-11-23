@@ -1,12 +1,10 @@
 import path from 'node:path';
 import { CodexClient } from '../run/client';
-import { readNativeSkills } from '../capabilities';
-import { resolveCodexCommand } from '../run/launch';
+import { codexSkillDescription, readNativeSkills } from '../capabilities';
 import { CodexError, record, text, type CodexRuntimeOptions, type RecordValue } from '../run/types';
 import { NativeResourceError } from '../../common/configuration/errors';
 import { readNativeConfigSource } from '../../../native-management/config';
 import { NativeManagementError } from '../../../native-management/errors';
-import { verifiedSkillVersion } from '../../../native-management/version';
 import {
   enabledState,
   nativeSkillPathKey,
@@ -28,6 +26,7 @@ function nativeSkill(raw: RecordValue): NativeSkill {
   const file = text(raw.path);
   return {
     name: text(raw.name),
+    description: codexSkillDescription(raw),
     path: nativeSkillPathKey(file) ? file : undefined,
     nativeScope: scope,
     scope: skillScope(scope),
@@ -88,10 +87,10 @@ export function createCodexSkills(
           throw new NativeResourceError('revision_conflict');
         const result = await client.request('skills/config/write', { path: before.path, enabled }).catch((error) => {
           if (error instanceof CodexError && error.nativeRejected) throw error;
-          throw new NativeManagementError('result_unconfirmed');
+          throw new NativeManagementError('skill_state_unconfirmed');
         });
         const after = await readTarget().catch(() => undefined);
-        if (!confirmedWrite(before, after, enabled, result)) throw new NativeManagementError('result_unconfirmed');
+        if (!confirmedWrite(before, after, enabled, result)) throw new NativeManagementError('skill_state_unconfirmed');
       }),
   };
 }
@@ -105,7 +104,6 @@ export const codexSkills: SkillAdapter = {
     if (project) sources.push(await readNativeConfigSource(path.join(project.dir, '.codex/config.toml'), 'project'));
     return sources;
   },
-  verifyVersion: (context) => verifiedSkillVersion(context, '0.166.0', (env) => resolveCodexCommand({ env })),
   visibility({ nativeSkill, sources }) {
     const canWrite = writable(nativeSkill) && sources.some((source) => source.scope === 'user');
     return {

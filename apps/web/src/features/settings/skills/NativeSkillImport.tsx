@@ -57,29 +57,31 @@ export function NativeSkillImport({
     }
   }
   return (
-    <details className="space-y-3 rounded-lg border border-dashed border-border-strong p-3">
+    <details className="space-y-3">
       <summary className="cursor-pointer text-sm font-medium">导入本地技能目录</summary>
       <p className="text-sm text-muted-foreground">
         选择包含 SKILL.md 的技能文件夹。最多 128 个文件、6 层目录，共 8 MiB。
       </p>
-      <label className="block space-y-1 text-sm">
-        保存位置
-        <select
-          aria-label="技能导入位置"
-          className={inputClass}
-          value={rootId}
-          onChange={(event) => setRootId(event.target.value)}
-          disabled={busy}
-        >
-          {roots
-            .filter((root) => root.editable)
-            .map((root) => (
-              <option key={root.id} value={root.id}>
-                {nativeScopeNames[root.scope]} · {root.displayPath}
-              </option>
-            ))}
-        </select>
-      </label>
+      {roots.filter((root) => root.editable).length > 1 && (
+        <label className="block space-y-1 text-sm">
+          保存位置
+          <select
+            aria-label="技能导入位置"
+            className={inputClass}
+            value={rootId}
+            onChange={(event) => setRootId(event.target.value)}
+            disabled={busy}
+          >
+            {roots
+              .filter((root) => root.editable)
+              .map((root) => (
+                <option key={root.id} value={root.id}>
+                  {nativeScopeNames[root.scope]} · {root.displayPath}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
       <label className="block space-y-1 text-sm">
         技能目录
         <input

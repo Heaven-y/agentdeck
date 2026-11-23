@@ -121,7 +121,7 @@ export function createNativePluginService(deps: Deps = {}) {
       task.catalog = (await inventory(task.context)).catalog;
       return true;
     } catch {
-      task.view.message = '插件列表刷新失败，请稍后重试。';
+      task.view.message = '插件列表未更新，请重新读取。';
       return false;
     }
   }
@@ -198,11 +198,7 @@ export function createNativePluginService(deps: Deps = {}) {
       touch(task, 'cancelled', '已取消，部分修改可能已完成。请刷新列表查看。');
       return;
     }
-    touch(
-      task,
-      verified ? 'succeeded' : 'unknown',
-      verified ? undefined : '插件可能已发生变化，操作结果尚未确认。请刷新列表后再操作。',
-    );
+    touch(task, verified ? 'succeeded' : 'unknown', verified ? undefined : '插件列表未反映这次操作，请重新读取。');
   }
   async function runTask(task: Task, ready: (error?: unknown) => void) {
     let started = false;
@@ -245,7 +241,7 @@ export function createNativePluginService(deps: Deps = {}) {
     touch(
       task,
       task.abort.signal.aborted ? 'cancelled' : status,
-      started ? '插件可能已发生变化，操作结果尚未确认。请刷新列表后再操作。' : '操作未开始，请刷新列表后重试。',
+      started ? '未读到预期的插件状态。请重新读取列表。' : '未开始操作。请重新读取列表。',
     );
   }
   function prune() {
@@ -261,8 +257,7 @@ export function createNativePluginService(deps: Deps = {}) {
     if (targetRevision(input, data) !== input.revision) throw new NativeResourceError('revision_conflict');
     const plugin = data.native.plugins.find((p) => p.entry!.id === input.id),
       market = data.native.marketplaces.find((m) => m.entry!.id === input.id);
-    if (input.action === 'install' && !data.catalog.installScopes.length)
-      throw new NativeManagementError('unsupported_action');
+    if (input.action === 'install' && !data.catalog.canInstall) throw new NativeManagementError('unsupported_action');
     if (input.action === 'marketplace-add' && !data.catalog.canAddMarketplace)
       throw new NativeManagementError('unsupported_action');
     await validatePreparation(c, input, plugin, market);

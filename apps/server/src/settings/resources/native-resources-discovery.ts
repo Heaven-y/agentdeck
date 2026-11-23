@@ -60,7 +60,7 @@ export async function describeRoot(root: ResourceRoot): Promise<NativeResourceRo
   }
 }
 
-export async function discoverResources(context: ResourceContext, plan: ResourcePlan) {
+export async function discoverResources(context: ResourceContext, plan: ResourcePlan, only?: 'skills') {
   const targets = new Map(plan.targets.map((target) => [target.id, target]));
   const warnings = new Set<string>();
   let remaining = MAX_DISCOVERY_ENTRIES;
@@ -75,10 +75,7 @@ export async function discoverResources(context: ResourceContext, plan: Resource
           warnings.add('目录内容较多，已达到本次扫描上限；可使用原生 CLI 查看其他资源。');
           break;
         }
-        if (entry.isSymbolicLink()) {
-          warnings.add('目录中存在链接资源，未跟随链接读取；请使用原生 CLI 管理这些资源。');
-          continue;
-        }
+        if (entry.isSymbolicLink()) continue;
         await visit(entry);
       }
       await assertDirectoryUnchanged(parents);
@@ -118,6 +115,14 @@ export async function discoverResources(context: ResourceContext, plan: Resource
         displayPath: path.posix.join(scan.displayPath, entry.name),
         readOnly: true,
       };
+      if (only === 'skills') {
+        await skillFiles({
+          ...base,
+          directory: path.join(base.directory, 'skills'),
+          displayPath: `${base.displayPath}/skills`,
+        });
+        return;
+      }
       for (const [name, kind] of [
         ['plugin.json', 'plugins'],
         ['mcp_config.json', 'mcp'],
@@ -179,7 +184,7 @@ export async function discoverResources(context: ResourceContext, plan: Resource
     else if (scan.mode === 'agents' || scan.mode === 'agent-configs') await agentFiles(scan);
     else await ruleFiles(scan);
   }
-  if (context.project) await directoryRules(context.project.dir);
+  if (context.project && !only) await directoryRules(context.project.dir);
   return {
     targets: await Promise.all([...targets.values()].map((target) => protectClaudePluginResource(context, target))),
     warnings: [...warnings],

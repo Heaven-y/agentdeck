@@ -176,7 +176,7 @@ export function createNativeMcpService(deps: Deps = {}) {
         await deps.onChanged?.(agent);
       } catch {
         // 配置可能已落盘，不能把重启失败当作保存前的错误。
-        if (outcome.ok) throw new NativeManagementError('result_unconfirmed');
+        if (outcome.ok) throw new NativeManagementError('mcp_change_unconfirmed');
       }
       if (!outcome.ok) throw managementError(outcome.error);
       return outcome.value;

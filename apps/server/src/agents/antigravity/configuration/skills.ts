@@ -30,12 +30,25 @@ async function readNative({ project, env, homeDir }: SkillContext): Promise<Nati
       const file = entry.invocation?.kind === 'skill' ? entry.invocation.path : undefined;
       return {
         name: entry.name,
+        description: entry.description,
         path: file,
+        scope: file && project && isProjectSkill(project.dir, file) ? 'project' : undefined,
         // 命令的 available 反映斜杠调用；清单的 exclude 决定路径是否进入原生技能目录。
         enabled: file || entry.available ? true : undefined,
         origin: entry.name.includes(':') ? 'plugin' : undefined,
       };
     });
+}
+
+// 只用 CLI 返回的路径来标注范围，不跟随链接或据此开放文件写入。
+function isProjectSkill(directory: string, file: string) {
+  const key = nativeSkillPathKey(file);
+  return (
+    !!key &&
+    ['.agents/skills', '.agent/skills', '.agents/plugins'].some((root) =>
+      key.startsWith(resourcePathKey(path.join(directory, root)) + path.sep),
+    )
+  );
 }
 
 async function readManifests({ homeDir, project }: SkillContext) {
@@ -157,7 +170,7 @@ function matchesWrittenManifest(manifests: NativeConfigSource[], target: Manifes
 export const antigravitySkills: SkillAdapter = {
   readNative,
   readConfig: readManifests,
-  verifyVersion: (context) => verifiedSkillVersion(context, '1.5.3', (env) => resolveLocalCommand('agy', env)),
+  verifyVersion: (context) => verifiedSkillVersion(context, [1, 5, 3], (env) => resolveLocalCommand('agy', env)),
   localOrigin: (resource) => (resource.displayPath.startsWith('.agents/plugins/') ? 'plugin' : undefined),
   visibility({ context, file, nativeSkill, nativeAvailable, sources }) {
     if (!nativeAvailable) return noToggle('unknown');
@@ -191,6 +204,6 @@ export const antigravitySkills: SkillAdapter = {
           matchesDirectory(after, change, target),
       )
       .catch(() => false);
-    if (!confirmed) throw new NativeManagementError('result_unconfirmed');
+    if (!confirmed) throw new NativeManagementError('skill_state_unconfirmed');
   },
 };

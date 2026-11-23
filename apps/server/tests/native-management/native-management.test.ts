@@ -16,8 +16,10 @@ it('预发行版不是已核实的稳定版，不能开启 Skills 结构化写�
     command: process.execPath,
     args: ['-e', `process.stdout.write(${JSON.stringify(output)})`, '--'],
   });
-  await expect(verifiedSkillVersion(ctx, '1.5.3', resolve('1.5.3'))).resolves.toBe(true);
-  await expect(verifiedSkillVersion(ctx, '1.5.3', resolve('1.5.3-beta.1'))).resolves.toBe(false);
+  await expect(verifiedSkillVersion(ctx, [1, 5, 3], resolve('1.5.3'))).resolves.toBe(true);
+  await expect(verifiedSkillVersion(ctx, [1, 5, 3], resolve('1.5.14'))).resolves.toBe(true);
+  await expect(verifiedSkillVersion(ctx, [1, 5, 3], resolve('1.6.0'))).resolves.toBe(false);
+  await expect(verifiedSkillVersion(ctx, [1, 5, 3], resolve('1.5.3-beta.1'))).resolves.toBe(false);
 });
 
 const temporary: string[] = [];
@@ -118,14 +120,18 @@ it('插件与管理员技能只读，Codex 同路径来源冲突不开放操作�
   const { homeDir, service, native, project, skill } = await fixture();
   const own = await skill('project/.agents/skills/demo');
   native.mockResolvedValue([
-    { name: 'demo', path: own, scope: 'project', enabled: true },
+    { name: 'demo', path: own, scope: 'project', enabled: true, description: '项目技能原生简介' },
     { name: 'demo', path: path.join(homeDir, 'managed/SKILL.md'), scope: 'admin', origin: 'managed', enabled: true },
-    { name: 'plug:demo', origin: 'plugin', enabled: true },
+    { name: 'plug:demo', origin: 'plugin', enabled: true, description: '插件技能原生简介' },
   ]);
   const entries = (await service.readSkills('codex', project)).entries;
   expect(entries.find((e) => e.origin === 'managed')?.actions).toMatchObject({ delete: false, states: [] });
-  expect(entries.find((e) => e.origin === 'plugin')?.actions).toMatchObject({ delete: false, states: [] });
+  expect(entries.find((e) => e.origin === 'plugin')).toMatchObject({
+    description: '插件技能原生简介',
+    actions: { delete: false, states: [] },
+  });
   const local = entries.find((e) => e.scope === 'project')!;
+  expect(local.description).toBe('项目技能原生简介');
   expect(local.actions).toMatchObject({ states: ['enabled', 'disabled'], stateScopes: ['user'] });
   expect(local).not.toHaveProperty('nativePath');
   await expect(
@@ -137,10 +143,11 @@ it('插件与管理员技能只读，Codex 同路径来源冲突不开放操作�
   ).rejects.toMatchObject({ code: 'unsupported_action' });
   const matches: NativeSkill[] = [
     { name: 'demo', path: own, scope: 'project', enabled: true },
-    { name: 'plug:demo', path: own, scope: 'user', origin: 'plugin', enabled: true },
+    { name: 'plug:demo', path: own, scope: 'user', origin: 'plugin', enabled: true, description: '其他来源简介' },
   ];
   native.mockResolvedValue(matches);
   const ambiguous = (await service.readSkills('codex', project)).entries.find((item) => item.id === local.id)!;
+  expect(ambiguous.description).toBe('');
   expect(ambiguous.actions).toEqual({ edit: false, delete: false, states: [], stateScopes: [] });
   expect(ambiguous.state).toBe('unknown');
   native.mockResolvedValue([...matches].reverse());
@@ -239,7 +246,7 @@ it('可能部分写入的失败也失效原生能力与实例，原生读取失�
   native.mockResolvedValue([{ name: 'demo', path: file, scope: 'project', enabled: true }]);
   const change = vi
     .spyOn(adapters.codex, 'changeState')
-    .mockRejectedValue(new NativeManagementError('result_unconfirmed'));
+    .mockRejectedValue(new NativeManagementError('skill_state_unconfirmed'));
   const entry = (await service.readSkills('codex', project)).entries[0]!;
   await expect(
     service.changeSkill(
@@ -247,7 +254,7 @@ it('可能部分写入的失败也失效原生能力与实例，原生读取失�
       { id: entry.id, revision: entry.revision, action: 'state', scope: 'user', value: 'disabled' },
       project,
     ),
-  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  ).rejects.toMatchObject({ code: 'skill_state_unconfirmed' });
   expect(changed).toHaveBeenCalledExactlyOnceWith('codex');
   expect(change).toHaveBeenCalledOnce();
   native.mockRejectedValue(new Error('sentinel-private'));
@@ -287,8 +294,12 @@ it('未核实CLI版本保留本地文件编辑，状态开关保持关闭', asyn
   await skill('project/.claude/skills/demo');
   adapters.claude.verifyVersion = async () => false;
   const result = await service.readSkills('claude', project);
-  expect(result.entries[0]).toMatchObject({ state: 'unknown', actions: { edit: true, delete: true, states: [] } });
-  expect(result.warnings).toHaveLength(1);
+  expect(result.entries[0]).toMatchObject({
+    fileOnly: true,
+    state: 'inherit',
+    actions: { edit: true, delete: true, states: [] },
+  });
+  expect(result.warnings).toEqual([]);
 });
 
 it('Claude @skills-dir 插件保留根身份，技能管理和原文入口均不改写或删除插件资产', async () => {
@@ -351,7 +362,7 @@ it('AGY 清单选择目录身份，展示名不同也能禁用并从原生目录
       { id: current.id, revision: current.revision, action: 'state', scope: 'project', value: 'disabled' },
       project,
     ),
-  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  ).rejects.toMatchObject({ code: 'skill_state_unconfirmed' });
   const after = (await service.readSkills('antigravity', project)).entries[0]!;
   expect(after.state).toBe('enabled');
   native
@@ -365,7 +376,7 @@ it('AGY 清单选择目录身份，展示名不同也能禁用并从原生目录
     value: 'disabled',
   } as const;
   await expect(service.changeSkill('antigravity', disable, project)).rejects.toMatchObject({
-    code: 'result_unconfirmed',
+    code: 'skill_state_unconfirmed',
   });
   // 命令目录按原生名称择一展示，目标消失也可能是被同名的其他路径遮蔽。
   const otherFile = await skill('.gemini/skills/another-directory', 'advertised-name');
@@ -373,7 +384,7 @@ it('AGY 清单选择目录身份，展示名不同也能禁用并从原生目录
     .mockResolvedValueOnce([{ name: 'advertised-name', path: file, enabled: true }])
     .mockResolvedValueOnce([{ name: 'advertised-name', path: otherFile, enabled: true }]);
   await expect(service.changeSkill('antigravity', disable, project)).rejects.toMatchObject({
-    code: 'result_unconfirmed',
+    code: 'skill_state_unconfirmed',
   });
 });
 

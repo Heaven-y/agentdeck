@@ -208,10 +208,12 @@ export async function deleteSkillTree(directory: string, revision: string) {
         await absent(directory);
         await rename(quarantine, directory);
       } catch {
-        throw new NativeManagementError('result_unconfirmed');
+        throw new NativeManagementError('skill_delete_incomplete');
       }
       throw error;
     }
-    await rm(quarantine, { recursive: true, force: true });
+    await rm(quarantine, { recursive: true, force: true }).catch(() => {
+      throw new NativeManagementError('skill_delete_incomplete');
+    });
   });
 }

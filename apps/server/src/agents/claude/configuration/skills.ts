@@ -83,6 +83,7 @@ function pluginSkill(plugin: InstalledPlugin, file: string, name: string): Nativ
     nativeScope: plugin.scope,
     scope: plugin.scope === 'user' || plugin.scope === 'project' || plugin.scope === 'local' ? plugin.scope : 'unknown',
     enabled: plugin.enabled,
+    fileOnly: true,
     origin: 'plugin',
     source: plugin.id,
     ownerRoot: plugin.installPath,
@@ -112,7 +113,7 @@ async function readClaudeInstalledSkills(context: SkillContext): Promise<NativeS
 export const claudeSkills: SkillAdapter = {
   readNative: readClaudeInstalledSkills,
   readConfig: claudeSkillConfig,
-  verifyVersion: (context) => verifiedSkillVersion(context, '2.1.317', (env) => resolveLocalCommand('claude', env)),
+  verifyVersion: (context) => verifiedSkillVersion(context, [2, 1, 317], (env) => resolveLocalCommand('claude', env)),
   localOrigin: (resource) => (resource.displayPath.includes('/synced/') ? 'synced' : undefined),
   visibility({ name, sources }) {
     const stateByScope = Object.fromEntries(
@@ -141,6 +142,6 @@ export const claudeSkills: SkillAdapter = {
     // 只确认所选层的磁盘配置，不把它解释为覆盖托管策略后的会话生效值。
     const written = await readNativeConfigSource(source.file, scope).catch(() => undefined);
     if (!written || written.revision === 'missing' || scopedState(name, overrides(written.data)) !== value)
-      throw new NativeManagementError('result_unconfirmed');
+      throw new NativeManagementError('skill_state_unconfirmed');
   },
 };

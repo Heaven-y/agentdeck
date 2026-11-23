@@ -1,3 +1,4 @@
+import { pluginHelp } from './plugin-help';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +39,8 @@ async function fixture() {
     },
     run: (_exe, args) => {
       let value: unknown;
-      if (args[0] === '--version') value = '2.1.317';
+      const help = pluginHelp('claude', args);
+      if (help !== undefined) value = help;
       else if (args[1] === 'list')
         value = [
           {

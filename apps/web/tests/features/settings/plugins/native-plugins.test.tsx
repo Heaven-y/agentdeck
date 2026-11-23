@@ -31,6 +31,7 @@ const catalog: NativePluginCatalog = {
   marketplaces: [],
   operations: [task],
   installScopes: ['user'],
+  canInstall: true,
   canAddMarketplace: true,
   warnings: [],
 };

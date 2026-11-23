@@ -173,12 +173,14 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
     return Response.json({
       ...catalog,
       instanceId: selected ? instanceId : undefined,
+      sources: [{ ...catalog.sources[0]!, scope: 'project' }],
       instances: [{ instanceId, sessionId: 'child-session', cwd: '~/projects/demo/child' }],
       entries: [
         {
           ...catalog.entries[0],
           id: selected ? 'child-entry' : 'root-entry',
           name: selected ? 'child-only' : 'root-only',
+          scope: 'project',
           actions: selected
             ? { edit: false, delete: false, enable: false, disable: false }
             : catalog.entries[0]!.actions,
@@ -191,7 +193,8 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
       <NativeMcpPanel context={{ agent: 'codex', projectId: 'demo' }} reload={0} onChanged={vi.fn()} />
     </SettingsNavigationContext>,
   );
-  await screen.findByText('root-only');
+  fireEvent.click(await screen.findByText('root-only'));
+  fireEvent.click(screen.getByText('会话连接'));
   expect(screen.getByRole('option', { name: /child-session/ }).textContent).toContain('~/projects/demo/child');
   fireEvent.click(screen.getByRole('button', { name: '编辑 root-only' }));
   fireEvent.change(screen.getByLabelText('Authorization 操作'), { target: { value: 'replace' } });
@@ -201,7 +204,7 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
   expect(calls.some((call) => call.url.includes('instanceId='))).toBe(false);
   confirm.mockReturnValue(true);
   fireEvent.change(screen.getByRole('combobox', { name: '运行实例' }), { target: { value: instanceId } });
-  await screen.findByText('child-only');
+  fireEvent.click(await screen.findByText('child-only'));
   expect(screen.queryByText('root-only')).toBeNull();
   expect(screen.queryByRole('button', { name: '编辑 child-only' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '检查 child-only 连接' }));
@@ -232,20 +235,34 @@ it('专用开关与 MCP 目录双向刷新，自有配置不重复展示且同�
       ],
     });
   });
-  render(<NativeResourcesDialog agent="codex" category="mcp" embedded onClose={vi.fn()} onBack={vi.fn()} />);
+  render(
+    <NativeResourcesDialog
+      agent="codex"
+      category="mcp"
+      workspace={{ id: 'demo', name: '示例' }}
+      embedded
+      onClose={vi.fn()}
+      onBack={vi.fn()}
+    />,
+  );
   const toggle = await screen.findByRole<HTMLButtonElement>('switch', { name: '会话引用' });
   await waitFor(() => expect(toggle.disabled).toBe(false));
-  await screen.findByRole('heading', { name: 'agentdeck_sessions' });
-  expect(screen.getAllByRole('button', { name: '编辑 agentdeck_sessions' })).toHaveLength(1);
+  expect(await screen.findByText('暂无 MCP 配置。')).toBeTruthy();
+  expect(screen.queryByText('agentdeck_sessions')).toBeNull();
   fireEvent.click(toggle);
   await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
   await waitFor(() =>
     expect(calls.filter((url) => url === '/api/native-management/codex/mcp').length).toBeGreaterThan(1),
   );
-  expect(screen.getAllByRole('heading', { name: 'agentdeck_sessions' })).toHaveLength(1);
+  expect(screen.queryByText('agentdeck_sessions')).toBeNull();
   await waitFor(() => expect(toggle.disabled).toBe(false));
   enabled = true;
-  fireEvent.click(screen.getByRole('button', { name: '刷新目录' }));
+  fireEvent.click(screen.getByText('更多操作'));
+  fireEvent.click(screen.getByRole('button', { name: '重新读取目录' }));
   await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+  fireEvent.click(screen.getByRole('button', { name: '工作区' }));
+  fireEvent.click(await screen.findByText('agentdeck_sessions'));
   expect(screen.getAllByRole('button', { name: '编辑 agentdeck_sessions' })).toHaveLength(1);
+  expect(calls).toContain('/api/native-management/codex/mcp?projectId=demo');
+  expect(calls.some((url) => url.includes('/native-resources/'))).toBe(false);
 });

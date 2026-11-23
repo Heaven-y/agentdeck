@@ -94,6 +94,7 @@ export type NativePluginCatalog = {
   marketplaces: NativePluginMarketplace[];
   operations: NativePluginOperation[];
   installScopes: Array<'user' | 'project' | 'local'>;
+  canInstall: boolean;
   canAddMarketplace: boolean;
   warnings: string[];
 };

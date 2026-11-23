@@ -64,7 +64,7 @@ export async function writeClaudeMcp(
       timeoutMs: 15000,
       outputCap: 64 * 1024,
     });
-    if (result.exitCode !== 0) throw new NativeManagementError('result_unconfirmed');
+    if (result.exitCode !== 0) throw new NativeManagementError('mcp_change_unconfirmed');
     const after = await readNativeConfigSource(source.file, source.scope);
     await assertDirectoryUnchanged(parents!);
     const entries = serverMap({ ...source, ...after });
@@ -75,7 +75,7 @@ export async function writeClaudeMcp(
         : !Object.hasOwn(entries, name) ||
           !isDeepStrictEqual(normalizedClaudeEntry(entries[name]), normalizedClaudeEntry(expected)))
     )
-      throw new NativeManagementError('result_unconfirmed');
+      throw new NativeManagementError('mcp_change_unconfirmed');
     revision = after.revision;
   };
   // 原生 add-json 不覆盖已存在条目。确认同一作用域移除后，才能用新 revision 继续添加。
@@ -83,7 +83,7 @@ export async function writeClaudeMcp(
     if (Object.hasOwn(serverMap(source), name)) await run(['remove', name]);
     if (value) await run(['add-json', name, JSON.stringify(value)], value);
   } catch (error) {
-    if (started) throw new NativeManagementError('result_unconfirmed');
+    if (started) throw new NativeManagementError('mcp_change_unconfirmed');
     throw error;
   }
 }

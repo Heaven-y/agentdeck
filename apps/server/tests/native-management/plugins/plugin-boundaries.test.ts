@@ -1,3 +1,4 @@
+import { pluginHelp } from './plugin-help';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +28,7 @@ async function fixture() {
   };
   return { root, put };
 }
-it('托管及未知插件不会因 manifest 声明配置而获得写权限，未知 CLI 只读', async () => {
+it('托管及未知插件不会因 manifest 声明配置而获得写权限，缺少原生命令不开放写入', async () => {
   const f = await fixture(),
     root = path.join(f.root, 'managed');
   await f.put(path.join(root, '.claude-plugin/plugin.json'), {
@@ -38,7 +39,8 @@ it('托管及未知插件不会因 manifest 声明配置而获得写权限，未
   await f.put(path.join(f.root, '.claude/plugins/known_marketplaces.json'), {
     unknown: { source: { source: 'github', repo: 'example/fixture' } },
   });
-  let version = '2.1.317',
+  let helpAgent: AgentKind = 'claude',
+    noInstall = false,
     records: unknown = [{ id: 'demo@fixture', scope: 'managed', installPath: root, hasUserConfig: true }];
   const service = createNativePluginService({
     homeDir: f.root,
@@ -46,7 +48,7 @@ it('托管及未知插件不会因 manifest 声明配置而获得写权限，未
     command: () => ({ command: process.execPath, args: [] }),
     run: (_exe, args) =>
       Promise.resolve({
-        stdout: Buffer.from(args[0] === '--version' ? version : JSON.stringify(records)),
+        stdout: Buffer.from(pluginHelp(helpAgent, args, noInstall) ?? JSON.stringify(records)),
         stderr: Buffer.alloc(0),
         exitCode: 0,
       }),
@@ -60,23 +62,20 @@ it('托管及未知插件不会因 manifest 声明配置而获得写权限，未
   await expect(
     service.prepare('claude', { action: 'configure', id: e.id, revision: e.revision, values: { token: 'new' } }),
   ).rejects.toMatchObject({ code: 'unsupported_action' });
-  version = '1.5.3';
+  helpAgent = 'antigravity';
   records = [{ name: 'external', source: 'directory', path: root, agents: ['a'], hooks: ['h'] }];
   const agy = await service.read('antigravity');
   expect(agy.entries[0]).toMatchObject({
-    scope: 'directory',
+    scope: 'external',
     actions: [],
     enabled: null,
     version: null,
     components: ['agents: a', 'hooks: h'],
   });
   records = [];
-  for (const [agent, reportedVersion] of [
-    ['claude', '99.0.0'],
-    ['antigravity', '99.0.0'],
-    ['claude', '2.1.317-rc.1 (Claude Code)'],
-  ] as const) {
-    version = reportedVersion;
+  noInstall = true;
+  for (const agent of ['claude', 'antigravity'] as const) {
+    helpAgent = agent;
     const c = await service.read(agent);
     expect(c.installScopes).toEqual([]);
     await expect(
@@ -117,7 +116,8 @@ it('Codex 项目插件受不可信层约束，畸形 selector 不读取任意缓
     homeDir: f.root,
     env: {},
     command: () => ({ command: process.execPath, args: [] }),
-    run: () => Promise.resolve({ stdout: Buffer.from('0.166.0'), stderr: Buffer.alloc(0), exitCode: 0 }),
+    run: (_exe, args) =>
+      Promise.resolve({ stdout: Buffer.from(pluginHelp('codex', args) ?? ''), stderr: Buffer.alloc(0), exitCode: 0 }),
     readCodexPolicy: () =>
       Promise.resolve({
         verified: true,
@@ -143,7 +143,7 @@ it('项目在预览后换目录，旧 operationId 不能绕过维护锁修改旧
     run: (_exe, args) => {
       if (args[1] === 'install') installs++;
       return Promise.resolve({
-        stdout: Buffer.from(args[0] === '--version' ? '2.1.317' : '[]'),
+        stdout: Buffer.from(pluginHelp('claude', args) ?? '[]'),
         stderr: Buffer.alloc(0),
         exitCode: 0,
       });

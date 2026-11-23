@@ -8,7 +8,11 @@ import type {
   NativeSkillsCatalog,
 } from '@agentdeck/shared/settings';
 import { NativeResourceError } from '../../agents/common/configuration/errors';
-import { resourcePathKey, type ResourceContext } from '../../agents/common/configuration/resources';
+import {
+  resourcePathKey,
+  type ResourceContext,
+  type ResourceTarget,
+} from '../../agents/common/configuration/resources';
 import { describeResource, describeRoot, discoverResources } from '../../settings/resources/native-resources-discovery';
 import { resourcePlan } from '../../settings/resources/resource-plan';
 import { NativeManagementError, managementError } from '../errors';
@@ -16,7 +20,7 @@ import { deleteSkillTree, importSkillTree } from './skill-tree';
 import type { NativeManagementAccess, NativeManagementProject } from '../access';
 import { skillAdapters } from './adapters';
 import { localSkillEntry, nativeSkillEntry, indexNativeSkillPaths } from './skill-entries';
-import { nativeSkillPathKey, type SkillAdapter, type SkillRecord } from './types';
+import { nativeSkillPathKey, type SkillAdapter, type SkillRecord, type NativeSkill } from './types';
 
 type Deps = {
   homeDir?: string;
@@ -33,6 +37,54 @@ async function readList<T>(read: () => Promise<T[]>): Promise<{ rows: T[]; avail
     return { rows: [], available: false };
   }
 }
+function disableUnverifiedWrites(records: SkillRecord[]) {
+  for (const { entry } of records) {
+    if (!entry.actions.states.length) continue;
+    entry.actions.states = [];
+    entry.actions.stateScopes = [];
+    entry.unavailableReason ??= '当前 CLI 版本的技能设置格式未验证。';
+  }
+}
+async function skillRecords(
+  current: ResourceContext,
+  adapter: SkillAdapter,
+  targets: ResourceTarget[],
+  {
+    native,
+    sources,
+  }: {
+    native: { rows: NativeSkill[]; available: boolean };
+    sources: Awaited<ReturnType<SkillAdapter['readConfig']>>;
+  },
+) {
+  const records: SkillRecord[] = [];
+  const foundPaths = new Set<string>();
+  const byPath = indexNativeSkillPaths(native.rows);
+  for (const target of targets.filter((item) => item.kind === 'skills' && path.basename(item.file) === 'SKILL.md')) {
+    const key = resourcePathKey(target.file);
+    records.push(
+      await localSkillEntry(
+        adapter,
+        {
+          context: current,
+          resource: await describeResource(target),
+          file: target.file,
+          sources,
+          nativeAvailable: native.available,
+        },
+        byPath.get(key) ?? [],
+      ),
+    );
+    foundPaths.add(key);
+  }
+  for (const skill of native.rows) {
+    const key = nativeSkillPathKey(skill.path);
+    if (key && foundPaths.has(key)) continue;
+    records.push(nativeSkillEntry(current, skill));
+  }
+  adapter.restrictConflicts?.(records);
+  return records;
+}
 export function createNativeManagementService(deps: Deps = {}) {
   const homeDir = path.resolve(deps.homeDir ?? os.homedir());
   const env = deps.env ?? process.env;
@@ -45,43 +97,24 @@ export function createNativeManagementService(deps: Deps = {}) {
     const adapter = adapters[current.agent];
     const plan = resourcePlan(current);
     const [discovered, native, config, verified] = await Promise.all([
-      discoverResources(current, plan),
+      discoverResources(
+        current,
+        {
+          ...plan,
+          targets: plan.targets.filter((target) => target.kind === 'skills'),
+          scans: plan.scans.filter((scan) => scan.mode === 'skills' || scan.mode === 'plugins'),
+        },
+        'skills',
+      ),
       readList(() => adapter.readNative(current)),
       readList(() => adapter.readConfig(current)),
-      adapter.verifyVersion(current),
+      adapter.verifyVersion?.(current) ?? true,
     ]);
     const warnings = discovered.warnings;
-    if (!native.available) warnings.push('技能状态读取失败，请重新读取。');
+    if (!native.available) warnings.push('原生技能未读到，下方仅列已发现的本地文件。');
     if (!config.available) warnings.push('技能配置读取失败，请打开配置文件检查。');
-    const records: SkillRecord[] = [];
-    const foundPaths = new Set<string>();
-    const byPath = indexNativeSkillPaths(native.rows);
-    for (const target of discovered.targets.filter(
-      (item) => item.kind === 'skills' && path.basename(item.file) === 'SKILL.md',
-    )) {
-      const key = resourcePathKey(target.file);
-      records.push(
-        await localSkillEntry(
-          adapter,
-          {
-            context: current,
-            resource: await describeResource(target),
-            file: target.file,
-            sources: config.rows,
-            nativeAvailable: native.available,
-          },
-          byPath.get(key) ?? [],
-        ),
-      );
-      foundPaths.add(key);
-    }
-    for (const skill of native.rows) {
-      const key = nativeSkillPathKey(skill.path);
-      if (key && foundPaths.has(key)) continue;
-      records.push(nativeSkillEntry(current, skill));
-    }
-    adapter.restrictConflicts?.(records);
-    applyVersion(records, verified, warnings);
+    const records = await skillRecords(current, adapter, discovered.targets, { native, sources: config.rows });
+    if (!verified) disableUnverifiedWrites(records);
     return { records, sources: config.rows, roots: plan.roots.filter((root) => root.kind === 'skills'), warnings };
   }
   const read = <T>(agent: AgentKind, operation: () => Promise<T>) =>
@@ -171,14 +204,5 @@ export function createNativeManagementService(deps: Deps = {}) {
       });
     },
   };
-}
-function applyVersion(records: SkillRecord[], verified: boolean, warnings: string[]) {
-  if (verified) return;
-  for (const { entry } of records) {
-    entry.actions.states = [];
-    entry.actions.stateScopes = [];
-    entry.state = 'unknown';
-  }
-  warnings.push('当前版本暂不能在此修改技能启用状态，可编辑技能文件或在 CLI 中管理。');
 }
 export type NativeManagementService = ReturnType<typeof createNativeManagementService>;
