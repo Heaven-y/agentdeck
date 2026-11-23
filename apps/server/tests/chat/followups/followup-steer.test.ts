@@ -74,6 +74,7 @@ it('从待发转引导校验回合与版本，迟到确认不重复回放或投�
     active: () => ({ handle, blocked: false }),
     dispatch,
     validateSteer: async () => {},
+    prepareSteerText: async (_id, text) => `${text}\n原生记录：native.jsonl`,
   });
   try {
     const queueId = host.register(
@@ -99,6 +100,7 @@ it('从待发转引导校验回合与版本，迟到确认不重复回放或投�
     await host.handle(owner, steer);
     expect(native).toHaveBeenCalledOnce();
     expect(delivered.clientMessageId).toBe(clientMessageId);
+    expect(delivered.text).toBe(`${text}\n原生记录：native.jsonl`);
     await host.handle(owner, {
       type: 'chat.followup',
       queueId,

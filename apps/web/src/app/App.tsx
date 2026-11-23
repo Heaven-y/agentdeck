@@ -8,8 +8,8 @@ import { useChat } from '../features/chat/state/chat-store';
 import { TopBar } from './layout/TopBar';
 import { useProductSettings } from '../features/settings/general/use-product-settings';
 import { useUiPreferences } from '../ui/appearance/ui-preferences';
-import { useCommandPalette } from './navigation/use-command-palette';
-import type { PaletteActions } from './navigation/CommandPalette';
+import { useWorkbenchShortcuts } from './navigation/use-shortcuts';
+import type { WorkspaceSession } from '../features/sessions/list/workspace-sessions';
 import { EnvironmentSummary } from '../features/settings/environment/EnvironmentReport';
 import { Sidebar } from './sidebar/Sidebar';
 import { SessionPane } from './layout/SessionPane';
@@ -33,49 +33,44 @@ import { NativeInteractionInbox } from '../features/chat/interactions/Interactio
 import { PluginHostContext } from '../features/plugins/plugin-host';
 
 const SettingsDialog = lazy(() => import('../features/settings/SettingsDialog'));
-const CommandPalette = lazy(() => import('./navigation/CommandPalette'));
+const SessionSearch = lazy(() => import('./navigation/SessionSearch'));
 const PluginManager = lazy(() => import('../features/plugins/PluginManager'));
 const ArchivedSessionsPage = lazy(() => import('../features/sessions/list/ArchivedSessionsPage'));
+const EMPTY_PROJECTS: Workspace[] = [];
 
-function OpenPluginManager({ opened, close }: { opened: boolean; close(): void }) {
+function OpenPluginManager({
+  opened,
+  close,
+  run,
+}: {
+  opened: boolean;
+  close(): void;
+  run(pluginId: string, command: string): boolean;
+}) {
   return (
     opened && (
       <Suspense fallback={<p role="status">正在打开插件管理…</p>}>
-        <PluginManager onClose={close} />
+        <PluginManager onClose={close} run={run} />
       </Suspense>
     )
   );
 }
 
-function OpenPalette({
+function OpenSessionSearch({
   opened,
-  workspace,
-  workspaces,
-  actions,
+  projects,
+  open,
   close,
 }: {
   opened: boolean;
-  workspace?: Workspace;
-  workspaces?: Workspace[];
-  actions: PaletteActions;
+  projects: Workspace[];
+  open(projectId: string, session: WorkspaceSession): boolean;
   close(): void;
 }) {
   return (
     opened && (
-      <Suspense
-        fallback={
-          <p role="status" className="p-3 text-sm">
-            正在打开命令面板…
-          </p>
-        }
-      >
-        <CommandPalette
-          key={workspace?.id ?? 'none'}
-          workspaces={workspaces ?? []}
-          workspace={workspace}
-          actions={actions}
-          close={close}
-        />
+      <Suspense fallback={null}>
+        <SessionSearch projects={projects} open={open} close={close} />
       </Suspense>
     )
   );
@@ -138,7 +133,7 @@ function revealProjectDir(openPath: (target: string) => Promise<boolean>) {
  * 工作区导航贯穿左列；会话与插件使用中间主区，右侧上下文按需打开。
  */
 export function App() {
-  const palette = useCommandPalette();
+  const [searchOpened, setSearchOpened] = useState(false);
   const theme = useUiPreferences((state) => state.theme);
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -158,6 +153,12 @@ export function App() {
     settings.navigate(() => {
       setArchiveOpen(false);
       plugins.show(id, page);
+    });
+  const runPluginCommand = (pluginId: string, command: string) =>
+    settings.navigate(() => {
+      const accepted = plugins.run(pluginId, command);
+      if (accepted) setArchiveOpen(false);
+      return accepted;
     });
   const showArchive = () =>
     settings.navigate(() => {
@@ -182,6 +183,7 @@ export function App() {
     queryFn: ({ signal }) => projectsApi.listWorkspaces(signal),
   });
   const projectId = useChat((s) => s.workspaceId);
+  const projectList = projects.data ?? EMPTY_PROJECTS;
   useProjectNavigation(projects.data);
   const current = projects.data?.find((project) => project.id === projectId);
   const [sessionSearch, setSessionSearch] = useState('');
@@ -219,6 +221,37 @@ export function App() {
       useChat.getState().newSession(agent);
     });
 
+  const cycleTab = (direction: number) => {
+    const state = useChat.getState();
+    const index = state.tabIds.indexOf(state.conversationId);
+    const next = state.tabIds[(index + direction + state.tabIds.length) % state.tabIds.length];
+    if (next) openConversation(next);
+  };
+  useWorkbenchShortcuts({
+    search: () => setSearchOpened(true),
+    newSession: () => {
+      if (current) startSession(current.id);
+    },
+    nextTab: () => cycleTab(1),
+    previousTab: () => cycleTab(-1),
+    closeTab: () =>
+      settings.navigate(() => {
+        const state = useChat.getState();
+        state.closeConversationTab(state.conversationId);
+      }),
+    focusComposer: () =>
+      settings.navigate(() => {
+        setArchiveOpen(false);
+        plugins.show(undefined);
+        requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-composer-input]')?.focus());
+      }),
+    settings: settings.open,
+    sidebar: () => {
+      const state = useUiPreferences.getState();
+      state.setSidebarCollapsed(!state.sidebarCollapsed);
+    },
+  });
+
   return (
     <PluginHostContext.Provider
       value={{
@@ -231,47 +264,24 @@ export function App() {
     >
       <div className="flex h-full min-w-[800px] flex-col">
         <DesktopTitleBar />
-        <OpenPluginManager opened={plugins.managerOpen} close={() => plugins.setManagerOpen(false)} />
+        <OpenPluginManager
+          opened={plugins.managerOpen}
+          close={() => plugins.setManagerOpen(false)}
+          run={runPluginCommand}
+        />
         <ProjectDialogs
           adding={addingProject}
           managing={managingProject}
           closeAdd={() => setAddingProject(undefined)}
           closeManage={() => setManagingProject(undefined)}
         />
-        <OpenPalette
-          opened={palette.opened}
-          workspace={current}
-          workspaces={projects.data}
-          close={palette.close}
-          actions={{
-            plugins: plugins.commands.map((command) => ({
-              ...command,
-              run: () =>
-                settings.navigate(() => {
-                  if (!command.run()) return false;
-                  setArchiveOpen(false);
-                  return true;
-                }),
-            })),
-            conversation: () =>
-              settings.navigate(() => {
-                setArchiveOpen(false);
-                plugins.show(undefined);
-              }),
-            newSession: () => (current ? startSession(current.id) : false),
-            openSession: (session) => (current ? openSession(current.id, session) : false),
-            selectWorkspace: (id) =>
-              settings.navigate(() => {
-                setArchiveOpen(false);
-                plugins.show(undefined);
-                useChat.getState().selectWorkspace(id, { restore: false });
-              }),
-            settings: () => {
-              // 命令面板先卸载并恢复其触发点，再记录设置页的返回焦点。
-              requestAnimationFrame(settings.open);
-              return true;
-            },
-          }}
+        <OpenSessionSearch
+          opened={searchOpened}
+          projects={projectList}
+          close={() => setSearchOpened(false)}
+          open={(projectId, session) =>
+            session.conversationId ? openConversation(session.conversationId) : openSession(projectId, session)
+          }
         />
         <SettingsWorkspace
           opened={settings.opened}
@@ -302,7 +312,7 @@ export function App() {
                 onSearch={setSessionSearch}
                 sessionPages={{ hasMore, loadingMore, more }}
                 otherPages={others}
-                projects={projects.data ?? []}
+                projects={projectList}
                 sessionsByProject={sessionsByProject}
                 sessionErrorsByProject={errorsByProject}
                 onRetrySessions={retryProject}
@@ -317,7 +327,7 @@ export function App() {
                 onNewSession={startSession}
                 onOpenConversation={openConversation}
                 onOpenSettings={settings.open}
-                onOpenCommands={palette.open}
+                onOpenSessionSearch={() => setSearchOpened(true)}
                 onOpenArchive={showArchive}
                 onSelectSession={openSession}
                 reveal={reveal}
@@ -325,11 +335,7 @@ export function App() {
             }
           >
             <div className="flex h-full min-h-0 min-w-0 w-full flex-1 flex-col">
-              <ConversationTabs
-                projects={projects.data ?? []}
-                visible={conversationVisible}
-                onOpen={openConversation}
-              />
+              <ConversationTabs projects={projectList} visible={conversationVisible} onOpen={openConversation} />
               <div className="min-h-0 flex-1">
                 <div
                   hidden={!conversationVisible}
@@ -374,11 +380,7 @@ export function App() {
                       </p>
                     }
                   >
-                    <ArchivedSessionsPage
-                      projects={projects.data ?? []}
-                      close={closeArchive}
-                      addProject={setAddingProject}
-                    />
+                    <ArchivedSessionsPage projects={projectList} close={closeArchive} addProject={setAddingProject} />
                   </Suspense>
                 )}
               </div>

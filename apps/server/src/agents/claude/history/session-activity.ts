@@ -67,6 +67,22 @@ async function projectDirectories(root: string, cwd: string): Promise<string[]> 
     .map((entry) => path.join(root, entry.name));
 }
 
+/** 定位已有原生记录，不读取或复制正文；长项目目录沿用 SDK 的实际目录键。 */
+export async function claudeSessionRecordPath(id: string, cwd: string, configDir?: string): Promise<string> {
+  const directories = await projectDirectories(path.join(configDirectory(configDir), 'projects'), cwd);
+  const candidates: string[] = [];
+  for (const directory of directories) {
+    const file = path.join(directory, `${id}.jsonl`);
+    try {
+      if ((await lstat(file)).isFile()) candidates.push(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  if (candidates.length !== 1) throw new Error('无法定位 Claude Code 的原生会话文件。');
+  return candidates[0]!;
+}
+
 async function readTime(file: string, sessionId: string, signal?: AbortSignal): Promise<number | undefined> {
   signal?.throwIfAborted();
   // 只读取普通文件；未知存储布局或符号链接保留 SDK 元数据，不向任意路径扩散查找。

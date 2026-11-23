@@ -1,4 +1,4 @@
-import { GripVertical, LoaderCircle } from 'lucide-react';
+import { CircleDot, GripVertical, MessageSquare, PencilLine, ShieldQuestion } from 'lucide-react';
 import type { HTMLAttributes, ReactNode } from 'react';
 import type { SessionSummary } from '@agentdeck/shared/conversation';
 import { AGENT_LABELS } from '../../../cli/shared/labels';
@@ -7,6 +7,19 @@ import { SessionMenu, type SessionDialogAction, type SessionMenuAction } from '.
 import { SessionLinkNotice, useSessionLinkCopy } from '../links/use-session-link-copy';
 import { useSessionBusy } from '../actions/use-session-busy';
 import { AgentIcon } from '../../../ui/BrandIcons';
+import type { WorkspaceSession } from './workspace-sessions';
+
+const activityLabels = {
+  approval: '等待批准',
+  stopping: '正在停止',
+  queued: '有待发消息',
+  unread: '有新消息',
+  draft: '有草稿',
+};
+function activityLabel(session: WorkspaceSession, running: boolean) {
+  if (session.activity === 'approval' || session.activity === 'stopping') return activityLabels[session.activity];
+  return running ? '运行中' : session.activity ? activityLabels[session.activity] : '';
+}
 
 const fullTime = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -16,7 +29,7 @@ const fullTime = new Intl.DateTimeFormat('zh-CN', {
   minute: '2-digit',
 });
 
-function rowDetails(session: SessionSummary, running: boolean) {
+function rowDetails(session: WorkspaceSession, running: boolean) {
   const updated = new Date(session.updatedAt);
   const time = Number.isNaN(updated.getTime()) ? '' : relativeTime(updated.getTime());
   const title = session.title || '未命名会话';
@@ -24,7 +37,7 @@ function rowDetails(session: SessionSummary, running: boolean) {
     updated,
     time,
     title,
-    label: `${title} · ${AGENT_LABELS[session.agent]}${time ? ` · ${time}` : ''}${running ? ' · 运行中' : ''}`,
+    label: `${title} · ${AGENT_LABELS[session.agent]}${time ? ` · ${time}` : ''}${activityLabel(session, running) ? ` · ${activityLabel(session, running)}` : ''}`,
   };
 }
 
@@ -52,14 +65,33 @@ function Management({
   );
 }
 
-function RowContent({ session, running }: { session: SessionSummary; running: boolean }) {
+function SessionStatus({ session, running }: { session: WorkspaceSession; running: boolean }) {
+  const label = activityLabel(session, running);
+  if (!label) return null;
+  const Icon =
+    session.activity === 'approval'
+      ? ShieldQuestion
+      : running || session.activity === 'unread' || session.activity === 'stopping'
+        ? CircleDot
+        : session.activity === 'queued'
+          ? MessageSquare
+          : PencilLine;
+  return (
+    <Icon
+      aria-label={label}
+      className={`size-3 shrink-0 ${session.activity === 'approval' ? 'text-warning' : 'text-accent'}`}
+    />
+  );
+}
+
+function RowContent({ session, running }: { session: WorkspaceSession; running: boolean }) {
   const { updated, time, title } = rowDetails(session, running);
   return (
     <>
       <span className="flex size-4 shrink-0 items-center justify-center" title={AGENT_LABELS[session.agent]}>
         <AgentIcon agent={session.agent} className="size-3.5" />
       </span>
-      {running && <LoaderCircle aria-hidden className="size-3.5 shrink-0 motion-safe:animate-spin text-accent" />}
+      <SessionStatus session={session} running={running} />
       <span className="min-w-0 flex-1 truncate leading-5">{title}</span>
       {time && (
         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" title={fullTime.format(updated)}>
@@ -71,7 +103,7 @@ function RowContent({ session, running }: { session: SessionSummary; running: bo
 }
 
 type RowProps = {
-  session: SessionSummary;
+  session: WorkspaceSession;
   workspaceId?: string;
   active: boolean;
   archived?: boolean;

@@ -190,7 +190,7 @@ it('只有 AGY 官方连接可点选读取额度，不把 API Key 或回合 toke
   const dialog = await screen.findByRole('dialog', { name: 'Antigravity 官方额度' });
   await within(dialog).findByText('0%');
   expect(within(dialog).getByText('<0.1%')).toBeTruthy();
-  expect(within(dialog).getAllByText('重置时间未报告')).toHaveLength(2);
+  expect(within(dialog).queryByText('重置时间未报告')).toBeNull();
   expect(fetcher).toHaveBeenCalledExactlyOnceWith(
     '/api/settings/models/antigravity/official-usage',
     expect.objectContaining({ method: 'POST' }),

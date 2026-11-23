@@ -138,7 +138,7 @@ function ScopedInput({ id, text, onChange, onSend, onSteer, onResume, placeholde
       <Combobox
         id={id}
         store={store}
-        render={<textarea ref={input} rows={2} />}
+        render={<textarea ref={input} rows={2} data-composer-input />}
         autoSelect="always"
         autoComplete="list"
         showOnChange={show}

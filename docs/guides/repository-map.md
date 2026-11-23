@@ -10,7 +10,7 @@
 | 实时对话和历史里的消息样式 | [时间线公共入口](../../apps/web/src/features/conversation/timeline/index.ts) | 同目录的 `TimelineRowView` 管消息行，`ToolGroup` 管工具分组；[事件投影](../../apps/web/src/features/conversation/model/conversation-events.ts) 不持有会话状态。实时和历史宿主分别提供操作、附件身份及滚动／分页 |
 | 模型的搜索、显示与选择 | [模型候选规则](../../apps/web/src/cli/shared/model-candidates.ts) | 聊天和设置各有 `models` 目录，CLI 原生差异放在前端 `cli` 子目录；AGY 官方额度读取走[原生命令](../../apps/server/src/agents/antigravity/usage/official-usage.ts) |
 | 增加设置分类 | [设置页登记表](../../apps/web/src/features/settings/navigation/page-registry.tsx) | 在相应功能目录编写页面，在表中登记标题、图标、CLI 切换器和渲染组件。需要新增持久化字段时再看 [产品设置协议](../../packages/shared/src/settings/product-settings.ts) |
-| 新增或调整一种 CLI | [支持名单](../../packages/shared/src/conversation/agents.ts)、[原生配置登记表](../../apps/server/src/agents/registry.ts) | 按实际能力实现该 CLI 的运行、历史和配置，接入[后端服务装配](../../apps/server/src/bootstrap/cli-services.ts)。设置、会话列表和探测使用共享身份；[Skills](../../apps/server/src/native-management/skills/adapters.ts)、[原生插件](../../apps/server/src/native-management/plugins/plugin-adapters.ts) 与[会话工具](../../apps/server/src/session-tools/runtime.ts) 按能力分别登记 |
+| 新增或调整一种 CLI | [支持名单](../../packages/shared/src/conversation/agents.ts)、[原生配置登记表](../../apps/server/src/agents/registry.ts) | 按实际能力实现该 CLI 的运行、历史和配置，接入[后端服务装配](../../apps/server/src/bootstrap/cli-services.ts)。设置、会话列表和探测使用共享身份；[Skills](../../apps/server/src/native-management/skills/adapters.ts)、[原生插件](../../apps/server/src/native-management/plugins/plugin-adapters.ts) 与[会话引用](../../apps/server/src/sessions/references.ts) 按能力分别登记 |
 | 修复 CLI 安装、更新或回滚 | [安装服务](../../apps/server/src/cli-installation/service.ts) | `discovery` 识别当前安装，`native` 和 `npm` 处理对应安装方式，`transaction` 负责占用与文件保护。按钮与任务状态在前端设置的 `installation` |
 
 ## 工作台扩展

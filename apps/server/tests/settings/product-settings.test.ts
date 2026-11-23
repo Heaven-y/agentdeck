@@ -35,6 +35,7 @@ it('缺失只读默认，保存后重启读取；同摘要并发保存仅一个�
   const first = {
     ...defaults.settings,
     defaultAgent: 'codex' as const,
+    shortcuts: { search: 'Mod+J', newSession: null },
   };
   const saved = await f.store.save({ settings: first, revision: defaults.revision });
   expect(saved.revision).toMatch(/^[a-f0-9]{64}$/);

@@ -31,9 +31,9 @@ it('命令绑定来源插件，侧栏打开另一插件不重放旧命令', asyn
   const { result } = renderHook(usePluginPages, {
     wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
   });
-  await waitFor(() => expect(result.current.commands).toHaveLength(2));
+  await waitFor(() => expect(result.current.enabledPlugins).toHaveLength(2));
   act(() => {
-    result.current.commands[0]!.run();
+    result.current.run('first', 'open');
   });
   expect(result.current.command).toMatchObject({ pluginId: 'first', id: 'open' });
   act(() => result.current.show('second'));
@@ -42,7 +42,7 @@ it('命令绑定来源插件，侧栏打开另一插件不重放旧命令', asyn
   act(() => useChat.setState({ running: true, pendingClientTurnId: 'pending' }));
   act(() => {
     result.current.show('first');
-    expect(result.current.commands[0]!.run()).toBe(true);
+    expect(result.current.run('first', 'open')).toBe(true);
   });
   expect(result.current.selected).toBe('first');
   expect(result.current.command).toMatchObject({ pluginId: 'first', id: 'open' });

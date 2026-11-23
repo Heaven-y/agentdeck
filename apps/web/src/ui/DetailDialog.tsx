@@ -2,6 +2,11 @@ import { useLayoutEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { buttonClass } from './styles';
 
+/** 原生 dialog 位于浏览器顶层，弹层需留在所属 dialog 中。 */
+export function dialogPortal(element: HTMLElement) {
+  return element.closest('dialog') ?? element.ownerDocument.body;
+}
+
 /** 详情按需呈现，业务状态由外层持有；原生 dialog 管理键盘焦点与恢复。 */
 export function DetailDialog({
   title,

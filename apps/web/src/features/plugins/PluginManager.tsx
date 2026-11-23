@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
+import { Menu, MenuButton, MenuItem, MenuProvider } from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WorkbenchPlugin, WorkbenchPluginCatalog } from '@agentdeck/shared/plugins';
-import { DetailDialog } from '../../ui/DetailDialog';
-import { buttonClass, inputClass } from '../../ui/styles';
+import { DetailDialog, dialogPortal } from '../../ui/DetailDialog';
+import { buttonClass, inputClass, menuItemClass, popoverClass } from '../../ui/styles';
 import { pluginApi, pluginsKey } from './plugin-api';
 import { useWorkbenchPlugins } from './use-workbench-plugins';
 
@@ -17,16 +18,46 @@ const permissions = {
   composer: '读取和编辑输入框草稿',
 };
 
+function PluginCommands({ plugin, run }: { plugin: WorkbenchPlugin; run(command: string): void }) {
+  if (!plugin.enabled || !plugin.manifest.commands.length) return null;
+  return (
+    <MenuProvider placement="bottom-start">
+      <MenuButton className={buttonClass('outline')}>操作</MenuButton>
+      <Menu
+        portal
+        portalElement={dialogPortal}
+        fixed
+        unmountOnHide
+        gutter={6}
+        hideOnEscape={(event) => {
+          event.preventDefault();
+          return true;
+        }}
+        aria-label={`${plugin.manifest.name}操作`}
+        className={popoverClass}
+      >
+        {plugin.manifest.commands.map((command) => (
+          <MenuItem key={command.id} className={menuItemClass} onClick={() => run(command.id)}>
+            {command.title}
+          </MenuItem>
+        ))}
+      </Menu>
+    </MenuProvider>
+  );
+}
+
 function PluginEntry({
   plugin,
   busy,
   toggle,
   remove,
+  run,
 }: {
   plugin: WorkbenchPlugin;
   busy: boolean;
   toggle(): void;
   remove(): void;
+  run?(command: string): void;
 }) {
   return (
     <li className="space-y-2 rounded-lg border border-border p-3">
@@ -41,6 +72,7 @@ function PluginEntry({
         可访问：{plugin.manifest.permissions.map((item) => permissions[item]).join('、') || '仅插件页面'}
       </p>
       <div className="flex gap-2">
+        {run && <PluginCommands plugin={plugin} run={run} />}
         <button type="button" className={buttonClass('outline')} disabled={busy} onClick={toggle}>
           {plugin.enabled ? `停用 ${plugin.manifest.name}` : `启用 ${plugin.manifest.name}`}
         </button>
@@ -54,7 +86,13 @@ function PluginEntry({
   );
 }
 
-export default function PluginManager({ onClose }: { onClose(): void }) {
+export default function PluginManager({
+  onClose,
+  run,
+}: {
+  onClose(): void;
+  run?(pluginId: string, command: string): boolean;
+}) {
   const query = useWorkbenchPlugins();
   const client = useQueryClient();
   const [directory, setDirectory] = useState('');
@@ -136,6 +174,14 @@ export default function PluginManager({ onClose }: { onClose(): void }) {
                 busy={busy}
                 toggle={() => toggle(plugin)}
                 remove={() => remove(plugin)}
+                run={
+                  run
+                    ? (command) => {
+                        if (run(plugin.manifest.id, command)) onClose();
+                        else setError('未能执行这个操作，请稍后重试。');
+                      }
+                    : undefined
+                }
               />
             ))}
           </ul>

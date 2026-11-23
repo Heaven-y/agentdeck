@@ -22,7 +22,6 @@ import {
 } from '../resources/ResourceList';
 import { inNativeScope } from '../resources/native-resource-scope';
 import { useGuardedSettingsNavigation, useSettingsLeave } from '../navigation/settings-navigation';
-import { SessionToolsPanel } from './SessionToolsPanel';
 type Editor = { entry?: NativeMcpEntry; source: NativeMcpSource };
 function Instances({ catalog, id, setId }: { catalog: McpCatalog; id: string; setId(value: string): void }) {
   if (!catalog.instances.length) return null;
@@ -177,9 +176,7 @@ function CatalogBody({
   const [error, setError] = useState('');
   const [startedOperations, setStartedOperations] = useState<NativeMcpOperation[]>([]);
   const [checks, setChecks] = useState<Record<string, NativeMcpStatus>>({});
-  const entries = catalog.entries.filter(
-    (entry) => entry.managedBy !== 'session-tools' && inNativeScope(context, entry.scope),
-  );
+  const entries = catalog.entries.filter((entry) => inNativeScope(context, entry.scope));
   const sources = catalog.sources.filter((source) => inNativeScope(context, source.scope));
   const writable = sources.filter((source) => source.writable);
   const detail = entries.find((entry) => entry.id === selected);
@@ -292,7 +289,6 @@ export default function NativeMcpPanel({
   reload: number;
   onChanged(): void;
 }) {
-  const { agent, projectId } = context;
   const [instanceId, setInstanceId] = useState('');
   const leave = useGuardedSettingsNavigation();
   const [retry, setRetry] = useState(0);
@@ -300,9 +296,6 @@ export default function NativeMcpPanel({
   const current = catalog && (catalog.instanceId ?? '') === instanceId;
   return (
     <section aria-label="MCP 管理" className="min-w-0 space-y-4">
-      {!projectId && (
-        <SessionToolsPanel compact key={agent} agent={agent} reload={reload + retry} onChanged={onChanged} />
-      )}
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}{' '}

@@ -73,6 +73,23 @@ it('没有项目时显示引导添加项目', () => {
   expect(screen.getByText('还没有项目')).toBeTruthy();
 });
 
+it('切换会话时运行状态留在工作区原条目，不插入后台会话区块', () => {
+  useChat.getState().selectWorkspace(project.id);
+  useChat.setState({ sessionId: 'native-running', title: '正在处理的会话', running: true, lastSentAt: 2000 });
+  const runningId = useChat.getState().conversationId;
+  useChat.getState().newSession('codex');
+  useChat.setState({ sessionId: 'other-native', title: '另一条会话', lastSentAt: 2000 });
+  render(<Sidebar projects={[project]} sessionsByProject={{}} onAddProject={vi.fn()} />);
+  expect(screen.queryByRole('region', { name: '后台会话' })).toBeNull();
+  expect(screen.getAllByText('正在处理的会话')).toHaveLength(1);
+  const order = () => [...document.querySelectorAll('.project-session-row > button')].map((row) => row.textContent);
+  const before = order();
+  act(() => useChat.getState().openConversation(runningId));
+  expect(screen.queryByRole('region', { name: '后台会话' })).toBeNull();
+  expect(screen.getAllByText('正在处理的会话')).toHaveLength(1);
+  expect(order()).toEqual(before);
+});
+
 it('新建会话包含Antigravity，明确把所选来源交给主界面', async () => {
   const start = vi.fn();
   render(<Sidebar projects={[project]} sessionsByProject={{}} onAddProject={vi.fn()} onNewSession={start} />);

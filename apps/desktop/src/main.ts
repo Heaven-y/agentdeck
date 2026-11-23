@@ -135,7 +135,12 @@ async function startDesktop(): Promise<void> {
       port: rendererUrl ? config.port : 0,
       devOrigin: rendererUrl ? new URL(rendererUrl).origin : config.devOrigin,
     },
-    { webDir: paths.web, log: (message) => logger.log(message), logError: (message) => logger.error(message) },
+    {
+      webDir: paths.web,
+      log: (message) => logger.log(message),
+      logError: (message) => logger.error(message),
+      agyHistoryScript: path.join(import.meta.dirname, 'read-agy-history.mjs'),
+    },
   );
   server = started;
   mainWindow = createMainWindow(resolveWindowUrl(started.url, rendererUrl), started);

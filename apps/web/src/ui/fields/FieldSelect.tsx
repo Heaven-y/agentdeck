@@ -9,6 +9,7 @@ import {
 import { Check, ChevronDown } from 'lucide-react';
 import { useState, type RefObject } from 'react';
 import { inputClass } from '../styles';
+import { dialogPortal } from '../DetailDialog';
 
 export type FieldOption = { value: string; label: string };
 type FieldProps = {
@@ -21,14 +22,9 @@ type FieldProps = {
   onChange(value: string): void;
 };
 
-/** 原生 dialog 位于浏览器顶层；弹层留在所属 dialog，固定定位脱离表单滚动区域。 */
-function fieldPortal(element: HTMLElement) {
-  return element.closest('dialog') ?? element.ownerDocument.body;
-}
-
 const popoverProps = {
   portal: true,
-  portalElement: fieldPortal,
+  portalElement: dialogPortal,
   fixed: true,
   sameWidth: true,
   gutter: 6,

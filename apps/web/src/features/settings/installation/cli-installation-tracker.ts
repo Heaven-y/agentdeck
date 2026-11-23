@@ -5,7 +5,6 @@ import { invalidateNativeCapabilities } from '../../../cli/shared/capability-cac
 import { settingsKeys } from '../api';
 import { cliInstallationApi, cliInstallationKey } from './cli-installation-api';
 import { writingPhase } from './cli-installation-actions';
-import { sessionToolsKey } from '../mcp/use-session-tools';
 
 type Tracker = { operationId: string; stop(): void };
 const trackers = new WeakMap<QueryClient, Map<AgentKind, Tracker>>();
@@ -28,7 +27,6 @@ async function refreshAfterCompletion(client: QueryClient, status: CliInstallati
     }),
     client.invalidateQueries({ queryKey: settingsKeys.environment }),
     invalidateNativeCapabilities(status.agent, client),
-    client.invalidateQueries({ queryKey: sessionToolsKey(status.agent) }),
   ]);
 }
 

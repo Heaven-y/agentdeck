@@ -132,7 +132,8 @@ it('设置侧栏按用途分类，通用偏好保存后可查看本机环境', a
   render(<ProductSettingsDialog initialPage="general" onClose={vi.fn()} onNative={vi.fn()} />, { wrapper });
   const agent = await screen.findByLabelText('默认 Agent');
   const navigation = screen.getByRole('navigation', { name: '设置分类' });
-  expect(within(navigation).getAllByRole('button')).toHaveLength(8);
+  expect(within(navigation).getAllByRole('button')).toHaveLength(9);
+  expect(within(navigation).getByRole('button', { name: '快捷键' })).toBeTruthy();
   expect(within(navigation).getByRole('button', { name: '模型与连接' })).toBeTruthy();
   expect(within(navigation).getByRole('button', { name: '记忆' })).toBeTruthy();
   expect(screen.queryByLabelText(/资源检查间隔/)).toBeNull();

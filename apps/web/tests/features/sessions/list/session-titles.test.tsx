@@ -40,11 +40,22 @@ it('原生标题为空时不顶掉本地推导的标题', () => {
     sessionId: 'native-1',
     title: undefined,
     items: [{ kind: 'user', id: 'u1', text: '帮我做一个图' }],
-    lastSentAt: 2000,
+    // 打开原生历史不会在本页发消息，也就没有 lastSentAt。
+    lastSentAt: undefined,
     draft: '',
     background: {},
   });
   expect(listed({ p1: [nativeRow('')] })).toMatchObject([{ title: '帮我做一个图', local: false }]);
   expect(listed({ p1: [nativeRow('原生标题')] })).toMatchObject([{ title: '原生标题' }]);
   expect(listed({ p1: [] })).toMatchObject([{ title: '帮我做一个图', local: true }]);
+});
+
+it('关闭新会话标签后的草稿仍归入工作区，运行任务不依赖是否选中', () => {
+  useChat.getState().selectWorkspace('p1');
+  useChat.getState().setDraft('待继续的草稿');
+  const draftId = useChat.getState().conversationId;
+  useChat.getState().closeConversationTab(draftId);
+  expect(listed({ p1: [] })).toMatchObject([{ conversationId: draftId, local: true }]);
+  useChat.setState({ running: true, pendingClientTurnId: 'turn', workspaceId: 'p1' });
+  expect(listed({ p1: [] }).some((row) => row.running)).toBe(true);
 });

@@ -85,13 +85,13 @@ export function SidebarMore({
   collapsed,
   showOtherSessions,
   setShowOtherSessions,
-  onOpenCommands,
+  onOpenSessionSearch,
   onOpenArchive,
 }: {
   collapsed: boolean;
   showOtherSessions: boolean;
   setShowOtherSessions(show: boolean): void;
-  onOpenCommands?(): void;
+  onOpenSessionSearch?(): void;
   onOpenArchive?(): void;
 }) {
   const menu = useMenuStore({ placement: collapsed ? 'right-start' : 'bottom-start' });
@@ -120,16 +120,16 @@ export function SidebarMore({
             已归档会话
           </MenuItem>
         )}
-        {onOpenCommands && (
+        {onOpenSessionSearch && (
           <MenuItem
             className={sidebarMenuItemClass}
             onClick={() => {
               menu.hide();
-              onOpenCommands();
+              onOpenSessionSearch();
             }}
           >
             <Command aria-hidden className="size-4" />
-            命令面板
+            搜索会话
           </MenuItem>
         )}
         <MenuItem

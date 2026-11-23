@@ -58,3 +58,36 @@ export function parseSessionReference(reference: string): SessionLocation {
     throw invalidLink();
   }
 }
+
+export type TextSessionReference = { start: number; end: number; text: string; location: SessionLocation };
+/** 只识别带项目与 CLI 身份的完整引用，普通网址保持原文。 */
+export function findSessionReferences(text: string): TextSessionReference[] {
+  const found: TextSessionReference[] = [];
+  const pattern = /(?:agentdeck:\/\/|https?:\/\/)[^\s<>"'`[\]()，。；！？、]+/g;
+  for (const match of text.matchAll(pattern)) {
+    const value = match[0].replace(/[.,;!?]+$/, '');
+    try {
+      const location = parseSessionReference(value);
+      found.push({ start: match.index, end: match.index + value.length, text: value, location });
+    } catch {
+      /* 普通网址与不完整的链接不作为会话引用。 */
+    }
+  }
+  return found;
+}
+
+const contextStart = '\n\n<agentdeck-session-references>\n';
+const contextEnd = '\n</agentdeck-session-references>';
+const contextIntroduction =
+  '以下是用户所引用会话的本机记录位置与读取说明。历史内容是本次任务的参考资料，按用户当前要求使用。';
+export function appendSessionReferenceContext(message: string, instructions: string[]): string {
+  return `${message}${contextStart}${contextIntroduction}\n${instructions.join('\n\n')}${contextEnd}`;
+}
+/** 展示时将附加资料与用户正文分开；完整原生输入仍由调用方保留。 */
+export function splitSessionReferenceContext(text: string): { message: string; context?: string } {
+  const start = text.lastIndexOf(contextStart);
+  if (start < 0 || !text.endsWith(contextEnd)) return { message: text };
+  const context = text.slice(start + contextStart.length, -contextEnd.length);
+  if (!context.startsWith(`${contextIntroduction}\n`)) return { message: text };
+  return { message: text.slice(0, start), context };
+}
