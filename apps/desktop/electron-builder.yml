@@ -16,9 +16,6 @@ files:
   - out/**
   - package.json
   - '!node_modules/@anthropic-ai/claude-agent-sdk-*/**'
-  - '!node_modules/cpu-features/**'
-  - '!node_modules/nan/**'
-  - '!node_modules/ssh2/lib/protocol/crypto/build/**'
 extraResources:
   - from: ../web/src/ui/assets/agentdeck.png
     to: icon.png

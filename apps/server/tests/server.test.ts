@@ -99,24 +99,13 @@ describe('startServer', () => {
   });
 });
 
-it('完整启动接线在停用期间拒绝所有 SSH 路由，重新启用恢复且不影响项目接口', async () => {
+it('完整启动不预装扩展，不注册 SSH 接口，项目与对话服务照常可用', async () => {
   const { configDir } = await fixture();
   const server = await launch(configDir);
-  const origin = new URL(server.url).origin;
-  const headers = { origin, cookie: 'AGENTDECK_session=test-token', 'content-type': 'application/json' };
-  const request = (url: string, method = 'GET', body?: unknown) =>
-    fetch(new URL(url, server.url), { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  const initial = (await (await request('api/plugins')).json()) as WorkbenchPluginCatalog;
-  expect((await request('api/plugins/ssh-console', 'PUT', { enabled: false, revision: initial.revision })).status).toBe(
-    200,
-  );
-  for (const url of ['api/ssh-targets', 'api/ssh-console/my-server/overview']) {
-    expect((await request(url)).status).toBe(409);
-  }
-  expect((await request('api/projects')).status).toBe(200);
-  const disabled = (await (await request('api/plugins')).json()) as WorkbenchPluginCatalog;
-  expect((await request('api/plugins/ssh-console', 'PUT', { enabled: true, revision: disabled.revision })).status).toBe(
-    200,
-  );
-  expect((await request('api/ssh-targets')).status).toBe(200);
+  const headers = { origin: new URL(server.url).origin, cookie: 'AGENTDECK_session=test-token' };
+  const catalog = await fetch(new URL('api/plugins', server.url), { headers });
+  expect(((await catalog.json()) as WorkbenchPluginCatalog).plugins).toEqual([]);
+  for (const url of ['api/ssh-targets', 'api/ssh-console/my-server/overview'])
+    expect((await fetch(new URL(url, server.url), { headers })).status).toBe(404);
+  expect((await fetch(new URL('api/projects', server.url), { headers })).status).toBe(200);
 });

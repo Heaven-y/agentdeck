@@ -17,14 +17,12 @@ export type PaletteActions = {
   openSession?(session: SessionSummary): boolean;
   selectWorkspace?(id: string): boolean;
   plugins?: Array<{ id: string; label: string; run(): boolean }>;
-  terminal?(): boolean;
   settings(): boolean;
-  resources?(id: string): boolean;
 };
 type Action = { id: string; label: string; workspace?: boolean; run(): boolean };
 const itemClass =
   'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors data-[selected=true]:bg-control-hover data-[selected=true]:text-foreground data-[disabled=true]:opacity-45';
-function commonActions(actions: PaletteActions, id: string): Action[] {
+function commonActions(actions: PaletteActions): Action[] {
   return [
     ...(actions.plugins ?? []),
     {
@@ -38,10 +36,6 @@ function commonActions(actions: PaletteActions, id: string): Action[] {
         return true;
       },
     },
-    ...(actions.terminal ? [{ id: 'terminal', label: '打开 SSH Console 终端', run: actions.terminal }] : []),
-    ...(actions.resources
-      ? [{ id: 'resources', label: '查看服务器资源', workspace: true, run: () => actions.resources!(id) }]
-      : []),
     { id: 'settings', label: '打开设置', run: actions.settings },
     {
       id: 'sidebar',
@@ -224,7 +218,7 @@ export default function CommandPalette({
             ))}
           </Command.Group>
           <Command.Group heading="常用操作">
-            {commonActions(actions, workspace?.id ?? '').map((action) => (
+            {commonActions(actions).map((action) => (
               <Command.Item
                 key={action.id}
                 value={`action:${action.id}`}

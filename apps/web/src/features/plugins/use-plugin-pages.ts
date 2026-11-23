@@ -29,11 +29,11 @@ export function usePluginPages() {
         },
       })),
     );
-  const builtinPlugins = list.filter((plugin) => plugin.builtin && plugin.enabled);
+  const enabledPlugins = list.filter((plugin) => plugin.enabled);
   return {
     list,
     active,
-    builtinPlugins,
+    enabledPlugins,
     selected: active?.manifest.id,
     show,
     command: command?.pluginId === id ? command : undefined,

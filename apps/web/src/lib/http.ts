@@ -1,4 +1,4 @@
-/** 接口错误；field 用于工作区字段校验，code 用于 SSH 错误分类 */
+/** 接口错误；field 用于工作区字段校验，code 用于接口错误分类 */
 export class ApiError extends Error {
   readonly field?: string;
   readonly code?: string;

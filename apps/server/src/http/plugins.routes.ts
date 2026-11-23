@@ -1,16 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteShorthandOptions } from 'fastify';
 import { z } from 'zod';
-import { WorkbenchPluginIdSchema } from '@agentdeck/shared/plugins';
+import { WorkbenchPluginIdSchema, WorkbenchPluginBackendRequestSchema } from '@agentdeck/shared/plugins';
 import { WorkbenchPluginError, pluginError } from '../plugins/errors';
 import { MAX_PLUGIN_STORAGE_BYTES } from '../plugins/files';
 import type { WorkbenchPluginsService } from '../plugins/service';
 import { PluginStorageValueSchema } from '../plugins/storage';
+import { requestSignal } from './request-signal';
 
 export type PluginRoutesDeps = { service: WorkbenchPluginsService };
 const Query = z.object({}).strict();
 const Params = z.object({ id: WorkbenchPluginIdSchema }).strict();
 const Revision = z.string().regex(/^(?:missing|[a-f0-9]{64})$/);
-const InstallBody = z.object({ directory: z.string().min(1).max(4096) }).strict();
+const InstallBody = z.object({ directory: z.string().min(1).max(4096), revision: Revision.optional() }).strict();
 const UpdateBody = z.object({ enabled: z.boolean(), revision: Revision }).strict();
 const RemoveBody = z.object({ revision: Revision }).strict();
 const StorageBody = z.object({ value: PluginStorageValueSchema, revision: Revision }).strict();
@@ -59,6 +60,11 @@ export function registerPluginRoutes(app: FastifyInstance, { service }: PluginRo
   );
   app.put('/api/plugins/:id', options, (req, reply) =>
     respond(req, reply, () => service.update(pluginId(req), bodyOf(UpdateBody, req.body))),
+  );
+  app.post('/api/plugins/:id/backend', options, (req, reply) =>
+    respond(req, reply, () =>
+      service.backend(pluginId(req), bodyOf(WorkbenchPluginBackendRequestSchema, req.body), requestSignal(req, reply)),
+    ),
   );
   app.delete('/api/plugins/:id', options, (req, reply) =>
     respond(req, reply, () => service.remove(pluginId(req), bodyOf(RemoveBody, req.body))),

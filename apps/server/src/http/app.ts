@@ -1,5 +1,5 @@
 // 组装 Fastify 应用：WebSocket 插件、访问控制、本机会话、静态页面。
-// 业务路由（项目、会话、服务器）由 main.ts 通过 routes 注入，这里不再认识项目存储。
+// 业务路由（项目、会话、插件）由 main.ts 通过 routes 注入，这里不再认识项目存储。
 import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
@@ -13,7 +13,7 @@ export type AppDeps = {
   devOrigin?: string;
   /** 前端构建产物目录，存在时托管静态文件 */
   webDir?: string;
-  /** 注册其余路由（项目、会话、服务器接口与 /ws） */
+  /** 注册其余路由（项目、会话、插件接口与 /ws） */
   routes?: (app: FastifyInstance) => void | Promise<void>;
 };
 

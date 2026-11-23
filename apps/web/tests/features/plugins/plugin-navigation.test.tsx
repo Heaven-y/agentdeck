@@ -7,14 +7,13 @@ import { useUiPreferences } from '../../../src/ui/appearance/ui-preferences';
 
 const plugin = (id: string, name: string, enabled = true): WorkbenchPlugin => ({
   manifest: { id, name, version: '1.0.0', apiVersion: 1, entry: 'index.html', permissions: [], commands: [] },
-  builtin: id === 'ssh-console',
   enabled,
 });
 
 beforeEach(() => useUiPreferences.setState({ sidebarCollapsed: false, sidebarAutoCollapsed: false }));
 afterEach(cleanup);
 
-it('提供插件管理与启用插件入口，SSH优先且没有重复对话入口', () => {
+it('提供插件管理与启用插件入口，按安装顺序展示且没有重复对话入口', () => {
   const open = vi.fn();
   const manage = vi.fn();
   render(
@@ -25,7 +24,7 @@ it('提供插件管理与启用插件入口，SSH优先且没有重复对话入�
       manage={manage}
     />,
   );
-  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['插件', 'SSH Console', '笔记']);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['插件', '笔记', 'SSH Console']);
   expect(screen.queryByRole('button', { name: '对话' })).toBeNull();
   expect(screen.getByRole('button', { name: 'SSH Console' }).getAttribute('aria-current')).toBe('page');
   fireEvent.click(screen.getByRole('button', { name: '插件' }));

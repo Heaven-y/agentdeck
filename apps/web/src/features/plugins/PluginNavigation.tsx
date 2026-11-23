@@ -1,5 +1,4 @@
-import { builtinPlugins } from '../../builtin-plugins/registry';
-import { Blocks, Puzzle } from 'lucide-react';
+import { Blocks, Puzzle, SquareTerminal } from 'lucide-react';
 import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { sidebarItemClass } from '../../ui/sidebar-styles';
@@ -16,11 +15,7 @@ export function PluginNavigation({
   manage(): void;
 }) {
   const collapsed = useUiPreferences((state) => state.sidebarCollapsed || state.sidebarAutoCollapsed);
-  const visible = plugins
-    .filter((plugin) => plugin.enabled)
-    .toSorted(
-      (a, b) => (builtinPlugins[b.manifest.id]?.priority ?? 0) - (builtinPlugins[a.manifest.id]?.priority ?? 0),
-    );
+  const visible = plugins.filter((plugin) => plugin.enabled);
   return (
     <section aria-label="工作台页面" className="space-y-0.5">
       <button type="button" aria-label="插件" title="插件" onClick={manage} className={sidebarItemClass(collapsed)}>
@@ -28,7 +23,7 @@ export function PluginNavigation({
         {!collapsed && <span>插件</span>}
       </button>
       {visible.map(({ manifest }) => {
-        const Icon = builtinPlugins[manifest.id]?.Icon ?? Puzzle;
+        const Icon = manifest.icon === 'terminal' ? SquareTerminal : Puzzle;
         return (
           <button
             key={manifest.id}

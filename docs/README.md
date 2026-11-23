@@ -29,7 +29,7 @@
 
 ## 工作台扩展
 
-[工作台插件](engineering/workbench-plugins.md)集中说明插件管理、宿主接口和内置插件。CLI 自己加载的插件归入上面的原生配置。
+[工作台插件](engineering/workbench-plugins.md)集中说明插件管理、宿主接口和独立扩展入口。CLI 自己加载的插件归入上面的原生配置。
 
 ## 维护规则
 

@@ -1,4 +1,4 @@
-import { createBuiltinPlugins } from './bootstrap/builtin-plugins';
+import { createPlugins } from './bootstrap/plugins';
 import { createCliServices } from './bootstrap/cli-services';
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
@@ -68,11 +68,10 @@ function logProbe(probe: AgentProbe, log: (message: string) => void): void {
 
 /**
  * 启动本机服务并返回访问地址。端口传 0 时由系统分配，实际端口从监听结果读取。
- * 关闭顺序沿用原 CLI：先停终端、资源、Slurm 与 SSH 池，再停轮次，最后关闭 Fastify。
+ * 关闭顺序沿用原 CLI：先停插件与其资源，再停轮次，最后关闭 Fastify。
  */
 export async function startServer(config: ServerConfig, options: StartServerOptions = {}): Promise<StartedServer> {
   const log = options.log ?? ((message: string) => console.log(message));
-  const logError = options.logError ?? ((message: string) => console.error(message));
 
   await mkdir(config.configDir, { recursive: true });
   const productSettings = createProductSettings({ configDir: config.configDir });
@@ -90,10 +89,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     dirExists,
   });
   const activity = createWorkspaceActivity();
-  const builtin = await createBuiltinPlugins({
-    configDir: config.configDir,
-    logError,
-  });
+  const plugins = await createPlugins(config.configDir);
   const cli = createCliServices({
     configDir: config.configDir,
     store,
@@ -111,7 +107,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     closing ??= (async () => {
       await cli.disposeInstallations();
       // 每个资源独立释放；一个关闭失败不能阻止其余通道清理。
-      await Promise.allSettled([cli.disposeSessionManagement(), builtin.dispose()]);
+      await Promise.allSettled([cli.disposeSessionManagement(), plugins.dispose()]);
       // 启动探测最多跑 5 秒；关闭保持原有有界等待。
       await Promise.race([
         startupProbes,
@@ -136,7 +132,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
       webDir: options.webDir,
       routes: (a) => {
         registerProjectRoutes(a, { store, activity });
-        builtin.registerRoutes(a);
+        plugins.registerRoutes(a);
         registerProbeRoutes(a, { probes });
         cli.registerRoutes(a);
         registerProductSettingsRoutes(a, productSettings, probes);

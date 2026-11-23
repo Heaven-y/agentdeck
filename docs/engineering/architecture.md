@@ -27,7 +27,6 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与「�
 | Claude | Agent SDK 作为协议客户端；本机可执行程序作为驱动目标 |
 | Codex | 本机 `codex app-server`，stdio JSON-RPC |
 | Antigravity | 本机 `agy` 流式子进程与独立原生管理服务；Node 内置 SQLite 只读摘要 |
-| SSH | `ssh2`，exec、SFTP 和远端 PTY 共用连接但独占通道 |
 | 前端 | React 19、Vite 8、Tailwind 4、Ariakit、cmdk、react-resizable-panels |
 | 状态与通信 | zustand、TanStack Query、partysocket |
 | 消息与编辑 | streamdown、react-virtuoso、CodeMirror 6 |
@@ -42,21 +41,19 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与「�
 | 路径 | 负责内容 |
 |---|---|
 | `apps/desktop/src` | 窗口、preload、单实例与退出编排 |
-| `apps/server/src/bootstrap` | 静态组装 CLI 服务、内置插件和清理钩子；server.ts 只管理启动生命周期 |
+| `apps/server/src/bootstrap` | 静态组装 CLI 服务、插件宿主和清理钩子；server.ts 只管理启动生命周期 |
 | `apps/server/src/agents/{claude,codex,antigravity}` | 各 CLI 协议、历史、能力与 configuration；common 存契约辅助及同步目录归属规则 |
 | `apps/server/src/chat`、`sessions` | 回合与恢复缓存、能力目录、会话服务、归档和权限偏好 |
 | `apps/server/src/session-tools` | stdio 只读会话 MCP、原生历史根、签名分页与脱敏错误 |
 | `apps/server/src/workspaces`、`settings` | 项目、产品偏好、原生文件与配置事务协调 |
 | `apps/server/src/platform/{files,process,secrets}` | 安全文件读写、文件事务、TOML 修改、子进程和 Windows DPAPI |
-| `apps/server/src/plugins` | 通用插件注册状态、包校验、权限和存储，不导入 SSH 实现 |
-| `apps/server/src/builtin-plugins/ssh-console` | manifest、注册、SSH 基础、console（概览、进程、作业、文件、终端）与 HTTP |
+| `apps/server/src/plugins` | 通用插件注册状态、包校验、权限、后端生命周期和存储 |
 | `apps/server/src/cli-installation` | 安装识别、原生与 npm 安装、替换事务 |
 | `apps/server/src/native-management` | 按 skills、mcp、plugins 分组的原生管理，写租约由 access 统一协调 |
 | `apps/server/src/http` | 访问控制与请求生命周期，对话和设置接口分别在 conversation 和 settings |
 | `apps/web/src/app` | 桌面工作台外壳、导航、布局和跨功能组合 |
 | `apps/web/src/cli` | 通用模型身份与缓存，以及 Claude 上下文、Codex 参数、AGY 变体和设置策略 |
 | `apps/web/src/features` | chat 管实时会话，sessions 管列表与历史，conversation 提供无实时状态的事件投影、时间线和轨迹。settings 按导航、模型、CLI 安装和原生资源等用途分组 |
-| `apps/web/src/builtin-plugins/ssh-console` | 内置页面注册、服务器档案界面与控制台 |
 | `apps/web/src/lib`、`ui` | HTTP、WebSocket、桌面桥、查询客户端与通用控件 |
 | `packages/shared/src/{conversation,projects,settings,plugins,ssh}` | 按领域导出的协议/schema；根入口保留兼容出口 |
 | `apps/*/tests`、`packages/*/tests` | 按功能镜像的单元与组件/模块测试 |
@@ -217,7 +214,7 @@ API 和 WebSocket 继续校验会话及来源；鉴权同时检查实际匹配�
 
 会话正文和管理只使用项目路径，全局发现不提供正文或写入入口；`/api/sessions/archived?agent=...` 汇总各来源的归档，恢复和删除仍走项目身份校验；旧工作区会话别名返回 404。会话接口在进入解析前设置 no-store，写入确认和原生会话锁仍由服务层维护。前端构建由 Fastify 托管，接口路径不回退为 HTML。
 
-安装版与静态预览的 Electron 主进程用端口 0 启动服务后加载实际地址；preload 仅暴露受校验的系统信息、目录选择、打开路径、菜单和会话链接桥，`nodeIntegration: false`、`contextIsolation: true`。单实例锁让第二次启动聚焦已有窗口，关窗和退出都先释放服务，最长关闭等待 8 秒。后端清理终端、SSH、轮次和 HTTP；进程退出不留下后台业务实例。
+安装版与静态预览的 Electron 主进程用端口 0 启动服务后加载实际地址；preload 仅暴露受校验的系统信息、目录选择、打开路径、菜单和会话链接桥，`nodeIntegration: false`、`contextIsolation: true`。单实例锁让第二次启动聚焦已有窗口，关窗和退出都先释放服务，最长关闭等待 8 秒。后端清理插件资源、轮次和 HTTP；进程退出不留下后台业务实例。
 
 桌面开发通过 Vite 加载源码页面，后端使用固定端口接受同源代理。React/CSS 采用热更新，preload 重建触发整页刷新，主进程及后端源码重建触发应用重启；这是开发工作流，不提供在途模型任务无中断迁移。开发监听范围和使用方式见[开发指南](../guides/dev-environment.md#3-启动与隔离验证)。
 
@@ -225,7 +222,7 @@ API 和 WebSocket 继续校验会话及来源；鉴权同时检查实际匹配�
 
 ## 7. 工作台扩展
 
-插件宿主负责登记、权限、页面装载和启停；内置模块负责自身业务及资源释放，由 bootstrap 装配。包格式、宿主 API、内置插件的资源约束和验收见[工作台插件](workbench-plugins.md)。
+插件宿主负责安装、权限、页面与独立后端装载、更新和启停；各扩展在独立仓库维护业务及资源释放。包格式、宿主接口和验收见[工作台插件](workbench-plugins.md)。
 
 ## 8. 本地打包与验证
 

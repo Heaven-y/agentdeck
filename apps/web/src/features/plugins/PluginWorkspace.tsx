@@ -1,4 +1,3 @@
-import { builtinPlugins } from '../../builtin-plugins/registry';
 import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
@@ -56,40 +55,34 @@ function PluginPage({
 
 export function PluginWorkspace({
   plugin,
-  builtinPlugins: enabled,
+  enabledPlugins: enabled,
   project,
   close,
   command,
 }: {
   plugin?: WorkbenchPlugin;
-  builtinPlugins: WorkbenchPlugin[];
+  enabledPlugins: WorkbenchPlugin[];
   project?: Workspace;
   close(): void;
   command?: { id: string; sequence: number };
 }) {
   const [visited, setVisited] = useState<ReadonlySet<string>>(() => new Set());
-  const activeId = plugin?.builtin ? plugin.manifest.id : undefined;
+  const activeId = plugin?.manifest.id;
   if (activeId && !visited.has(activeId)) setVisited(new Set(visited).add(activeId));
   return (
     <>
       {enabled
-        .filter((entry) => visited.has(entry.manifest.id))
+        .filter((entry) =>
+          entry.manifest.apiVersion === 2 ? visited.has(entry.manifest.id) : entry.manifest.id === activeId,
+        )
         .map((entry) => {
-          const registration = builtinPlugins[entry.manifest.id];
-          if (!registration) return null;
           const visible = activeId === entry.manifest.id;
-          const Page = registration.Page;
           return (
             <PluginPage key={entry.manifest.id} plugin={entry} visible={visible} close={close}>
-              <Page visible={visible} project={project} close={close} command={visible ? command : undefined} />
+              <PluginFrame plugin={entry} visible={visible} project={project} command={visible ? command : undefined} />
             </PluginPage>
           );
         })}
-      {plugin && !plugin.builtin && (
-        <PluginPage key={plugin.manifest.id} plugin={plugin} visible close={close}>
-          <PluginFrame plugin={plugin} project={project} command={command} />
-        </PluginPage>
-      )}
     </>
   );
 }
