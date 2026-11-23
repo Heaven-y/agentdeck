@@ -16,7 +16,7 @@ const NativeSkillsPanel = lazy(() => import('../skills/NativeSkillsPanel'));
 const NativeMcpPanel = lazy(() => import('../mcp/NativeMcpPanel'));
 const NativePluginsPanel = lazy(() => import('../plugins/NativePluginsPanel'));
 
-export type NativeResourceCategory = 'all' | 'skills' | 'mcp' | 'plugins' | 'custom';
+export type NativeResourceCategory = 'all' | 'skills' | 'mcp' | 'plugins';
 type ResourcesProps = {
   agent: AgentKind;
   category?: NativeResourceCategory;
@@ -100,15 +100,12 @@ function NativeResourcesContent({
     refresh();
   };
   const returnToCatalog = () => setSelection(undefined);
-  const embeddedCatalog = embedded && SCOPED_CATEGORIES.has(category);
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    if (embeddedCatalog && !target) heading.current?.focus();
-  }, [embeddedCatalog, target]);
-  const title = { skills: 'Skills', mcp: 'MCP', plugins: '原生插件', all: '原生配置与扩展', custom: '原生文件' }[
-    category
-  ];
+    if (embedded && !target) heading.current?.focus();
+  }, [embedded, target]);
+  const title = { skills: 'Skills', mcp: 'MCP', plugins: '原生插件', all: '原生文件' }[category];
   if (target)
     return (
       <Suspense fallback={<p role="status">正在打开文件编辑器…</p>}>
@@ -143,7 +140,7 @@ function NativeResourcesContent({
       />
     </Suspense>
   );
-  if (embeddedCatalog)
+  if (embedded)
     return (
       <section aria-labelledby={headingId} className="min-w-0 space-y-4 pb-4">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
@@ -156,13 +153,7 @@ function NativeResourcesContent({
       </section>
     );
   return (
-    <SettingsDetailDialog
-      title={`${title} · ${AGENT_FULL_NAMES[agent]}`}
-      embedded={embedded}
-      showBack={!embedded}
-      onBack={onBack}
-      onClose={onClose}
-    >
+    <SettingsDetailDialog title={`${title} · ${AGENT_FULL_NAMES[agent]}`} onBack={onBack} onClose={onClose}>
       {tabs}
       {content}
     </SettingsDetailDialog>
@@ -198,17 +189,15 @@ function NativeCatalogPanel({
     case 'plugins':
       return <NativePluginsPanel context={context} reload={reload} onChanged={onChanged} />;
     default:
-      return <NativeFiles agent={context.agent} category={category} select={select} />;
+      return <NativeFiles agent={context.agent} select={select} />;
   }
 }
 
 function NativeFiles({
   agent,
-  category,
   select,
 }: {
   agent: NativeManagementContext['agent'];
-  category: 'all' | 'custom';
   select(target: NativeResourceSelection): void;
 }) {
   const [catalog, setCatalog] = useState<Catalog>();
@@ -239,18 +228,7 @@ function NativeFiles({
         </p>
       )}
       {catalog ? (
-        <NativeResourceCatalog
-          catalog={
-            category === 'all'
-              ? catalog
-              : {
-                  ...catalog,
-                  entries: catalog.entries.filter((entry) => ['rules', 'hooks', 'agents'].includes(entry.kind)),
-                  roots: catalog.roots.filter((root) => root.kind !== 'skills'),
-                }
-          }
-          select={select}
-        />
+        <NativeResourceCatalog catalog={catalog} select={select} />
       ) : (
         !error && (
           <p role="status" className="py-8 text-center text-sm text-muted-foreground">

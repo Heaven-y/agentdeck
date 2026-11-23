@@ -116,7 +116,7 @@ it('记忆页只控制全局 Claude Auto Memory，其他 CLI 链接到原生文�
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
   expect(await screen.findByText('在规则和指令文件中保存项目约定，供后续对话使用。')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '管理规则与指令' }));
-  await screen.findByRole('heading', { name: '原生配置与扩展 · Codex' });
+  await screen.findByRole('heading', { name: '原生文件' });
 });
 it('记忆首次读取失败后可以在本页重试', async () => {
   const read = vi

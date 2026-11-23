@@ -8,7 +8,7 @@ import {
 import path from 'node:path';
 export function claudePlan(context: ResourceContext, output: Builder) {
   const user = userBase(context, '.claude', context.env.CLAUDE_CONFIG_DIR);
-  output.file(user, 'settings.json', 'settings', 'Claude 用户设置：权限、环境变量和插件。');
+  output.file(user, 'settings.json', 'settings', 'Claude 用户设置：权限、环境变量、插件和 Hooks。');
   output.file(user, 'CLAUDE.md', 'rules');
   output.scan(user, 'rules', 'rules', true);
   output.scan(user, 'skills', 'skills', true);
@@ -29,12 +29,16 @@ export function claudePlan(context: ResourceContext, output: Builder) {
   output.scan(managed, '.claude/agents', 'agents');
   output.file(managed, 'managed-settings.json', 'settings', '管理员策略，只读。');
   output.scan(user, 'agents', 'agents', true);
-  output.file(user, 'settings.json', 'hooks', 'Hooks 配置位于 hooks 字段。');
   const project = projectBase(context);
   if (project) {
     const local: Base = { ...project, scope: 'local' };
-    output.file(project, '.claude/settings.json', 'settings', '项目共享设置。');
-    output.file(local, '.claude/settings.local.json', 'settings', '仅本机使用的项目设置，通常不提交版本控制。');
+    output.file(project, '.claude/settings.json', 'settings', '项目共享设置（含 Hooks）。');
+    output.file(
+      local,
+      '.claude/settings.local.json',
+      'settings',
+      '仅本机使用的项目设置（含 Hooks），通常不提交版本控制。',
+    );
     for (const name of ['CLAUDE.md', '.claude/CLAUDE.md']) output.file(project, name, 'rules');
     output.file(local, 'CLAUDE.local.md', 'rules', '仅本机使用的项目规则。');
     output.file(
@@ -47,8 +51,6 @@ export function claudePlan(context: ResourceContext, output: Builder) {
     output.scan(project, '.claude/rules', 'rules', true);
     output.scan(project, '.claude/skills', 'skills', true);
     output.scan(project, '.claude/agents', 'agents', true);
-    output.file(project, '.claude/settings.json', 'hooks', '项目 Hooks 配置。');
-    output.file(local, '.claude/settings.local.json', 'hooks', '个人项目 Hooks 原文入口。');
   }
   output.plan.guidance.push(
     {

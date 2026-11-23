@@ -75,6 +75,27 @@ describe('CLI 原生资源目录与编辑', () => {
     await expect(service.readAutoMemory()).rejects.toMatchObject({ code: 'invalid_json' });
   });
 
+  it.each([
+    ['codex', '.codex', 'config.toml', '[agents]\n'],
+    ['claude', '.claude', 'settings.json', '{"hooks":{}}'],
+  ] as const)('%s 按文件只列一次，保留全局和项目各自的完整配置', async (agent, dir, name, content) => {
+    const { homeDir, project, service } = await fixture();
+    await write(path.join(homeDir, dir, name), content);
+    await write(path.join(project.dir, dir, name), content);
+    const { entries } = await service.list(agent, project);
+    const files = entries.filter((entry) => [`~/${dir}/${name}`, `${dir}/${name}`].includes(entry.displayPath));
+    expect(files.map((entry) => [entry.scope, entry.kind, entry.exists])).toEqual([
+      ['user', 'settings', true],
+      ['project', 'settings', true],
+    ]);
+    for (const file of files) expect((await service.open(agent, file.id, project)).content).toBe(content);
+    if (agent === 'claude') {
+      expect(entries.filter((entry) => entry.displayPath === '.claude/settings.local.json')).toMatchObject([
+        { scope: 'local', kind: 'settings', exists: false },
+      ]);
+    }
+  });
+
   it('Antigravity 显示真实全局设置和项目 MCP，目录只返回元数据', async () => {
     const { homeDir, project, service } = await fixture();
     await write(path.join(homeDir, '.gemini', 'antigravity-cli', 'settings.json'), '{"secret":"sentinel-private"}');

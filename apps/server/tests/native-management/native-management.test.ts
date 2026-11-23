@@ -332,7 +332,7 @@ it('可能部分写入的失败也失效原生能力与实例，原生读取失�
   expect(JSON.stringify(result)).not.toContain('sentinel-private');
 });
 
-it('Hooks与代理定义保留实际来源，项目插件资产的原文入口只读', async () => {
+it('AGY 的独立 Hooks 与代理定义保留实际来源，项目插件资产的原文入口只读', async () => {
   const { homeDir, project } = await fixture();
   const directory = path.join(project.dir, '.agents/plugins/demo/agents');
   await mkdir(directory, { recursive: true });
@@ -342,19 +342,15 @@ it('Hooks与代理定义保留实际来源，项目插件资产的原文入口�
   expect(catalog.entries).toContainEqual(
     expect.objectContaining({ kind: 'agents', displayPath: '.agents/agents.json', scope: 'project' }),
   );
+  expect(catalog.entries).toContainEqual(
+    expect.objectContaining({ kind: 'hooks', displayPath: '.agents/hooks.json', scope: 'project' }),
+  );
   const agent = catalog.entries.find((entry) => entry.displayPath === '.agents/plugins/demo/agents/helper.md')!;
   expect(agent.editable).toBe(false);
   const document = await service.open('antigravity', agent.id, project);
   await expect(
     service.save('antigravity', agent.id, { content: 'overwrite', revision: document.revision }, project),
   ).rejects.toMatchObject({ code: 'invalid_request' });
-  const claude = await service.list('claude', project);
-  expect(
-    claude.entries
-      .filter((entry) => entry.displayPath === '.claude/settings.local.json')
-      .map((entry) => entry.kind)
-      .sort(),
-  ).toEqual(['hooks', 'settings']);
 });
 
 it('未核实CLI版本保留本地文件编辑，状态开关保持关闭', async () => {

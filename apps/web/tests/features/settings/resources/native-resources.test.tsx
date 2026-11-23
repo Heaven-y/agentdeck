@@ -24,9 +24,16 @@ const resource = {
   editable: true,
   description: '用户级原生规则。',
 } as const;
+const pendingFile = {
+  ...resource,
+  id: 'gemini',
+  label: 'GEMINI.md',
+  displayPath: '~/.gemini/GEMINI.md',
+  exists: false,
+};
 const catalog: NativeResourceCatalog = {
   agent: 'antigravity',
-  entries: [resource],
+  entries: [resource, pendingFile],
   roots: [
     {
       id: 'user-skills',
@@ -55,7 +62,7 @@ async function openCatalog() {
   fireEvent.click(await screen.findByRole('button', { name: 'Antigravity' }));
   fireEvent.click(await screen.findByText('高级设置'));
   fireEvent.click(await screen.findByRole('button', { name: '编辑 Antigravity 配置文件' }));
-  return screen.findByRole('heading', { name: '原生配置与扩展 · Antigravity' });
+  return screen.findByRole('heading', { name: '原生文件' });
 }
 beforeEach(() => {
   Object.defineProperties(Range.prototype, {
@@ -100,8 +107,12 @@ it('三个 CLI 共用资源入口，只读取全局原生资源，显式打开�
   expect(requests.some(({ url }) => url === '/api/native-resources/antigravity')).toBe(true);
   expect(requests.some(({ url }) => url.includes('/open'))).toBe(false);
   expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
+  expect(screen.queryByText('antigravity plugin list')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '文件说明' }));
   expect(screen.getByText('antigravity plugin list')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 用户规则' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  expect(requests.filter(({ url }) => url === '/api/native-resources/antigravity')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
   expect(editor().state.doc.toString()).toBe('# synthetic-private-rule\n');
   expect(requests.find(({ url }) => url.includes('/open'))).toMatchObject({
@@ -110,7 +121,7 @@ it('三个 CLI 共用资源入口，只读取全局原生资源，显式打开�
   });
   expect(JSON.stringify(queryClient.getQueryCache().getAll())).not.toContain('synthetic-private-rule');
   fireEvent.click(screen.getByRole('button', { name: '返回资源目录' }));
-  await screen.findByRole('heading', { name: '原生配置与扩展 · Antigravity' });
+  await screen.findByRole('heading', { name: '原生文件' });
   expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
 });
 
@@ -124,7 +135,7 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
   );
   render(<SettingsDialog onClose={close} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 用户规则' }));
+  fireEvent.click(await screen.findByRole('button', { name: '用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
   edit('# 我的规则\n');
   fireEvent.click(screen.getByRole('button', { name: '保存文件' }));
@@ -149,15 +160,24 @@ it('保存使用原修订，冲突保留正文；关闭、重读均保护未保�
   expect(screen.queryByRole('textbox', { name: '原生文件内容' })).toBeNull();
 });
 
-it('嵌入资源页使用外部分类，只显示所选资源且不重复显示导航和关闭入口', async () => {
-  render(<NativeResourcesDialog agent="antigravity" category="custom" embedded onBack={vi.fn()} onClose={vi.fn()} />);
+it('原生文件默认只列现有文件，预设文件和创建目录收在新建入口', async () => {
+  render(<NativeResourcesDialog agent="antigravity" embedded onBack={vi.fn()} onClose={vi.fn()} />);
   await screen.findByText(resource.displayPath);
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('navigation', { name: '原生资源分类' })).toBeNull();
   expect(screen.queryByRole('button', { name: '返回模型设置' })).toBeNull();
   expect(screen.queryByRole('button', { name: '关闭设置' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '在用户 Skills中新建 Skill' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '显示并编辑 用户规则' }));
+  expect(screen.queryByRole('button', { name: pendingFile.label })).toBeNull();
+  expect(screen.queryByRole('button', { name: '新建 Skill' })).toBeNull();
+  expect(screen.queryByText('文件已存在')).toBeNull();
+  const create = screen.getByRole('button', { name: '新建文件' });
+  fireEvent.click(create);
+  expect(screen.getByRole('button', { name: pendingFile.label })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '新建 Skill' })).toBeTruthy();
+  expect(requests.some(({ url }) => url.includes('/open'))).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  expect(document.activeElement).toBe(create);
+  fireEvent.click(screen.getByRole('button', { name: '用户规则' }));
   await screen.findByRole('textbox', { name: '原生文件内容' });
   expect(screen.getByRole('heading', { name: '用户规则' })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole('heading', { name: '用户规则' }));
@@ -173,7 +193,8 @@ it('创建资源的草稿接入统一导航，取消保留填写内容，确认�
       <NativeResourcesDialog agent="antigravity" embedded onBack={vi.fn()} onClose={vi.fn()} />
     </SettingsNavigationContext.Provider>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: '在用户 Skills中新建 Skill' }));
+  fireEvent.click(await screen.findByRole('button', { name: '新建文件' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建 Skill' }));
   const name = await screen.findByLabelText<HTMLInputElement>('Skill 名称');
   fireEvent.change(name, { target: { value: 'unsaved-skill' } });
   act(() => guardSettingsNavigation(navigation, leave));
@@ -197,11 +218,11 @@ it('切换 CLI 取消正文请求并忽略旧上下文迟到的敏感内容', as
   );
   render(<SettingsDialog onClose={vi.fn()} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '显示并编辑 用户规则' }));
+  fireEvent.click(await screen.findByRole('button', { name: '用户规则' }));
   await screen.findByText('正在读取文件…');
   const open = fetchMock.mock.calls.find(([url]) => (url as string).includes('/open'))!;
   fireEvent.click(screen.getByRole('button', { name: 'Codex' }));
-  await screen.findByRole('heading', { name: '原生配置与扩展 · Codex' });
+  await screen.findByRole('heading', { name: '原生文件' });
   expect(open[1]?.signal?.aborted).toBe(true);
   await act(async () => resolve(Response.json({ resource, content: 'late-sensitive-content', revision: 'late' })));
   expect(screen.queryByRole('textbox')).toBeNull();
@@ -226,7 +247,8 @@ it('只在服务端给出的Skill目录创建；正文带用户填写的元信�
   );
   render(<SettingsDialog onClose={vi.fn()} />);
   await openCatalog();
-  fireEvent.click(await screen.findByRole('button', { name: '在用户 Skills中新建 Skill' }));
+  fireEvent.click(await screen.findByRole('button', { name: '新建文件' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建 Skill' }));
   const name = await screen.findByLabelText('Skill 名称');
   fireEvent.change(screen.getByLabelText('Skill 用途'), { target: { value: '检查演示项目' } });
   const view = EditorView.findFromDOM(screen.getByRole('textbox', { name: 'Skill 使用说明' }))!;

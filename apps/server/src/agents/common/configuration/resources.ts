@@ -70,6 +70,7 @@ export function makeResourceTarget(
 
 export function builder(context: ResourceContext) {
   const plan: ResourcePlan = { targets: [], roots: [], scans: [], guidance: [] };
+  // 每个文件只登记一次；同一文件里的多种用途写在简介，不拆作多个入口。
   const file = (base: Base, relative: string, kind: NativeResourceKind, description?: string) => {
     plan.targets.push(makeResourceTarget(context.agent, base, relative, { kind, description }));
   };

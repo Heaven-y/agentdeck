@@ -1,21 +1,24 @@
 import { projectBase, userBase, type Builder, type ResourceContext } from '../../common/configuration/resources';
 export function codexPlan(context: ResourceContext, output: Builder) {
   const user = userBase(context, '.codex', context.env.CODEX_HOME);
-  output.file(user, 'config.toml', 'settings', 'Codex 用户配置：MCP、模型、权限和插件。');
+  output.file(
+    user,
+    'config.toml',
+    'settings',
+    'Codex 用户配置：MCP、模型、权限、插件和代理角色（agents）。config_file 路径相对声明它的配置文件解析。',
+  );
   for (const name of ['AGENTS.md', 'AGENTS.override.md']) output.file(user, name, 'rules');
   output.scan(user, 'rules', 'policy');
   output.file(user, 'hooks.json', 'hooks', 'Hooks 配置，需要当前版本支持并启用 features.hooks。');
-  output.file(user, 'config.toml', 'agents', '代理角色声明位于 agents 表；config_file 路径相对声明它的配置文件解析。');
   output.scan(user, 'agents', 'agent-configs');
   output.scan(userBase(context, '.agents'), 'skills', 'skills', true);
   output.scan({ ...user, readOnly: true }, 'skills', 'skills');
   const project = projectBase(context);
   if (project) {
-    output.file(project, '.codex/config.toml', 'settings', '项目配置，在项目获 Codex 信任后加载。');
+    output.file(project, '.codex/config.toml', 'settings', '项目配置（含代理角色），在项目获 Codex 信任后加载。');
     for (const name of ['AGENTS.md', 'AGENTS.override.md']) output.file(project, name, 'rules');
     output.scan(project, '.codex/rules', 'policy');
     output.file(project, '.codex/hooks.json', 'hooks', '受信任项目的 Hooks 配置。');
-    output.file(project, '.codex/config.toml', 'agents', '受信任项目的代理角色配置。');
     output.scan(project, '.codex/agents', 'agent-configs');
     output.scan(project, '.agents/skills', 'skills', true);
   }

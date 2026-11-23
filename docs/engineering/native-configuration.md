@@ -52,7 +52,7 @@ Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取
 
 自有 Skills 仍可新建与编辑 SKILL.md；“导入本地技能目录”由浏览器选择整个目录，将普通文件及二进制资料一并导入既有资源根，不接受服务器任意源路径。上限为 128 文件、6 层、每文件 1 MiB、合计 8 MiB，SKILL.md 另限 256 KiB 与有效 UTF-8；不运行安装脚本。暂存目录组装后一次更名，已有目录不覆盖。删除需明确确认整个目录，revision 覆盖支持文件；隔离后的复核失败会保留外部更改并恢复原位置，原位置被占用等情况会中止删除，保留隔离目录中的文件。插件、托管、同步及链接来源不提供删除动作。
 
-Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 settings 层，代理定义来自 agents 目录；Codex 的 hooks.json、config.toml agents 声明及 agents/*.toml 保留来源和信任说明；Antigravity 的 hooks.json、agents.json 与 agents 下原文保持原生作用域。Markdown 代理正文只验证编码和大小，真实语义与执行仍由 CLI 负责，不自建运行器。
+同一份配置文件的不同配置项不另设原文入口。Hooks 与代理定义继续编辑原生文件：Claude 的 hooks 位于各 settings 层，代理定义来自 agents 目录；Codex 的 hooks.json、config.toml agents 声明及 agents/*.toml 保留来源和信任说明；Antigravity 的 hooks.json、agents.json 与 agents 下原文保持原生作用域。Markdown 代理正文只验证编码和大小，真实语义与执行仍由 CLI 负责，不自建运行器。
 
 写操作依次取得 CLI 空闲租约、原生进程维护锁、项目空闲租约，再进入文件事务。普通原生目录读取与 CLI 安装互斥；同一操作内部不重复取锁。资源保存、创建、导入、删除及启停成功或可能部分写入的失败都会失效能力与会话缓存，并回收对应 CLI 的闲置运行实例，下轮重新读取资源；活动回合不被管理操作强制打断。后台任务的长期占用由会话级运行控制统一接入这一空闲判断。未编辑的设置随刷新同步；真实草稿按所选范围保留值和开始编辑时的 revision，外部更新后不会自动改绑新 revision，可明确放弃草稿并采用最新设置。正文仍由原文编辑器单独保护。
 

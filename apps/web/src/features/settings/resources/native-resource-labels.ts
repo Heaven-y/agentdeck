@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http';
-import type { NativeResourceKind, NativeResourceScope } from '@agentdeck/shared/settings';
+import type { NativeResourceScope } from '@agentdeck/shared/settings';
 
 export const nativeScopeNames: Record<NativeResourceScope, string> = {
   user: '用户',
@@ -7,15 +7,6 @@ export const nativeScopeNames: Record<NativeResourceScope, string> = {
   local: '仅我',
   directory: '目录',
   managed: '管理员',
-};
-export const nativeKindNames: Record<NativeResourceKind, string> = {
-  settings: '配置',
-  rules: '规则',
-  skills: 'Skills',
-  mcp: 'MCP',
-  plugins: '原生插件',
-  hooks: 'Hooks',
-  agents: '代理定义',
 };
 export function nativeSettingsError(error: unknown) {
   return error instanceof ApiError ? error.message : '无法访问本机设置，请稍后重试。';
