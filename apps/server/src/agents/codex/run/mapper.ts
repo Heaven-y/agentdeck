@@ -20,6 +20,10 @@ export function codexForkPoint(turn: RecordValue): string | undefined {
   return id.success ? id.data : undefined;
 }
 
+export function codexTurnFailure(turn: RecordValue): Extract<AgentEvent, { type: 'error' }> | undefined {
+  if (turn.status === 'failed') return { type: 'error', message: 'Codex 本轮执行失败。' };
+}
+
 export function turnEnd(turn: RecordValue, usage?: TokenUsage): Extract<AgentEvent, { type: 'turn_end' }> {
   const forkPoint = codexForkPoint(turn);
   const durationMs = nonnegativeInteger(turn.durationMs);
@@ -102,7 +106,8 @@ export class CodexEventMapper {
   }
 
   history(turn: RecordValue): AgentEvent[] {
-    return [...this.historyItems(turn), turnEnd(turn)];
+    const failure = codexTurnFailure(turn);
+    return [...this.historyItems(turn), ...(failure ? [failure] : []), turnEnd(turn)];
   }
 
   historyItems(turn: RecordValue): AgentEvent[] {

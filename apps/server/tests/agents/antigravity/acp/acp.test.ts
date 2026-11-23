@@ -689,7 +689,7 @@ describe('AGY 官方账号图片', () => {
     const turn = f.run();
     await started(f.client);
     f.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '已收到的正文' } });
-    f.failPrompt(new AcpError('native', 'AGY 模型服务超时。', true));
+    f.failPrompt(new AcpError('native', 'AGY 模型服务超时。'));
     await turn.done;
     expect(f.events).toContainEqual({ type: 'text', delta: '已收到的正文' });
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: true });
@@ -740,7 +740,6 @@ describe('AGY 原生服务临时故障', () => {
   const timeout = new AcpError(
     'native',
     'Antigravity 的模型服务响应超时（HTTP 524），本轮未完成。请稍后重试或检查原生模型服务。',
-    true,
   );
   it('当前请求在输出正文后失败仍保留正文和失败终态，不换通道重发', async () => {
     const f = setup();

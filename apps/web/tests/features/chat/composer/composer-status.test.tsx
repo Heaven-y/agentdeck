@@ -5,9 +5,13 @@ import { modelSettingsApi } from '../../../../src/features/settings/models/model
 import { queryClient } from '../../../../src/lib/query-client';
 import { ComposerStatus, latestComposerStatistics } from '../../../../src/features/chat/composer/ComposerStatus';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
+import { prependHistoryPage } from '../../../../src/features/chat/state/chat-history-pages';
 import { historyItems, type ChatItem } from '../../../../src/features/conversation/model/conversation-events';
 import { StatisticsLine } from '../../../../src/features/conversation/timeline/StatisticsLine';
-import { antigravityHistory } from '../../../../../server/src/agents/antigravity/history/history';
+import {
+  antigravityHistory,
+  projectAntigravityHistory,
+} from '../../../../../server/src/agents/antigravity/history/history';
 
 const statistics: Extract<ChatItem, { kind: 'statistics' }> = {
   kind: 'statistics',
@@ -346,4 +350,59 @@ it('新建内置会话绑定原生 ID 或编辑下轮模型时保留本轮窗口
   act(() => useChat.setState({ running: false, modelOverrides: { claude: '', codex: '', antigravity: '' } }));
   await act(() => queryClient.invalidateQueries({ queryKey: ['model-context-window'] }));
   expect(await screen.findByText('上下文 1,000 / —')).toBeTruthy();
+});
+
+it.each([false, true])('空白的原生终态只在整轮没有正文时提示（早段有正文：%s）', (hasEarlierReply) => {
+  const [user, response] = antigravityTurn('success');
+  const empty = {
+    ...response,
+    plannerResponse: {
+      response: '',
+      modifiedResponse: '  ',
+      thinking: '内部推理',
+      stopReason: 'STOP_REASON_STOP_PATTERN',
+    },
+  };
+  const early = hasEarlierReply ? [user, response] : [user];
+  const older = projectAntigravityHistory({ steps: early }, { partialEnd: true });
+  const newer = projectAntigravityHistory({ steps: [empty] }, { offset: early.length, partialStart: true });
+  const history = prependHistoryPage(
+    { items: historyItems(newer.events), historyPage: { start: early.length, ...newer.fragments } },
+    historyItems(older.events),
+    { start: 0, ...older.fragments },
+  );
+  const expected = hasEarlierReply ? [] : ['AGY 没有返回文字回复。'];
+  expect(history.items.flatMap((item) => (item.kind === 'error' ? [item.message] : []))).toEqual(expected);
+  const full = antigravityHistory({ steps: [...early, empty] });
+  expect(full.filter((event) => event.type === 'text')).toHaveLength(hasEarlierReply ? 1 : 0);
+  expect(full.flatMap((event) => (event.type === 'error' ? [event.message] : []))).toEqual(expected);
+  expect(full.at(-1)).toMatchObject({ type: 'turn_end', isError: !hasEarlierReply });
+});
+
+it.each([
+  ['Error 524', 'HTTP 524'],
+  ['Error 429', 'HTTP 429'],
+  [null, null],
+])('AGY 跨页回合与完整原生历史只显示一个最终错误（终态：%s）', (terminal, expected) => {
+  const [user, response] = antigravityTurn('success');
+  const error = (message: string) => ({
+    type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE',
+    status: 'CORTEX_STEP_STATUS_DONE',
+    errorMessage: { shouldShowUser: true, error: { userErrorMessage: message } },
+  });
+  const early = [user, error('Error 429')];
+  const late = [terminal ? error(terminal) : response];
+  const older = projectAntigravityHistory({ steps: early }, { partialEnd: true });
+  const newer = projectAntigravityHistory({ steps: late }, { offset: early.length, partialStart: true });
+  expect(newer.events.filter((event) => event.type === 'error')).toHaveLength(terminal === 'Error 524' ? 1 : 0);
+  const history = prependHistoryPage(
+    { items: historyItems(newer.events), historyPage: { start: early.length, ...newer.fragments } },
+    historyItems(older.events),
+    { start: 0, ...older.fragments },
+  );
+  const full = antigravityHistory({ steps: [...early, ...late] });
+  const notices = full.flatMap((event) => (event.type === 'error' ? [event.message] : []));
+  expect(notices).toEqual(expected ? [expect.stringContaining(expected)] : []);
+  expect(history.items.flatMap((item) => (item.kind === 'error' ? [item.message] : []))).toEqual(notices);
+  expect(full.at(-1)).toMatchObject({ type: 'turn_end', isError: !!expected });
 });

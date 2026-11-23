@@ -3,9 +3,8 @@ import { NativeSessionIdSchema, type AgentEvent } from '@agentdeck/shared/conver
 import { historyResponseTiming, stepDuration, stepUsage } from './metrics';
 import {
   ANTIGRAVITY_PERMISSION_NOTICE,
-  additionalServiceDiagnostic,
   antigravityDiagnostic,
-  rateLimitFailure,
+  antigravityToolDiagnostic,
   rateLimitOnlyFailure,
 } from './diagnostics';
 import type { CompletionBoundary, CurrentTurnReview } from '../commands/completion';
@@ -29,8 +28,6 @@ const replyIdentity = (value: unknown) =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? { id: `agy-step-${value}` } : {};
 const clip = (value: string) => (value.length > 20_000 ? `${value.slice(0, 20_000)}\n[输出已截断]` : value);
 const toolOutput = (info: RecordValue) => {
-  const error = antigravityDiagnostic(text(record(info.error).message), 'tool');
-  if (error?.type === 'error') return error.message;
   return clip(text(info.output)) || clip(text(record(info.error).message)) || (info.error ? '工具执行失败' : '');
 };
 const toolFinished = (state: unknown) => state === 'DONE' || state === 'ERROR';
@@ -42,27 +39,13 @@ const terminalStepFailed = (type: string, state: string, failed: boolean) =>
 function currentStepFailed(step: RecordValue): boolean {
   const error = record(record(step.tool_info).error);
   // TOOL_ERROR 可由模型继续处理；工具自身仍保留失败状态。
-  if (
-    step.step_type === 'tool' &&
-    toolFinished(step.state) &&
-    error.type === 'TOOL_ERROR' &&
-    !antigravityDiagnostic(text(error.message), 'tool')
-  )
-    return false;
+  if (step.step_type === 'tool' && toolFinished(step.state) && error.type === 'TOOL_ERROR') return false;
   return (
     step.step_type === 'error_message' ||
     step.state === 'ERROR' ||
     step.state === 'CANCELLED' ||
     !!record(step.tool_info).error
   );
-}
-
-function resultDiagnosticFor(resultError: string, rateLimited: boolean): DiagnosticEvent | undefined {
-  const other = rateLimited ? resultError : resultError.replace(/\b429\b/g, '');
-  const diagnostic = antigravityDiagnostic(other);
-  if (diagnostic) return diagnostic;
-  if (rateLimited) return antigravityDiagnostic(resultError);
-  return rateLimitFailure(resultError) ? additionalServiceDiagnostic(other) : undefined;
 }
 
 function supplementUsage(live: StepStatistics['usage'], native?: StepStatistics['usage']): StepStatistics['usage'] {
@@ -79,7 +62,7 @@ function supplementUsage(live: StepStatistics['usage'], native?: StepStatistics[
 /** 按官方 headless 的 event/payload 结构映射，不能把它当成 Claude stream-json。 */
 export class AntigravityMapper {
   private sessionId?: string;
-  private streamed = false;
+  private replied = false;
   private tools = new Set<string>();
   private results = new Set<string>();
   private initialized = false;
@@ -93,7 +76,7 @@ export class AntigravityMapper {
   private uncertainBoundary = false;
   terminalFailure = false;
   private errorIndices = new Set<number>();
-  private rateLimitedResult = false;
+  rateLimitedResult = false;
   private resultReviewable = false;
   resumedResultError = false;
   private resultError = '';
@@ -147,7 +130,7 @@ export class AntigravityMapper {
     this.observeCompletion(step);
     if (step.step_type === 'agent_response') {
       const delta = text(step.text_delta);
-      if (delta) this.streamed = true;
+      if (delta.trim()) this.replied = true;
       return [
         ...(delta ? [{ type: 'text' as const, delta, ...replyIdentity(step.step_index) }] : []),
         ...this.stepStatistics(step),
@@ -177,7 +160,7 @@ export class AntigravityMapper {
     // 直播已确认的终态失败不能被同一步不一致的只读快照覆盖。
     this.terminalFailure ||= terminalStepFailed(type, state, failed);
     if (type === 'error_message') this.errorIndices.add(index);
-    if (type === 'agent_response' && text(step.text_delta)) this.replySteps.add(index);
+    if (type === 'agent_response' && text(step.text_delta).trim()) this.replySteps.add(index);
     this.latestIndex = Math.max(this.latestIndex ?? -1, index);
   }
 
@@ -189,6 +172,10 @@ export class AntigravityMapper {
         this.uncertainBoundary = true;
       }
     }
+  }
+
+  get hasReply(): boolean {
+    return this.replied;
   }
 
   get canRecoverCompletion(): boolean {
@@ -220,8 +207,10 @@ export class AntigravityMapper {
     const content = text(response.modifiedResponse) || text(response.response);
     const events: AgentEvent[] = [];
     // 只有该步骤完全没有直播正文时才补整段，避免被统计事件分隔成两条回复。
-    if (!this.replySteps.has(reply.finalIndex) && content)
+    if (!this.replySteps.has(reply.finalIndex) && content.trim()) {
+      this.replied = true;
       events.push({ type: 'text', id: `agy-step-${reply.finalIndex}`, delta: content });
+    }
     const statistics = this.finalReplyStatistics(
       `agy-step-${reply.finalIndex}`,
       reply.finalIndex,
@@ -334,18 +323,18 @@ export class AntigravityMapper {
   private toolResult(id: string, step: RecordValue, info: RecordValue): AgentEvent[] {
     this.results.add(id);
     const usage = stepUsage(step.usage, true);
+    const diagnostic = antigravityToolDiagnostic(record(info.error));
     const events: AgentEvent[] = [
       {
         type: 'tool_result',
         id,
-        output: toolOutput(info),
+        output: diagnostic?.message ?? toolOutput(info),
         isError: toolFailed(step.state, info),
         ...stepDuration(step.duration_seconds),
         ...(usage ? { usage } : {}),
       },
     ];
-    const diagnostic = antigravityDiagnostic(text(record(info.error).message), 'tool');
-    if (diagnostic?.type === 'error') events.push(diagnostic);
+    if (diagnostic?.failure) events.push(diagnostic.failure);
     return events;
   }
 
@@ -354,8 +343,11 @@ export class AntigravityMapper {
     if (result.status === 'SUCCESS' && !this.initialized) throw new Error('Antigravity 未完成会话初始化');
     if (result.status === 'SUCCESS' || result.conversation_id) this.identity(result.conversation_id);
     const events = this.prepareResult(result);
-    if (!(this.expectedId && result.status === 'ERROR') && !this.streamed && text(result.response))
-      events.unshift({ type: 'text', delta: text(result.response) });
+    const reply = text(result.response);
+    if (!(this.expectedId && result.status === 'ERROR') && !this.replied && reply.trim()) {
+      this.replied = true;
+      events.unshift({ type: 'text', delta: reply });
+    }
     const isError = result.status !== 'SUCCESS';
     this.result = {
       type: 'turn_end',
@@ -371,7 +363,7 @@ export class AntigravityMapper {
     this.rateLimitedResult = rateLimitOnlyFailure(resultError);
     // 每轮 result 默认属于本轮；续接只开放复核，不预先认定错误来自历史。
     this.resumedResultError = this.isResumedResultError(result);
-    if (result.status !== 'SUCCESS') this.resultDiagnostic = resultDiagnosticFor(resultError, this.rateLimitedResult);
+    if (result.status !== 'SUCCESS') this.resultDiagnostic = antigravityDiagnostic(resultError);
     const hasDeniedActions = Array.isArray(result.denied_actions) && result.denied_actions.length > 0;
     this.resultReviewable = !hasDeniedActions && this.reviewableResult(result);
     return hasDeniedActions ? [{ type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE }] : [];

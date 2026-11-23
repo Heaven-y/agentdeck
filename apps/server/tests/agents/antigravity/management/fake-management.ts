@@ -9,6 +9,7 @@ const log = args[args.indexOf('--log-file') + 1]!;
 const mode = process.env.AGY_FIXTURE_MODE;
 const evidence = process.env.AGY_FIXTURE_EVIDENCE!;
 let bootstrapId: number | undefined;
+let accountReady = false;
 const server = http.createServer((request, response) => {
   if (mode === 'rpc-hang') return;
   request.resume();
@@ -46,6 +47,10 @@ const server = http.createServer((request, response) => {
       );
       return;
     }
+    if (mode === 'account-ready') {
+      response.end(JSON.stringify({ userStatus: accountReady ? { email: 'ready@example.invalid' } : {} }));
+      return;
+    }
     response.end('{"fixture":true}');
   });
 });
@@ -72,6 +77,13 @@ lines.on('line', (line) => {
   } else if (message.method === 'session/list') {
     bootstrapId = message.id;
     if (mode === 'wait' || mode === 'list-hang' || mode === 'list-delayed-invalid') return;
+    if (mode === 'account-ready') {
+      setTimeout(() => {
+        accountReady = true;
+        process.stdout.write(JSON.stringify({ id: message.id, result: { sessions: [] } }) + '\n');
+      }, 180).unref();
+      return;
+    }
     const result = JSON.stringify({
       id: message.id,
       error: { code: mode === 'list-invalid' ? -32600 : -32000, message: 'fixture-private-diagnostic' },

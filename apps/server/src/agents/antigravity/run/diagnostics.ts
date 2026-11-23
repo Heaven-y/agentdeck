@@ -2,19 +2,20 @@ import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { stripVTControlCharacters } from 'node:util';
 
 type DiagnosticEvent = Extract<AgentEvent, { type: 'error' | 'activity' }>;
+type DiagnosticSource = 'run' | 'tool' | 'tool-output';
 
+export const ANTIGRAVITY_EMPTY_REPLY = 'AGY 没有返回文字回复。';
+export const ANTIGRAVITY_TURN_FAILED = 'Antigravity 未能完成本轮。';
 export const ANTIGRAVITY_PERMISSION_NOTICE = 'Antigravity 未获准执行此工具。可调整权限后重新发送。';
 
-function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
-  if (source === 'run' && rateLimitFailure(line))
-    return {
-      type: 'error',
-      message: 'Antigravity 的模型服务请求受限（HTTP 429），本轮未完成。请稍后重试。',
-    };
+function serviceDiagnostic(line: string, source: DiagnosticSource): DiagnosticEvent | undefined {
   if (/\b(?:error|http|status(?:[_ ]code)?)[\s:="']*524\b/i.test(line))
     return {
       type: 'error',
-      message: 'Antigravity 的模型服务响应超时（HTTP 524），本轮未完成。请稍后重试或检查原生模型服务。',
+      message:
+        source === 'tool-output'
+          ? '工具请求超时（HTTP 524）。'
+          : 'Antigravity 的模型服务响应超时（HTTP 524），本轮未完成。请稍后重试或检查原生模型服务。',
     };
   if (source === 'run' && /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*500\b/i.test(line))
     return {
@@ -28,16 +29,24 @@ function serviceDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEven
   )
     return {
       type: 'error',
-      message: 'Antigravity 的模型服务暂时不可用（503 / UNAVAILABLE），请稍后重试或检查原生模型服务配置。',
+      message:
+        source === 'tool-output'
+          ? '工具服务暂时不可用（503 / UNAVAILABLE）。'
+          : 'Antigravity 的模型服务暂时不可用（503 / UNAVAILABLE），请稍后重试或检查原生模型服务配置。',
     };
   return undefined;
 }
 
-/** 网关或模型服务的临时故障：原生常自行重试，出现它不代表本轮没有产出。 */
-export const serviceFailure = (value: string): boolean =>
-  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:429|500|503|524)\b/i.test(stripVTControlCharacters(value));
+const SERVICE_STATUS =
+  /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*(?:429|500|503|524)\b|\bstatus\s*[:=]\s*UNAVAILABLE\b|"status"\s*:\s*"UNAVAILABLE"/gi;
 
-export const rateLimitFailure = (value: string): boolean =>
+/** 临时服务状态不覆盖同一条记录里明确的认证、地区或权限错误。 */
+export function transientServiceFailure(value: string): boolean {
+  const line = stripVTControlCharacters(value);
+  return line.search(SERVICE_STATUS) >= 0 && antigravityDiagnostic(line.replace(SERVICE_STATUS, ''))?.type !== 'error';
+}
+
+const rateLimitFailure = (value: string): boolean =>
   /\b(?:error|http|status(?:[_ ]code)?)[\s:="']*429\b/i.test(stripVTControlCharacters(value));
 
 function agyShortError(value: string): string | undefined {
@@ -78,7 +87,7 @@ export function rateLimitOnlyFailure(value: string): boolean {
 }
 
 /** 混合故障中的其他状态码只输出已脱敏的 HTTP 数字。 */
-export function additionalServiceDiagnostic(value: string): Extract<AgentEvent, { type: 'error' }> {
+function additionalServiceDiagnostic(value: string): Extract<AgentEvent, { type: 'error' }> {
   const code = value.match(/\b(?:error|http(?:\/\d(?:\.\d)?)?|status(?:[_ ]code)?|code)[\s:="']*([45]\d{2})\b/i)?.[1];
   return {
     type: 'error',
@@ -89,7 +98,7 @@ export function additionalServiceDiagnostic(value: string): Extract<AgentEvent, 
 }
 
 /** 只识别明确的原生错误或模式变化；固定文案不拼接诊断中的 URL、参数或凭据。 */
-export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'run'): DiagnosticEvent | undefined {
+export function antigravityDiagnostic(value: string, source: DiagnosticSource = 'run'): DiagnosticEvent | undefined {
   const line = stripVTControlCharacters(value).trim();
   if (/^(?:info|debug|trace)\s*:|^I\d{4}\s/i.test(line)) return undefined;
   if (
@@ -111,7 +120,23 @@ export function antigravityDiagnostic(value: string, source: 'run' | 'tool' = 'r
   return failureDiagnostic(line, source);
 }
 
-function failureDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEvent | undefined {
+/** 普通工具只转换卡片内的文案，不把工具请求的状态当作模型失败。 */
+export function antigravityToolDiagnostic(error: Record<string, unknown>) {
+  if (typeof error.message !== 'string') return;
+  const ordinary = typeof error.type !== 'string' || !error.type || error.type === 'TOOL_ERROR';
+  const diagnostic = antigravityDiagnostic(error.message, ordinary ? 'tool-output' : 'tool');
+  if (diagnostic?.type === 'error') return { message: diagnostic.message, failure: ordinary ? undefined : diagnostic };
+}
+
+function rateLimitDiagnostic(line: string): DiagnosticEvent | undefined {
+  if (!rateLimitFailure(line)) return;
+  if (rateLimitOnlyFailure(line))
+    return { type: 'error', message: 'Antigravity 的模型服务请求受限（HTTP 429），本轮未完成。请稍后重试。' };
+  const other = line.replace(/\b429\b/g, '');
+  return serviceDiagnostic(other, 'run') ?? additionalServiceDiagnostic(other);
+}
+
+function failureDiagnostic(line: string, source: DiagnosticSource): DiagnosticEvent | undefined {
   if (source === 'run' && /\bIndividual quota reached\b/i.test(line))
     return {
       type: 'error',
@@ -127,11 +152,12 @@ function failureDiagnostic(line: string, source: 'run' | 'tool'): DiagnosticEven
   )
     return {
       type: 'error',
-      message: 'Antigravity 认证失败。官方账号可在模型设置中重新登录；Gemini 模式请检查凭据。',
+      message:
+        source === 'tool-output'
+          ? '工具请求认证失败。'
+          : 'Antigravity 认证失败。官方账号可在模型设置中重新登录；Gemini 模式请检查凭据。',
     };
-  const service = serviceDiagnostic(line, source);
-  if (service) return service;
   if (/soft[-_\s]?den(?:ied|y)|\b(?:user denied permission|approval (?:was )?denied)\b/i.test(line))
     return { type: 'error', message: ANTIGRAVITY_PERMISSION_NOTICE };
-  return undefined;
+  return (source === 'run' ? rateLimitDiagnostic(line) : undefined) ?? serviceDiagnostic(line, source);
 }

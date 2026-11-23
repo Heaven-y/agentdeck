@@ -10,7 +10,7 @@ import { CodexClient } from './client';
 import { validateCodexSkill } from '../capabilities';
 import { threadParams } from './config';
 import { nativePermissionRestore } from '../interaction/permission-mode';
-import { CodexEventMapper, turnEnd } from './mapper';
+import { CodexEventMapper, codexTurnFailure, turnEnd } from './mapper';
 import { CodexPermissions } from '../interaction/permissions';
 import { CodexInteractions } from '../interaction/interactions';
 import { codexAttachments, markEmbedded } from '../../common/media/attachment-input';
@@ -545,7 +545,8 @@ export class CodexTurn {
     for (const event of this.mapper.finishCompaction(text(turn.status))) this.input.emit(event);
     if (this.manualCompaction && turn.status === 'completed' && !this.mapper.compactionConfirmed())
       throw new CodexError('Codex 未确认本次压缩完成，请重新读取会话状态。');
-    if (turn.status === 'failed') this.input.emit({ type: 'error', message: 'Codex 本轮执行失败。' });
+    const failure = codexTurnFailure(turn);
+    if (failure) this.input.emit(failure);
     if (turn.status === 'completed') {
       await markEmbedded(this.input, ['image']);
       await this.storeSteerImages();

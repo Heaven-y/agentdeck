@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PermissionSelection, AgentEvent } from '@agentdeck/shared/conversation';
 import { createAntigravityRunner, type AntigravityProcess } from '../../../../src/agents/antigravity/adapter';
+import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
 
 const cwd = path.join(tmpdir(), 'agentdeck-agy-fixture');
 
@@ -171,8 +172,8 @@ async function setup(
   });
   const output = (value: unknown) => child.stdout.write(`${JSON.stringify(value)}\n`);
   const init = (id = sessionId ?? 'native-1') => output({ event: 'init', conversation_id: id, init: { cwd } });
-  const finish = (id = sessionId ?? 'native-1') => {
-    output({ event: 'result', result: { conversation_id: id, status: 'SUCCESS', response: '你好' } });
+  const finish = (id = sessionId ?? 'native-1', response = '你好') => {
+    output({ event: 'result', result: { conversation_id: id, status: 'SUCCESS', response } });
     child.emit('close', 0);
   };
   await Promise.resolve();
@@ -208,13 +209,12 @@ describe('Antigravity 原生对话运行器', () => {
     // 实测 524 之后 agy 会挂住：既不重试也不退出，二十多分钟没有任何输出。
     f.child.stderr.write('Error: 524, Message: bad_response_status_code, status code 524\n');
     await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
-    expect(f.events.filter((event) => event.type === 'error')).toHaveLength(1);
-    expect(f.events.map((event) => (event.type === 'error' ? event.message : ''))).toContain(
-      'Antigravity 服务返回错误后长时间没有进展，本轮已终止；请稍后重试。',
-    );
     expect(f.child.kill).toHaveBeenCalled();
     f.child.emit('close', 0);
     await f.handle.done;
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([
+      { type: 'error', message: expect.stringContaining('HTTP 524') },
+    ]);
     expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
   });
 
@@ -233,15 +233,18 @@ describe('Antigravity 原生对话运行器', () => {
     expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
   });
 
-  it('stderr 的服务超时在完整答复与正常退出后不再变成错误', async () => {
-    const f = await setup();
-    f.init();
-    f.child.stderr.write('Error: request failed with status 524\n');
-    f.finish();
-    await f.handle.done;
-    expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
-    expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
-  });
+  it.each(['Error: request failed with status 524', 'status: UNAVAILABLE'])(
+    '临时服务错误在完整答复后不再显示：%s',
+    async (diagnostic) => {
+      const f = await setup();
+      f.init();
+      f.child.stderr.write(`${diagnostic}\n`);
+      f.finish();
+      await f.handle.done;
+      expect(f.events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(f.events.at(-1)).toEqual({ type: 'turn_end', isError: false });
+    },
+  );
 
   it('stderr 的服务超时在确实没有结果时仍作为错误上报', async () => {
     const f = await setup();
@@ -319,6 +322,37 @@ describe('Antigravity 原生对话运行器', () => {
     ]);
     expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
     expect(JSON.stringify(f.events)).not.toMatch(/synthetic-secret|private\.invalid/);
+  });
+
+  it.each([
+    ['Individual quota reached. Resets in 2h5m.', '额度已用尽'],
+    ['Error 429; Error 500', 'HTTP 500'],
+    ['Error 429; Error 503', '503 / UNAVAILABLE'],
+    ['Error 429; Error 524', 'HTTP 524'],
+    ['User location is not supported for the API use', '访问地区'],
+    ['invalid API key', '认证失败'],
+    ['user denied permission', '未获准'],
+    ['auto mode is not available for this account', 'auto 模式不可用'],
+  ])('AGY 实时和历史只显示最终诊断：%s', async (error, expected) => {
+    const f = await setup();
+    f.init();
+    f.child.stderr.write('Error 429\n');
+    f.output({ event: 'result', result: { conversation_id: 'native-1', status: 'ERROR', error } });
+    f.child.emit('close', 3);
+    await f.handle.done;
+    const replay = antigravityHistory({
+      steps: [
+        { type: 'CORTEX_STEP_TYPE_USER_INPUT', status: 'CORTEX_STEP_STATUS_DONE', userInput: { query: '测试' } },
+        ...['Error 429', error].map((message) => ({
+          type: 'CORTEX_STEP_TYPE_ERROR_MESSAGE',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          errorMessage: { shouldShowUser: true, error: { userErrorMessage: message } },
+        })),
+      ],
+    });
+    const notices = (events: AgentEvent[]) => events.filter((event) => event.type === 'error');
+    expect(notices(f.events)).toEqual([{ type: 'error', message: expect.stringContaining(expected) }]);
+    expect(notices(replay)).toEqual(notices(f.events));
   });
 
   it('认证失败在 result 前退出时保留原因，不再追加缺失结果的泛化错误', async () => {
@@ -666,3 +700,18 @@ it.each(['accept-edits', 'auto', 'plan', 'bypass'] as const)(
     await f.handle.done;
   },
 );
+
+it('原生结束但没有任何文字时不自动成功，已有服务诊断时只报具体原因', async () => {
+  for (const serviceError of [false, true]) {
+    const f = await setup();
+    f.init();
+    if (serviceError) f.child.stderr.write('Error: request failed with status 524\n');
+    f.finish(undefined, '  ');
+    await f.handle.done;
+    expect(f.events.filter((event) => event.type === 'text')).toHaveLength(0);
+    expect(f.events.filter((event) => event.type === 'error')).toEqual([
+      { type: 'error', message: serviceError ? expect.stringContaining('HTTP 524') : 'AGY 没有返回文字回复。' },
+    ]);
+    expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: true });
+  }
+});

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { resolveLocalCommand, type ResolvedCommand } from '../../../platform/process/executable';
 import { AntigravityLines } from '../run/lines';
 import { antigravityBackgroundEnvironment } from '../run/process-environment';
-import { antigravityDiagnostic, serviceFailure } from '../run/diagnostics';
+import { antigravityDiagnostic } from '../run/diagnostics';
 import {
   AcpError,
   cancelled,
@@ -35,11 +35,7 @@ function nativeFailure(value: unknown): AcpError {
   const error = object(value);
   if (error.code === -32601) return new AcpError('unavailable', '当前 Antigravity 版本不支持此操作。');
   const diagnostic = antigravityDiagnostic(text(error.message));
-  return new AcpError(
-    'native',
-    diagnostic?.type === 'error' ? diagnostic.message : 'AGY 没有完成请求。',
-    serviceFailure(text(error.message)),
-  );
+  return new AcpError('native', diagnostic?.type === 'error' ? diagnostic.message : 'AGY 没有完成请求。');
 }
 
 /** 只传固定ACP方法；原生诊断和未知远端请求不能成为宿主命令入口。 */

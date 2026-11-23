@@ -15,12 +15,20 @@ import {
   type ManagementRecord,
 } from './management-rpc';
 
-type Pending = { resolve(value: ManagementRecord): void; reject(error: Error): void; timer: NodeJS.Timeout };
+type Method = 'initialize' | 'session/list';
+type Pending = {
+  method: Method;
+  resolve(value?: ManagementRecord): void;
+  reject(error: Error): void;
+  timer?: NodeJS.Timeout;
+};
 export type ManagementProcessOptions = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   geminiDir: string;
   signal?: AbortSignal;
+  /** 只有读账号需等列表成功；本机历史不依赖登录。 */
+  waitForSessionList?: boolean;
   /** 可传入已从原始环境解析的命令，避免隔离配置影响可执行文件定位。 */
   command?: ResolvedCommand;
 };
@@ -32,7 +40,6 @@ class ManagementProcess {
   private exited = false;
   private failed = false;
   private sequence = 0;
-  private bootstrapId?: number;
   private bytes = 0;
   private closeTask?: Promise<void>;
   constructor(
@@ -110,40 +117,30 @@ class ManagementProcess {
   private receive(line: string) {
     const value = managementObject(JSON.parse(line));
     if (typeof value.id !== 'number') return;
-    if (value.id === this.bootstrapId) {
-      this.bootstrapId = undefined;
-      if (value.error && managementObject(value.error).code !== -32000) this.fail();
-      return;
-    }
     const pending = this.pending.get(value.id);
     if (!pending) return;
     this.pending.delete(value.id);
     clearTimeout(pending.timer);
-    // session/list 只用于引导本地后端；无登录时仍可管理本机持久记录。
-    if (value.error && managementObject(value.error).code !== -32000) {
+    if (!value.error) pending.resolve(managementObject(value.result));
+    else if (pending.method === 'session/list' && managementObject(value.error).code === -32000) pending.resolve();
+    else {
       this.fail();
       pending.reject(managementFailure());
-    } else pending.resolve(managementObject(value.result));
+    }
   }
-  request(method: 'initialize', params: ManagementRecord): Promise<ManagementRecord> {
+  request(method: Method, params: ManagementRecord, timeoutMs?: number): Promise<ManagementRecord | undefined> {
     if (!this.alive) return Promise.reject(managementFailure());
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(managementFailure());
-      }, 15_000);
-      this.pending.set(id, { resolve, reject, timer });
+      const timer = timeoutMs
+        ? setTimeout(() => {
+            this.pending.delete(id);
+            reject(managementFailure());
+          }, timeoutMs)
+        : undefined;
+      this.pending.set(id, { method, resolve, reject, timer });
       this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
     });
-  }
-  bootstrap(cwd: string): void {
-    // 列表可能卡在账号初始化；本地历史服务就绪由自有 PID 的日志确认。
-    // 单独保留请求身份，迟到的协议错误仍须终止入口及在途读取。
-    this.bootstrapId = ++this.sequence;
-    this.child.stdin.write(
-      `${JSON.stringify({ jsonrpc: '2.0', id: this.bootstrapId, method: 'session/list', params: { cwd } })}\n`,
-    );
   }
   private async waitClosed(ms: number) {
     let timer: NodeJS.Timeout | undefined;
@@ -221,6 +218,21 @@ async function ownPort(file: string, process: ManagementProcess): Promise<number
   throw managementFailure();
 }
 
+async function managementPort(process: ManagementProcess, options: ManagementProcessOptions, log: string) {
+  const init = await process.request(
+    'initialize',
+    { protocolVersion: 1, clientInfo: { name: 'agentdeck-session-manager', version: '1' }, clientCapabilities: {} },
+    15_000,
+  );
+  if (managementObject(init?.agentInfo).name !== 'Antigravity ACP Server') throw managementFailure();
+  // 同一个列表请求负责引导。端口早于账号就绪，只有账号读取等待成功答复。
+  const list = process.request('session/list', { cwd: options.cwd }, options.waitForSessionList ? 15_000 : undefined);
+  if (options.waitForSessionList) {
+    if (!Array.isArray((await list)?.sessions)) throw managementFailure();
+  } else void list.catch(() => undefined);
+  return ownPort(log, process);
+}
+
 export async function startManagementBackend(options: ManagementProcessOptions): Promise<ManagementBackend> {
   if (options.signal?.aborted) throw managementFailure();
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'agentdeck-agy-management-'));
@@ -243,14 +255,7 @@ export async function startManagementBackend(options: ManagementProcessOptions):
       requests.abort(),
     );
     options.signal?.addEventListener('abort', abort, { once: true });
-    const init = await process.request('initialize', {
-      protocolVersion: 1,
-      clientInfo: { name: 'agentdeck-session-manager', version: '1' },
-      clientCapabilities: {},
-    });
-    if (managementObject(init.agentInfo).name !== 'Antigravity ACP Server') throw managementFailure();
-    process.bootstrap(options.cwd);
-    const port = await ownPort(log, process);
+    const port = await managementPort(process, options, log);
     return {
       request: (method, params, budget) =>
         process?.alive

@@ -120,7 +120,7 @@ Antigravity 的 Gemini 密钥还需要原生 `modelProvider: "gemini"`；ADC 使
 
 服务连接的“AGY 代理地址”使用 HTTP 或 HTTPS URL（例如 `http://my-server`），内部给 `HTTP_PROXY` 和 `HTTPS_PROXY` 同时赋值，只保留本机回环绕过。旧的工作台显式地址继续使用，两者不同时取 HTTPS 的地址；没有显式地址或清空保存后按父进程环境启动。界面不回显代理认证信息。设置保存后在下一次 AGY 启动时生效，包括续聊、原生登录、账号读取、模型发现和额度；不影响正在运行的进程，也不修改系统代理、TUN 或独立终端的环境。刻意禁止联网的本地命令目录探测保持隔离。
 
-官方模式只从原生 `GetUserStatus` 返回经过校验的邮箱。AGY 1.5.11 已取得真实返回；失败或无邮箱只视为未能确认，不查凭据、不返回原始账号信息，也不长期缓存。Windows 桌面端用原生 `agy acp --login` 重新登录，授权码仅在原生终端输入，结束后重新读取账号。
+官方模式等同一隔离进程的原生 `session/list` 成功后，再调用一次 `GetUserStatus`，只返回经过校验的邮箱。端口就绪并不代表账号已加载；本地历史读取仍不等账号列表。无邮箱、失败、取消或超时都不重复查询，也不据此断言已退出登录。不查凭据，不返回原始账号信息。Windows 桌面端仍用原生 `agy acp --login`，授权码只在原生终端输入；结束后按同一规则刷新账号。
 
 模型菜单的官方额度使用 `POST /api/settings/models/antigravity/official-usage`，仅在已保存的账号模式且本机 CLI 支持非交互 JSON 时运行隔离的 `agy -p /usage --output-format json`。不读写登录令牌、不使用 Gemini API Key，不返回原始命令输出。读取失败报告未知，不把错误或缺字段显示成零额度；不是第三方用量或账单接口。
 

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { mediaMissing } from '../../common/media/native-media';
 import { SessionError } from '../../errors';
 import { markAnsweredQuestions } from '../interaction/async-questions';
-import { CodexEventMapper, codexForkPoint, turnEnd } from '../run/mapper';
+import { CodexEventMapper, codexForkPoint } from '../run/mapper';
 import { CodexError, CodexRpcLimit, record, text, type RecordValue } from '../run/types';
 
 const TURN_LIMIT = 3;
@@ -129,9 +129,9 @@ function locateMedia(event: AgentEvent, turnId: string): AgentEvent {
   };
 }
 function replay(mapper: CodexEventMapper, turn: RecordValue, end: boolean) {
-  const items = mapper.historyItems(turn).map((event) => locateMedia(event, text(turn.id)));
-  // 只有原生状态确认结束才给出分叉点和终态；步骤分页没有改变原生轮次状态。
-  return end && codexForkPoint(turn) ? [...items, turnEnd(turn)] : items;
+  // 只有包含原生轮尾的页展示失败和分叉点，旧步骤页不重复。
+  const events = end && codexForkPoint(turn) ? mapper.history(turn) : mapper.historyItems(turn);
+  return events.map((event) => locateMedia(event, text(turn.id)));
 }
 
 function notice(from: Position, omitted: boolean): AgentEvent {
