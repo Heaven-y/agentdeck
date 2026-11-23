@@ -381,7 +381,7 @@ function useMenuOfficialUsage(agent: AgentKind, catalog?: AgentCapabilities) {
   const workspace = useChat((state) => state.workspaceId);
   const sessionId = useChat((state) => state.sessionId);
   const target = officialUsageTarget(agent, catalog, workspace, sessionId);
-  const scope = target && JSON.stringify([target.kind, workspace, sessionId, nativeCapabilitiesGeneration(agent)]);
+  const scope = target && `${target.kind}:${nativeCapabilitiesGeneration(agent)}`;
   return { kind: target?.kind, ...useOfficialUsage(scope, target?.endpoint) };
 }
 function MenuOfficialUsageDialog({ usage }: { usage: ReturnType<typeof useMenuOfficialUsage> }) {

@@ -45,7 +45,7 @@ function fakeRunTurn() {
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-function setup(capabilities?: TurnManagerDeps['capabilities']) {
+function setup(capabilities?: TurnManagerDeps['capabilities'], references?: TurnManagerDeps['references']) {
   const fake = fakeRunTurn();
   const codex = fakeRunTurn();
   const sessions = { assertBelongs: vi.fn(async (): Promise<Workspace | void> => undefined) };
@@ -54,9 +54,25 @@ function setup(capabilities?: TurnManagerDeps['capabilities']) {
     runners: { claude: fake.runTurn, codex: codex.runTurn },
     sessions,
     capabilities,
+    references,
   });
   return { fake, codex, sessions, turns };
 }
+
+it('引用读取说明交给原生运行器，当前续聊身份与用户输入保持原值', async () => {
+  const prepare = vi.fn(async (text: string) => `${text}\n原生记录：native.jsonl`);
+  const { turns, fake } = setup(undefined, { prepare });
+  const message = send({ sessionId: 'current-a', text: '参考原会话' });
+  await turns.handle(fakeSocket().socket, message);
+  expect(prepare).toHaveBeenCalledExactlyOnceWith('参考原会话', expect.any(AbortSignal));
+  expect(fake.turns[0]?.input).toMatchObject({
+    text: '参考原会话\n原生记录：native.jsonl',
+    sessionId: 'current-a',
+  });
+  expect(message.text).toBe('参考原会话');
+  fake.turns[0]!.finish();
+  await turns.dispose();
+});
 
 const send = (extra: Record<string, unknown> = {}) => ({
   type: 'chat.send' as const,
@@ -340,6 +356,11 @@ describe('TurnManager', () => {
     fake.turns[0]!.input.emit({ type: 'session', sessionId: 's9', model: 'm', cwd: ws.dir });
     await turns.handle(socket, send({ sessionId: 's9', clientTurnId: 'c2' }));
     expect(sent.at(-1)).toEqual({ type: 'error', clientTurnId: 'c2', message: '该会话正在运行' });
+    expect(await turns.capabilityWorkspace(ws, { agent: 'claude', sessionId: 's9' })).toEqual(ws);
+    expect(
+      await turns.capabilityWorkspace({ ...ws, id: 'other' }, { agent: 'claude', sessionId: 's9' }),
+    ).toBeUndefined();
+    expect(await turns.capabilityWorkspace(ws, { agent: 'codex', sessionId: 's9' })).toBeUndefined();
   });
 
   it('未知工作区返回 error', async () => {

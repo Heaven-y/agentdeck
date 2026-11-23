@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso';
 import { Tooltip, TooltipAnchor, TooltipProvider } from '@ariakit/react';
 import { ChevronUp, LoaderCircle, RotateCcw } from 'lucide-react';
+import { splitSessionReferenceContext } from '@agentdeck/shared/conversation';
 import type { TimelineRow } from './timeline-model';
 import { pageAction, type HistoryPagination } from './history-pages';
 
@@ -18,7 +19,9 @@ function messageLocations(rows: TimelineRow[]): MessageLocation[] {
           {
             id: row.item.id,
             rowIndex,
-            preview: row.item.text.trim().replace(/\s+/g, ' ').slice(0, 180) || '（空消息）',
+            preview:
+              splitSessionReferenceContext(row.item.text).message.trim().replace(/\s+/g, ' ').slice(0, 180) ||
+              '（空消息）',
           },
         ]
       : [],

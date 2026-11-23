@@ -12,7 +12,9 @@ const Saved = z.object({
 const defaults: z.infer<typeof Saved> = { mode: 'recent', orders: {} };
 export const sessionOrderKey = (session: Pick<SessionSummary, 'agent' | 'sessionId'>) =>
   JSON.stringify([session.agent, session.sessionId]);
-const recentFirst = (a: SessionSummary, b: SessionSummary) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+export const recentSessionsFirst = (a: SessionSummary, b: SessionSummary) =>
+  (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0) ||
+  sessionOrderKey(a).localeCompare(sessionOrderKey(b));
 
 /** 已知身份沿用当前顺序，未加载身份留在原有间隔。 */
 function mergeCurrentOrder(previous: string[], current: string[]) {
@@ -26,13 +28,13 @@ function mergeCurrentOrder(previous: string[], current: string[]) {
 export function sortSessions<T extends SessionSummary>(sessions: T[], mode: SessionSortMode, order: string[] = []) {
   const positions = new Map(order.map((id, index) => [id, index]));
   return sessions.toSorted((a, b) => {
-    if (mode === 'name') return a.title.localeCompare(b.title, 'zh-CN', { numeric: true }) || recentFirst(a, b);
+    if (mode === 'name') return a.title.localeCompare(b.title, 'zh-CN', { numeric: true }) || recentSessionsFirst(a, b);
     if (mode === 'manual') {
       const rank = (id: string) => positions.get(id) ?? order.length;
       const difference = rank(sessionOrderKey(a)) - rank(sessionOrderKey(b));
       if (difference) return difference;
     }
-    return recentFirst(a, b);
+    return recentSessionsFirst(a, b);
   });
 }
 export function readSessionOrder() {

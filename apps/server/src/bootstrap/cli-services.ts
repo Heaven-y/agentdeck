@@ -58,15 +58,13 @@ import { registerCodexUsageRoute } from '../http/settings/codex-usage.routes';
 import { registerModelSettingsRoutes } from '../http/settings/model-settings.routes';
 import { registerNativeResourceRoutes } from '../http/settings/native-resources.routes';
 import { registerSessionRoutes } from '../http/conversation/sessions.routes';
-import { registerSessionToolsRoutes } from '../http/settings/session-tools.routes';
 import { createSessionPreferences } from '../sessions/preferences';
 import { createSessionsService } from '../sessions/service';
 import { createLaunchEnvironment } from '../settings/launch-environment';
 import { createModelSettingsService } from '../settings/model-settings';
 import { createNativeConfigService } from '../settings/native-config';
 import { createNativeResourcesService } from '../settings/resources/native-resources';
-import { createSessionToolsService } from '../settings/session-tools/session-tools';
-import { buildSessionToolsCommand } from '../settings/session-tools/command';
+import { createSessionReferences } from '../sessions/references';
 import { createNativeManagementAccess } from '../native-management/access';
 import { createNativeManagementService } from '../native-management/skills/service';
 import { registerNativeManagementRoutes } from '../http/settings/native-management.routes';
@@ -91,12 +89,14 @@ export function createCliServices({
   activity,
   installationBackend,
   probeRunner,
+  agyHistoryScript,
 }: {
   configDir: string;
   store: WorkspaceStore;
   activity: WorkspaceActivity;
   installationBackend?: CliInstallationBackend;
   probeRunner?: ProcessRunner;
+  agyHistoryScript?: string;
 }) {
   const acquireWorkspace = (id: string) => activity.acquire(id);
   const attachments = new AttachmentStore(path.join(configDir, 'attachments'));
@@ -156,12 +156,10 @@ export function createCliServices({
     access: managementAccess,
     onChanged: nativeChanged,
   });
-  const sessionToolsCommand = buildSessionToolsCommand(configDir);
   const nativeMcp = createNativeMcpService({
     environment: (agent) => launchEnvironment.resolve(agent),
     access: managementAccess,
     onChanged: nativeChanged,
-    sessionToolsCommand,
   });
   const nativePlugins = createNativePluginService({
     environment: (agent) => launchEnvironment.resolve(agent),
@@ -239,6 +237,13 @@ export function createCliServices({
     acquireWorkspace,
     attachments,
     inputFeatures,
+    references: createSessionReferences({
+      configDir,
+      store,
+      sessions,
+      agyHistoryScript,
+      environment: (agent) => launchEnvironment.resolve(agent),
+    }),
   });
   const installations = createCliInstallationService({
     backend:
@@ -325,7 +330,12 @@ export function createCliServices({
       registerNativeActionRoutes(a, nativeActions);
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });
-      registerCapabilityRoutes(a, { store, capabilities, sessions });
+      registerCapabilityRoutes(a, {
+        store,
+        capabilities,
+        sessions,
+        runtimeWorkspace: (workspace, session) => turns.capabilityWorkspace(workspace, session),
+      });
       registerCodexUsageRoute(a, { store, sessions }, (dir, signal) =>
         nativeActivity.run('codex', async () =>
           readCodexOfficialUsage(dir, { signal, env: await launchEnvironment.resolve('codex') }),
@@ -361,16 +371,6 @@ export function createCliServices({
       registerLaunchEnvironmentRoutes(a, {
         service: launchEnvironment,
         restart: (agent) => turns.withIdleAgent(agent, () => runners[agent].restart()),
-      });
-      registerSessionToolsRoutes(a, {
-        service: createSessionToolsService({
-          configDir,
-          command: sessionToolsCommand,
-          environment: (agent) => launchEnvironment.resolve(agent),
-          withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
-          restart: (agent) => runners[agent].restart(),
-          onSaved: (agent) => capabilities.invalidate(agent),
-        }),
       });
     },
   };

@@ -95,3 +95,39 @@ it('停用 SSH Console 前说明影响范围，确认后才切换', async () => 
   await screen.findByRole('button', { name: '启用 SSH Console' });
   client.clear();
 });
+
+it('插件命令在所属对话框内可操作，仅在工作台接受后关闭管理器', async () => {
+  const plugin: WorkbenchPlugin = {
+    enabled: true,
+    manifest: {
+      id: 'fixture',
+      name: '示例插件',
+      version: '1.0.0',
+      apiVersion: 2,
+      entry: 'index.html',
+      permissions: [],
+      commands: [{ id: 'inspect', title: '查看项目' }],
+    },
+  };
+  vi.spyOn(pluginApi, 'list').mockResolvedValue({ plugins: [plugin], revision: 'enabled' });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const run = vi.fn().mockReturnValue(false);
+  const close = vi.fn();
+  render(
+    <QueryClientProvider client={client}>
+      <PluginManager onClose={close} run={run} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: '操作' }));
+  const command = await screen.findByRole('menuitem', { name: '查看项目' });
+  expect(screen.getByRole('dialog').contains(command)).toBe(true);
+  fireEvent.click(command);
+  expect(run).toHaveBeenLastCalledWith('fixture', 'inspect');
+  expect(close).not.toHaveBeenCalled();
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  run.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '操作' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: '查看项目' }));
+  expect(close).toHaveBeenCalledOnce();
+  client.clear();
+});

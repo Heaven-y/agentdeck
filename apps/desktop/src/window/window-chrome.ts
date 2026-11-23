@@ -13,7 +13,7 @@ export const TITLE_BAR_COLORS = {
   dark: { color: '#15171b', symbolColor: '#f9fafb' },
 };
 
-/** 沿用 DSH 的 hidden 标题栏与原生窗口按钮；不自行实现关闭、最大化等系统行为。 */
+/** 隐藏标题栏沿用原生窗口按钮与系统窗口行为。 */
 export function desktopChromeOptions(platform = process.platform): BrowserWindowConstructorOptions {
   if (platform === 'darwin') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 12 } };
   return {
@@ -27,7 +27,11 @@ export function desktopChromeOptions(platform = process.platform): BrowserWindow
 export function applicationMenuTemplate(platform = process.platform): MenuItemConstructorOptions[] {
   return [
     ...(platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
-    { id: 'file', role: 'fileMenu', label: 'File' },
+    {
+      id: 'file',
+      label: 'File',
+      submenu: [{ role: 'close', accelerator: platform === 'darwin' ? 'Command+Shift+W' : 'Alt+F4' }],
+    },
     { id: 'edit', role: 'editMenu', label: 'Edit' },
     { id: 'view', role: 'viewMenu', label: 'View' },
     { id: 'window', role: 'windowMenu', label: 'Window' },

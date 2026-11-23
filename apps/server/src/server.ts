@@ -29,6 +29,8 @@ export type StartedServer = {
 };
 
 export type StartServerOptions = {
+  /** 桌面分发的 AGY 原生历史读取入口；只读进程不登记任何 CLI 扩展。 */
+  agyHistoryScript?: string;
   /** 前端构建产物目录；不传则只提供接口，不托管页面 */
   webDir?: string;
   /** Agent 探测执行器；测试注入假执行器，避免启动本机真实 CLI */
@@ -97,6 +99,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     activity,
     installationBackend: options.cliInstallationBackend,
     probeRunner: options.probeRunner,
+    agyHistoryScript: options.agyHistoryScript,
   });
   const pluginHost = createPluginHostServices(store, cli.sessions);
   const { turns } = cli;

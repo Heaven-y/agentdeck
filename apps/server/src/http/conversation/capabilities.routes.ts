@@ -6,6 +6,8 @@ import { SessionError } from '../../agents/errors';
 import { type SessionsService } from '../../sessions/service';
 import type { WorkspaceStore } from '../../workspaces/store';
 import { assertCapabilityDirectory } from '../../agents/common/capability-directory';
+import type { SessionRef } from '@agentdeck/shared/conversation';
+import type { Workspace } from '@agentdeck/shared/projects';
 
 const Params = z.object({ id: z.string().min(1) });
 const Query = z.object({ agent: AgentKindSchema, sessionId: NativeSessionIdSchema.optional() }).strict();
@@ -15,6 +17,7 @@ export function registerCapabilityRoutes(
     store: Pick<WorkspaceStore, 'get'>;
     capabilities: CapabilitiesService;
     sessions: Pick<SessionsService, 'assertBelongs'>;
+    runtimeWorkspace?(workspace: Workspace, session: SessionRef): Promise<Workspace | undefined>;
   },
 ): void {
   app.route({
@@ -35,7 +38,9 @@ export function registerCapabilityRoutes(
       try {
         if (query.data.sessionId) {
           await assertCapabilityDirectory(ws.dir);
-          ws = await deps.sessions.assertBelongs(ws, query.data.agent, query.data.sessionId, controller.signal);
+          ws =
+            (await deps.runtimeWorkspace?.(ws, { agent: query.data.agent, sessionId: query.data.sessionId })) ??
+            (await deps.sessions.assertBelongs(ws, query.data.agent, query.data.sessionId, controller.signal));
         }
         return req.method === 'POST'
           ? await deps.capabilities.refresh(ws, query.data.agent, controller.signal)

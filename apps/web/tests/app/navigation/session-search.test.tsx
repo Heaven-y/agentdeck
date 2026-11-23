@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { SessionSummary } from '@agentdeck/shared/conversation';
-import CommandPalette, { type PaletteActions } from '../../../src/app/navigation/CommandPalette';
+import SessionSearch from '../../../src/app/navigation/SessionSearch';
 import { useChat } from '../../../src/features/chat/state/chat-store';
 import { sessionsApi } from '../../../src/features/sessions/api';
 
@@ -50,13 +50,7 @@ afterEach(() => {
 });
 
 function mount() {
-  const actions: PaletteActions = {
-    conversation: vi.fn(() => true),
-    newSession: vi.fn(() => false),
-    openSession: vi.fn(() => false),
-    selectWorkspace: vi.fn(() => false),
-    settings: vi.fn(() => true),
-  };
+  const open = vi.fn(() => false);
   const close = vi.fn();
   const writes = {
     newSession: vi.spyOn(useChat.getState(), 'newSession'),
@@ -65,29 +59,25 @@ function mount() {
   };
   render(
     <QueryClientProvider client={client}>
-      <CommandPalette workspaces={[workspace]} workspace={workspace} actions={actions} close={close} />
+      <SessionSearch projects={[workspace]} open={open} close={close} />
     </QueryClientProvider>,
   );
-  return { actions, close, writes };
+  return { open, close, writes };
 }
 
-it.each([
-  { label: '新会话', action: 'newSession' as const },
-  { label: '原生会话', action: 'openSession' as const },
-  { label: '示例项目', action: 'selectWorkspace' as const },
-])('命令面板$label将完整导航交给设置保护，拒绝后不直接改动会话', async ({ label, action }) => {
-  const { actions, close, writes } = mount();
-  const target = await screen.findByRole('option', { name: new RegExp(label) });
+it('会话搜索将导航交给设置保护，拒绝后不直接改动会话，也不混入常用操作', async () => {
+  const { open, close, writes } = mount();
+  const target = await screen.findByRole('option', { name: /原生会话/ });
+  expect(screen.queryByRole('option', { name: '新会话' })).toBeNull();
+  expect(screen.queryByRole('option', { name: '打开设置' })).toBeNull();
   fireEvent.click(target);
-  await waitFor(() => expect(actions[action]).toHaveBeenCalledOnce());
-  expect(actions.conversation).not.toHaveBeenCalled();
+  await waitFor(() => expect(open).toHaveBeenCalledOnce());
   expect(close).not.toHaveBeenCalled();
   expect(writes.newSession).not.toHaveBeenCalled();
   expect(writes.openSession).not.toHaveBeenCalled();
   expect(writes.selectWorkspace).not.toHaveBeenCalled();
-  vi.mocked(actions[action]!).mockReturnValue(true);
+  open.mockReturnValue(true);
   fireEvent.click(target);
   expect(close).toHaveBeenCalledOnce();
-  if (action === 'openSession') expect(actions.openSession).toHaveBeenLastCalledWith(session);
-  if (action === 'selectWorkspace') expect(actions.selectWorkspace).toHaveBeenLastCalledWith(workspace.id);
+  expect(open).toHaveBeenLastCalledWith(workspace.id, session);
 });

@@ -31,7 +31,25 @@ export const conversationWidth = (width: AppearanceSettings['width']): number =>
 const ModelVisibilityKeySchema = z.enum([...AGENT_KINDS, 'codex-account', 'antigravity-account', 'antigravity-gemini']);
 export type ModelVisibilityKey = z.infer<typeof ModelVisibilityKeySchema>;
 
+export const KeyboardShortcutActionSchema = z.enum([
+  'search',
+  'newSession',
+  'nextTab',
+  'previousTab',
+  'closeTab',
+  'focusComposer',
+  'settings',
+  'sidebar',
+]);
+export type KeyboardShortcutAction = z.infer<typeof KeyboardShortcutActionSchema>;
+export const KeyboardShortcutsSchema = z.partialRecord(
+  KeyboardShortcutActionSchema,
+  z.string().min(1).max(64).nullable(),
+);
+
 export const ProductSettingsSchema = z.strictObject({
+  /** 全局工作台快捷键；缺省项沿用默认，null 表示停用。 */
+  shortcuts: KeyboardShortcutsSchema.optional(),
   defaultAgent: AgentKindSchema.default('claude'),
   spotlight: SpotlightSettingsSchema.default(DEFAULT_SPOTLIGHT),
   appearance: AppearanceSettingsSchema.default(DEFAULT_APPEARANCE),

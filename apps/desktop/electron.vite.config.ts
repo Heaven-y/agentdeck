@@ -28,10 +28,10 @@ export default defineConfig(({ command }) => ({
       rollupOptions: {
         input: {
           main: path.join(projectRoot, 'src/main.ts'),
-          'session-tools': path.resolve(projectRoot, '../server/src/session-tools/main.ts'),
+          'read-agy-history': path.resolve(projectRoot, '../server/src/sessions/read-agy-history.ts'),
         },
         external: MAIN_EXTERNALS,
-        output: { entryFileNames: ({ name }) => (name === 'session-tools' ? 'session-tools.mjs' : '[name].js') },
+        output: { entryFileNames: ({ name }) => (name === 'main' ? 'main.js' : '[name].mjs') },
       },
     },
   },

@@ -104,17 +104,16 @@ it.each(['条目仍存在', '写后不可读', '执行中超时'])('Claude 移�
   ).rejects.toMatchObject({ code: 'mcp_change_unconfirmed' });
   expect(run.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([['mcp', 'remove']]);
 });
-it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的用户会话工具归入专用入口', async (agent) => {
+it.each(['claude', 'codex', 'antigravity'] as const)('%s 同名用户、项目与插件配置保持各自的管理能力', async (agent) => {
   const f = await fixture();
-  const command = { command: 'node', args: ['session-tools.mjs'], env: { EXAMPLE: 'fixture' } };
-  const own = agent === 'antigravity' ? { ...command, tools: { read_session: { eager: true } } } : command;
+  const own = { command: 'node', args: ['demo.mjs'] };
   const files = {
     claude: ['.claude.json', '.mcp.json'],
     codex: ['.codex/config.toml', '.codex/config.toml'],
     antigravity: ['.gemini/config/mcp_config.json', '.agents/mcp_config.json'],
   }[agent];
   const encode = (entry: object) => {
-    const data = { [agent === 'codex' ? 'mcp_servers' : 'mcpServers']: { agentdeck_sessions: entry } };
+    const data = { [agent === 'codex' ? 'mcp_servers' : 'mcpServers']: { demo: entry } };
     return agent === 'codex' ? stringifyToml(data) : JSON.stringify(data);
   };
   const userFile = path.join(f.homeDir, files[0]!);
@@ -123,19 +122,16 @@ it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的�
   const service = createNativeMcpService({
     homeDir: f.homeDir,
     env: {},
-    sessionToolsCommand: command,
     run: f.run,
-    plugins: async () => [
-      { name: 'agentdeck_sessions', owner: 'demo', installationRoot: f.project.dir, scope: 'user', config: own },
-    ],
+    plugins: async () => [{ name: 'demo', owner: 'demo', installationRoot: f.project.dir, scope: 'user', config: own }],
   });
   const entries = (await service.readMcp(agent, f.project)).entries;
-  const managed = entries.find((entry) => entry.managedBy === 'session-tools')!;
+  const managed = entries.find((entry) => entry.owner)!;
   expect(managed).toMatchObject({
     scope: 'user',
     actions: { edit: false, delete: false, enable: false, disable: false },
   });
-  expect(entries.filter((entry) => entry.managedBy === 'session-tools')).toHaveLength(1);
+  expect(entries.find((entry) => entry.scope === 'user' && !entry.owner)?.actions.delete).toBe(true);
   expect(entries.find((entry) => entry.scope === 'project')?.actions.edit).toBe(true);
   await expect(
     service.operateMcp(agent, { id: managed.id, revision: managed.revision, action: 'delete' }),
@@ -146,7 +142,6 @@ it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的�
   ]) {
     await f.write(userFile, encode(changed));
     const external = (await service.readMcp(agent)).entries.find((entry) => !entry.owner)!;
-    expect(external.managedBy).toBeUndefined();
     expect(external.actions.delete).toBe(true);
   }
   expect(f.run).not.toHaveBeenCalled();

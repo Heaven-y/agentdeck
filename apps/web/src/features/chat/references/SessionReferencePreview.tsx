@@ -1,11 +1,8 @@
 import { Link } from 'lucide-react';
 import { AGENT_LABELS } from '../../../cli/shared/labels';
 import { findSessionReferences, navigateToSessionReference } from '../../sessions/links/session-links';
-import { SessionToolsPanel } from '../../settings/mcp/SessionToolsPanel';
-import { useChat } from '../state/chat-store';
 
 export function SessionReferencePreview({ text }: { text: string }) {
-  const agent = useChat((state) => state.agent);
   const references = [...new Map(findSessionReferences(text).map((value) => [value.text, value])).values()];
   if (!references.length) return null;
   return (
@@ -26,7 +23,6 @@ export function SessionReferencePreview({ text }: { text: string }) {
           </button>
         ))}
       </div>
-      <SessionToolsPanel key={agent} agent={agent} compact />
     </div>
   );
 }

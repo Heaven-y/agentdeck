@@ -5,7 +5,12 @@ import type { Workspace } from '@agentdeck/shared/projects';
 import { AGENT_LABELS } from '../../cli/shared/labels';
 import { sessionActionKey, useChat } from '../../features/chat/state/chat-store';
 import { SortableSessionRow as SessionRow } from '../../features/sessions/list/SortableSessionRow';
-import { sessionOrderKey, sortSessions, useSessionOrder } from '../../features/sessions/list/session-order';
+import {
+  recentSessionsFirst,
+  sessionOrderKey,
+  sortSessions,
+  useSessionOrder,
+} from '../../features/sessions/list/session-order';
 import { ProjectSessionDialog, type ProjectSessionSelection } from '../../features/sessions/list/ProjectSessionDialog';
 import type { SessionDialogAction } from '../../features/sessions/actions/SessionMenu';
 import { buttonClass } from '../../ui/styles';
@@ -17,7 +22,6 @@ import { SidebarOtherSessions } from './SidebarOtherSessions';
 import type { ProjectDraft, ProjectManageAction } from '../../features/projects/project-management';
 import type { SessionListFailure } from '../../features/projects/use-project-sessions';
 import { LoadMoreSessions } from '../../features/sessions/list/LoadMoreSessions';
-import { BackgroundConversations } from '../../features/chat/tabs/BackgroundConversations';
 import { ProjectSessionRow } from '../../features/sessions/list/ProjectSessionRow';
 import {
   localSessionId,
@@ -25,6 +29,7 @@ import {
   type WorkspaceSession,
 } from '../../features/sessions/list/workspace-sessions';
 import { useProductSettings } from '../../features/settings/general/use-product-settings';
+import { matchesSessionSearch as matchesSession } from '../../features/sessions/list/session-search';
 
 export type SidebarProps = {
   pages?: ReactNode;
@@ -49,7 +54,7 @@ export type SidebarProps = {
   /** 桌面壳提供打开路径能力时，项目菜单显示“在资源管理器中打开”。 */
   reveal?(project: Workspace): { label: string; open(): void } | undefined;
   onOpenSettings?(): void;
-  onOpenCommands?(): void;
+  onOpenSessionSearch?(): void;
   onOpenArchive?(): void;
   onOpenConversation?(id: string): void;
   /** 会话仍在读取时不要把加载中误报成空列表。 */
@@ -61,19 +66,13 @@ const EMPTY_SESSIONS: SessionSummary[] = [];
 const EMPTY_FAILURES: SessionListFailure[] = [];
 /** 产品设置未读到时的取值，与 DEFAULT_APPEARANCE.sessionLimit 一致。 */
 const FALLBACK_SESSION_LIMIT = 5;
-const agentSearchNames = { claude: 'Claude Code', codex: 'Codex', antigravity: 'Antigravity AGY' };
-const newestFirst = (a: SessionSummary, b: SessionSummary) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-const matchesSession = (session: SessionSummary, query: string) =>
-  `${session.title} ${session.sessionId} ${session.directory ?? ''} ${AGENT_LABELS[session.agent]} ${agentSearchNames[session.agent]}`
-    .toLocaleLowerCase()
-    .includes(query);
 
 function unassignedSessions(sessions: Record<string, SessionSummary[]>, extra: SessionSummary[]) {
   const entries = new Map<string, SessionSummary>();
   for (const session of [...Object.values(sessions).flat(), ...extra]) {
     if (session.projectId === null) entries.set(`${session.agent}:${session.sessionId}`, session);
   }
-  return [...entries.values()].toSorted(newestFirst);
+  return [...entries.values()].toSorted(recentSessionsFirst);
 }
 
 function visibleProjects(projects: Workspace[], sessions: Record<string, WorkspaceSession[]>, query: string) {
@@ -387,7 +386,7 @@ export function Sidebar({
   onManageProject,
   reveal,
   onOpenSettings,
-  onOpenCommands,
+  onOpenSessionSearch,
   onOpenArchive,
   onOpenConversation,
   loadingSessions = false,
@@ -448,11 +447,10 @@ export function Sidebar({
           collapsed={collapsed}
           showOtherSessions={showOtherSessions}
           setShowOtherSessions={showOther}
-          onOpenCommands={onOpenCommands}
+          onOpenSessionSearch={onOpenSessionSearch}
           onOpenArchive={onOpenArchive}
         />
       </div>
-      <BackgroundConversations projects={projects} collapsed={collapsed} open={onOpenConversation} />
       <SidebarWorkspaces
         collapsed={collapsed}
         query={search}

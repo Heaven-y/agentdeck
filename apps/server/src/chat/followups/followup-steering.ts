@@ -62,11 +62,15 @@ export class FollowupSteering {
   private async dispatch(delivery: Delivery): Promise<void> {
     const { group, item, handle, turnId, assets } = delivery;
     const attachments = group.leases.get(item.clientMessageId)?.assets;
+    const text = this.deps.prepareSteerText
+      ? await this.deps.prepareSteerText(turnId, item.content!.text)
+      : item.content!.text;
+    this.assertActive(delivery);
     if (assets) group.runningAssets.push(assets);
     delivery.attempted = true;
     const result = await handle.steer!({
       clientMessageId: item.clientMessageId,
-      text: item.content!.text,
+      text,
       attachments: assets?.files,
       onAccepted: () => this.accept(group, item, turnId, attachments),
       attachmentsStored: assets ? (ids) => assets.stored(ids) : undefined,

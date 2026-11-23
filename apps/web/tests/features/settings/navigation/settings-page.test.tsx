@@ -42,8 +42,6 @@ function mockApi() {
     if (url.includes('/mcp'))
       return Response.json({ agent: 'claude', entries: [], sources: [], warnings: [], instances: [] });
     if (url.includes('/catalog')) return Response.json({ models: [], entries: [], warnings: [] });
-    if (url.includes('/session-tools/'))
-      return Response.json({ agent: url.split('/').at(-1), enabled: false, available: true, revision: 'missing' });
     return Response.json({ agent: 'claude', revision: 'missing', fields: [], warnings: [] });
   });
 }
@@ -57,12 +55,11 @@ it('设置直接展示管理分类，切换 CLI 后进入对应管理页且不�
   await screen.findByLabelText('默认 Agent');
   expect(screen.queryByRole('dialog')).toBeNull();
   const nav = screen.getByRole('navigation', { name: '设置分类' });
-  for (const name of ['通用设置', '模型与连接', 'Skills', 'MCP', '原生插件', '原生文件', '记忆', '运行环境'])
+  for (const name of ['通用设置', '快捷键', '模型与连接', 'Skills', 'MCP', '原生插件', '原生文件', '记忆', '运行环境'])
     expect(within(nav).getByRole('button', { name })).toBeTruthy();
   fireEvent.click(within(nav).getByRole('button', { name: '模型与连接' }));
   await screen.findByLabelText('Claude Code 模型设置');
   expect(screen.queryByRole('switch', { name: '会话引用' })).toBeNull();
-  expect(fetch.mock.calls.some(([url]) => (url as string).includes('/session-tools/'))).toBe(false);
   fireEvent.click(within(nav).getByRole('button', { name: 'Skills' }));
   await waitFor(() =>
     expect(fetch.mock.calls.some(([url]) => (url as string) === '/api/native-management/claude/skills')).toBe(true),
@@ -81,11 +78,11 @@ it('设置直接展示管理分类，切换 CLI 后进入对应管理页且不�
   await waitFor(() =>
     expect(fetch.mock.calls.some(([url]) => (url as string) === '/api/native-management/codex/mcp')).toBe(true),
   );
-  await screen.findByRole('region', { name: 'Codex 会话引用' });
-  expect(screen.getByRole('switch', { name: '会话引用' })).toBeTruthy();
+  expect(screen.queryByRole('switch', { name: '会话引用' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Antigravity' }));
-  await screen.findByRole('region', { name: 'Antigravity 会话引用' });
-  expect(fetch.mock.calls.some(([url]) => url === '/api/session-tools/antigravity')).toBe(true);
+  await waitFor(() =>
+    expect(fetch.mock.calls.some(([url]) => url === '/api/native-management/antigravity/mcp')).toBe(true),
+  );
 });
 it('记忆页只控制全局 Claude Auto Memory，其他 CLI 链接到原生文件', async () => {
   const fetch = mockApi();

@@ -50,13 +50,17 @@ it('自定义顶栏保留原生系统按钮和 File/Edit/View/Window 菜单角�
     autoHideMenuBar: false,
   });
   expect(applicationMenuTemplate('win32').map(({ id, role }) => ({ id, role }))).toEqual([
-    { id: 'file', role: 'fileMenu' },
+    { id: 'file', role: undefined },
     { id: 'edit', role: 'editMenu' },
     { id: 'view', role: 'viewMenu' },
     { id: 'window', role: 'windowMenu' },
   ]);
   expect(desktopChromeOptions('darwin')).toHaveProperty('titleBarStyle', 'hiddenInset');
   expect(applicationMenuTemplate('darwin')[0]?.role).toBe('appMenu');
+  expect(applicationMenuTemplate('win32')[0]?.submenu).toEqual([{ role: 'close', accelerator: 'Alt+F4' }]);
+  expect(applicationMenuTemplate('darwin').find(({ id }) => id === 'file')?.submenu).toEqual([
+    { role: 'close', accelerator: 'Command+Shift+W' },
+  ]);
 });
 
 it('菜单只接受具名入口，位置按页面缩放转换并限制在窗口内', async () => {

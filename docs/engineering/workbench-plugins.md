@@ -39,7 +39,7 @@ v1 页面关闭后卸载 iframe，持久设置保留。v2 首次打开页面或�
 
 v2 使用 `contributes.pages` 声明 `{id, title, location}`，location 为 `sidebar` 或 `settings`。两处入口均打开插件自己的页面，并通过上下文 `page` 告知入口身份；设置页入口返回设置。多个入口复用一个文档和运行状态。未提供 contributes 的旧插件保留一个侧栏主页面，显式空 pages 可提供纯后台操作。
 
-`commands` 的每项为 `{id, title, execution?, page?}`。execution 默认 `page`，可用 page 指定贡献页面；`background` 交付命令但保留当前页面。`contributes.actions` 用 `{command, location}` 把已有命令放入输入区的“扩展操作”，location 为 `composer` 或 `session`；同一组命令也可从快捷命令面板调用。宿主校验贡献 id、命令引用与页面引用。新增插件无需修改主应用的页面分支或命令表。
+`commands` 的每项为 `{id, title, execution?, page?}`。execution 默认 `page`，可用 page 指定贡献页面；`background` 交付命令但保留当前页面。`contributes.actions` 用 `{command, location}` 把已有命令放入输入区的“扩展操作”，location 为 `composer` 或 `session`；插件管理中的“操作”菜单提供该插件全部已声明命令。宿主校验贡献 id、命令引用与页面引用。新增插件无需修改主应用的页面分支或命令表。
 
 命令在文档就绪后仅交付一次，SDK 按顺序执行处理器。停用或更新清除未交付命令。命令携带触发时的工作台会话身份，草稿调用据此拒绝切换后的目标；读取草稿返回 revision，写入还核对会话和读取内容，避免覆盖用户新输入。插件编辑草稿后由用户发送。
 

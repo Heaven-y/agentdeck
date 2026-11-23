@@ -6,6 +6,14 @@ export const nativeCapabilitiesGeneration = (agent: AgentKind) => generations.ge
 /** 设置保存后阻止旧发现响应回填，并让下一次打开模型菜单重新读取。 */
 export async function invalidateNativeCapabilities(agent: AgentKind, client = queryClient) {
   generations.set(agent, nativeCapabilitiesGeneration(agent) + 1);
+  const usage = {
+    predicate: (query: { queryKey: readonly unknown[] }) =>
+      query.queryKey[0] === 'official-usage' &&
+      typeof query.queryKey[1] === 'string' &&
+      query.queryKey[1].startsWith(`${agent}:`),
+  };
+  await client.cancelQueries(usage);
+  client.removeQueries(usage);
   const filters = {
     predicate: (query: { queryKey: readonly unknown[] }) =>
       query.queryKey[0] === 'agent-capabilities' && query.queryKey[2] === agent,

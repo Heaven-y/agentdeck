@@ -74,6 +74,7 @@ export function useAgentSessionPages(agent: AgentKind, projectId: string, value:
 /** 固定三来源，项目增加不会再增加原生列表请求；正文始终按会话另读。 */
 export function useSessionPages(options: Options = {}) {
   const search = useSessionSearch(options.search);
+  const searching = search !== (options.search ?? '').trim();
   const scoped = { ...options, search };
   // 各来源的无限分页查询遵循 React 固定 Hook 顺序。新增 CLI 时由类型检查提示补接查询。
   const byAgent = {
@@ -88,7 +89,7 @@ export function useSessionPages(options: Options = {}) {
       for (const row of page.items) rows.set(`${row.agent}:${row.sessionId}`, row);
   return {
     sessions: [...rows.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
-    loading: options.enabled !== false && queries.some((query) => query.isPending),
+    loading: options.enabled !== false && (searching || queries.some((query) => query.isPending)),
     loadingMore: queries.some((query) => query.isFetchingNextPage),
     hasMore: queries.some((query) => query.hasNextPage),
     errors: AGENT_KINDS.flatMap((agent) => {

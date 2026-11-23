@@ -3,6 +3,7 @@ import {
   Blocks,
   Brain,
   FileCode2,
+  Keyboard,
   MonitorCheck,
   Plug,
   SlidersHorizontal,
@@ -13,6 +14,7 @@ import {
 import { isAgentKind, type AgentKind } from '@agentdeck/shared/conversation';
 import { EnvironmentReport } from '../environment/EnvironmentReport';
 import { GeneralSettingsPanel } from '../general/GeneralSettingsPanel';
+import { KeyboardShortcutsPanel } from '../general/KeyboardShortcutsPanel';
 import { ModelSettingsPanel } from '../models/ModelSettingsPanel';
 import { NativeMemorySettings } from '../resources/NativeMemorySettings';
 import type { NativeResourceCategory } from '../resources/NativeResourcesDialog';
@@ -59,6 +61,7 @@ const sections = {
     showAgent: false,
     render: ({ formGuard }) => <GeneralSettingsPanel guardRef={formGuard} />,
   },
+  shortcuts: { label: '快捷键', icon: Keyboard, showAgent: false, render: () => <KeyboardShortcutsPanel /> },
   models: {
     label: '模型与连接',
     icon: Sparkles,

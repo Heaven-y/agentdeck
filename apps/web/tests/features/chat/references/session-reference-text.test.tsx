@@ -6,10 +6,33 @@ import {
   sessionMarkdownUrl,
 } from '../../../../src/features/conversation/references/SessionReferenceText';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
+import { appendSessionReferenceContext } from '@agentdeck/shared/conversation';
 
 afterEach(() => {
   cleanup();
   window.history.replaceState(null, '', '/');
+  vi.unstubAllGlobals();
+});
+
+it('重读原生输入将引用说明收在详情，普通复制只取用户正文，完整输入仍可查看复制', () => {
+  const copy = vi.fn(() => Promise.resolve());
+  vi.stubGlobal('navigator', { clipboard: { writeText: copy } });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  const message = '请参考 agentdeck://session?workspace=p&agent=codex&id=s';
+  const text = appendSessionReferenceContext(message, ['原生记录：demo.jsonl']);
+  render(<MessageItem item={{ kind: 'user', id: 'native-input', text }} />);
+  expect(screen.queryByText('原生记录：demo.jsonl')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '复制消息内容' }));
+  expect(copy).toHaveBeenLastCalledWith(message);
+  fireEvent.click(screen.getByRole('button', { name: '引用记录' }));
+  expect(screen.getByRole('dialog', { name: '引用记录' }).textContent).toContain('原生记录：demo.jsonl');
+  fireEvent.click(screen.getByRole('button', { name: '复制原生输入' }));
+  expect(copy).toHaveBeenLastCalledWith(text);
 });
 
 it('助手 Markdown 与裸会话链接都可点击，代码中的引用保持代码', () => {

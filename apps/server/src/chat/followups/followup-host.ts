@@ -50,6 +50,7 @@ export type FollowupHostDeps = {
   active(id: string): { handle?: TurnHandle; blocked: boolean } | undefined;
   dispatch(owner: Socket, message: Send, source: { queueId: string; clientMessageId: string }): Promise<void>;
   validateSteer(id: string, assets: ChatAttachment[]): Promise<void>;
+  prepareSteerText?(id: string, text: string): Promise<string>;
   blocked?(owner: Socket, sessionId?: string): boolean;
   acquireWorkspace?(id: string): () => void;
 };

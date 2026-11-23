@@ -12,6 +12,34 @@ afterEach(async () => {
 });
 
 describe('能力目录路由', () => {
+  it('原生已确认的新会话可读模型，不等待历史索引，也不接受另一会话身份', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'capabilities-runtime-'));
+    directories.push(root);
+    const workspace = { id: 'project', name: '示例', dir: root };
+    const assertBelongs = vi.fn(async () => {
+      throw new SessionError(404, 'session_missing', '没有此会话');
+    });
+    const provider = vi.fn(async () => ({ models: [], entries: [], warnings: [] }));
+    const app = Fastify();
+    registerCapabilityRoutes(app, {
+      store: { get: async () => workspace },
+      capabilities: createCapabilitiesService({ antigravity: provider }),
+      sessions: { assertBelongs },
+      runtimeWorkspace: async (_workspace, session) => (session.sessionId === 'new-native' ? workspace : undefined),
+    });
+    try {
+      const url = '/api/workspaces/project/agent-capabilities?agent=antigravity&sessionId=new-native';
+      expect((await app.inject(url)).statusCode).toBe(200);
+      expect((await app.inject({ method: 'POST', url })).statusCode).toBe(200);
+      expect(assertBelongs).not.toHaveBeenCalled();
+      expect(provider).toHaveBeenCalledOnce();
+      const other = await app.inject(url.replace('new-native', 'other-native'));
+      expect(other.statusCode).toBe(404);
+      expect(assertBelongs).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
   it('限定工作区与Agent、禁止缓存，并对原生失败返回匿名错误', async () => {
     const ws = {
       id: 'workspace',

@@ -60,15 +60,6 @@ export function usePluginPages() {
     }
     return true;
   }
-  const commands = list
-    .filter((plugin) => plugin.enabled)
-    .flatMap((plugin) =>
-      plugin.manifest.commands.map((entry) => ({
-        id: `${plugin.manifest.id}:${entry.id}`,
-        label: entry.title,
-        run: () => run(plugin.manifest.id, entry.id),
-      })),
-    );
   const enabledPlugins = list.filter((plugin) => plugin.enabled);
   return {
     list,
@@ -85,7 +76,6 @@ export function usePluginPages() {
     selected: active?.manifest.id,
     show,
     command: command?.pluginId === id ? command : undefined,
-    commands,
     managerOpen,
     setManagerOpen,
   };

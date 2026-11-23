@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useChat } from '../../../../src/features/chat/state/chat-store';
 import { ConversationTabs } from '../../../../src/features/chat/tabs/ConversationTabs';
-import { BackgroundConversations } from '../../../../src/features/chat/tabs/BackgroundConversations';
+import { useWorkspaceSessions } from '../../../../src/features/sessions/list/workspace-sessions';
 import { sessionsApi } from '../../../../src/features/sessions/api';
 
 const projects = [
@@ -81,15 +81,17 @@ it('已有会话仅附件草稿关闭标签后仍可从后台找回，只有参�
     draftAttachments: [{ id: 'file', name: file.name, file }],
   });
   useChat.getState().closeConversationTab(id);
-  render(<BackgroundConversations projects={projects} collapsed={false} />);
-  fireEvent.click(screen.getByRole('button', { name: '返回附件草稿（草稿）' }));
+  const { result } = renderHook(() => useWorkspaceSessions({ one: [] }));
+  expect(result.current.one).toMatchObject([{ conversationId: id, activity: 'draft' }]);
+  act(() => useChat.getState().openConversation(id));
   expect(useChat.getState()).toMatchObject({ conversationId: id, sessionId: 'native-session' });
   expect(useChat.getState().draftAttachments[0]?.file).toBe(file);
   act(() => {
     useChat.getState().removeAttachment('file');
     useChat.getState().closeConversationTab(id);
   });
-  expect(screen.queryByRole('region', { name: '后台会话' })).toBeNull();
+  expect(result.current.one).toHaveLength(1);
+  expect(result.current.one?.[0]?.activity).toBeUndefined();
 });
 
 it('重排、归档及移除项目只改变对应标签，保留其他会话', async () => {

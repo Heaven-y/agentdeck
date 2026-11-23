@@ -33,12 +33,6 @@ import {
 } from './mcp-config';
 import { editMcpToml, patchMcpToml } from './mcp-toml';
 import { readMcpPlugins } from './mcp-plugins';
-import type { SessionToolsCommand } from '../../settings/session-tools/command';
-import {
-  ownsSessionToolsEntry,
-  SESSION_TOOLS_NAME,
-  sessionToolsEntryForAgent,
-} from '../../settings/session-tools/session-tools-format';
 
 export type McpWriteProject = NativeManagementProject & {
   reload(): Promise<NativeManagementProject | undefined>;
@@ -60,7 +54,6 @@ type Deps = {
   onChanged?(agent: AgentKind): void | Promise<void>;
   run?: ProcessRunner;
   plugins?(context: McpContext): Promise<McpPlugin[]>;
-  sessionToolsCommand?: SessionToolsCommand;
 };
 const adapters = {
   claude: claudeMcp,
@@ -144,18 +137,7 @@ export function createNativeMcpService(deps: Deps = {}) {
     const sources = await adapters[c.agent].sources(c);
     const entries = sources.flatMap((s) =>
       Object.entries(serverMap(s)).map(([name, config]) => {
-        const item = entry(c, s, name, object(config));
-        if (
-          s.scope === 'user' &&
-          name === SESSION_TOOLS_NAME &&
-          deps.sessionToolsCommand &&
-          ownsSessionToolsEntry(config, sessionToolsEntryForAgent(c.agent, deps.sessionToolsCommand))
-        ) {
-          item.managedBy = 'session-tools';
-          item.actions = { edit: false, delete: false, enable: false, disable: false };
-          item.reason = '请使用会话引用开关管理。';
-        }
-        return item;
+        return entry(c, s, name, object(config));
       }),
     );
     return { sources, entries };

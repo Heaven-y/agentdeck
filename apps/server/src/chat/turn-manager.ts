@@ -1,5 +1,6 @@
 // 轮次按 Agent 与原生会话隔离；耗时准备前先建立应用轮次，允许及时中断。
 import { randomUUID } from 'node:crypto';
+import { sameSessionDirectory } from '../agents/common/history/session-scope';
 import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import type {
   AgentEvent,
@@ -46,6 +47,7 @@ export type TurnManagerDeps = {
   capabilities?: Pick<CapabilitiesService, 'prepare'>;
   acquireWorkspace?: (id: string) => () => void;
   attachments?: AttachmentStore;
+  references?: { prepare(text: string, signal?: AbortSignal): Promise<string> };
   inputFeatures?(
     agent: AgentKind,
     input: AttachmentCapabilityInput,
@@ -93,6 +95,7 @@ function preparing<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export class TurnManager {
+  private nativeScopes = new Map<string, { projectId: string; projectDir: string; dir: string }>();
   readonly interactions = new InteractionHub();
   readonly followups: FollowupHost;
   readonly tasks: RuntimeTasks;
@@ -112,6 +115,12 @@ export class TurnManager {
     });
     this.followups = new FollowupHost({
       attachments: deps.attachments,
+      prepareSteerText: async (id, text) => {
+        const turn = this.turns.get(id);
+        if (!turn || turn.controller.signal.aborted)
+          throw new SessionError(409, 'followup_conflict', '本轮已结束，输入已保留。');
+        return this.prepareReferenceText(text, turn.controller.signal);
+      },
       acquireWorkspace: (id) => deps.acquireWorkspace?.(id) ?? (() => {}),
       send: (owner, message) => this.send(owner, message),
       active: (id) => {
@@ -154,6 +163,13 @@ export class TurnManager {
       this.sessions.has(sessionKey(session.agent, session.sessionId)) ||
       this.tasks.busy(session.agent, session.sessionId)
     );
+  }
+
+  /** 原生运行时已返回的身份不等待历史索引；这里只用于读取能力，不授权历史或管理操作。 */
+  async capabilityWorkspace(ws: Workspace, session: SessionRef): Promise<Workspace | undefined> {
+    const scope = this.nativeScopes.get(sessionKey(session.agent, session.sessionId));
+    if (scope?.projectId !== ws.id || !(await sameSessionDirectory(scope.projectDir, ws.dir))) return;
+    return { ...ws, dir: scope.dir };
   }
 
   /** 重启边界覆盖环境解析之前的项目/归属/能力准备，并排斥同时进入的新回合。 */
@@ -294,6 +310,7 @@ export class TurnManager {
 
   /** 退出后端时停止本进程拥有的轮次，并关闭长驻运行时。 */
   async dispose(): Promise<void> {
+    this.nativeScopes.clear();
     this.stopping = true;
     this.followups.dispose();
     this.interactions.dispose();
@@ -425,7 +442,22 @@ export class TurnManager {
       return false;
     }
     this.deps.sessions.invalidate?.(turn.agent);
-    return this.bindSession(turn, event.sessionId);
+    if (!this.bindSession(turn, event.sessionId)) return false;
+    this.rememberNativeScope(turn, event);
+    return true;
+  }
+
+  private rememberNativeScope(turn: Turn, event: Extract<AgentEvent, { type: 'session' }>): void {
+    if (turn.workspace && turn.input && event.cwd === turn.workspace.dir) {
+      const key = sessionKey(turn.agent, event.sessionId);
+      this.nativeScopes.delete(key);
+      this.nativeScopes.set(key, {
+        projectId: turn.workspaceId,
+        projectDir: turn.input.projectDir ?? turn.workspace.dir,
+        dir: turn.workspace.dir,
+      });
+      if (this.nativeScopes.size > 512) this.nativeScopes.delete(this.nativeScopes.keys().next().value!);
+    }
   }
 
   private permission(turn: Turn, req: Parameters<AgentTurnInput['requestPermission']>[0]): Promise<PermissionAnswer> {
@@ -538,6 +570,10 @@ export class TurnManager {
     if (this.sessions.has(sessionKey(msg.agent, msg.sessionId))) return '该会话正在运行';
   }
 
+  private prepareReferenceText(text: string, signal: AbortSignal): Promise<string> {
+    return this.deps.references ? preparing(this.deps.references.prepare(text, signal), signal) : Promise.resolve(text);
+  }
+
   private async prepare(turn: Turn, msg: Send): Promise<void> {
     const { signal } = turn.controller;
     let ws = await preparing(this.deps.getWorkspace(msg.workspaceId), signal);
@@ -555,6 +591,7 @@ export class TurnManager {
     const prepared = this.deps.capabilities
       ? await preparing(this.deps.capabilities.prepare(ws, turn.agent, msg, signal), signal)
       : { text: msg.text, invocation: undefined };
+    const preparedText = await this.prepareReferenceText(prepared.text, signal);
     signal.throwIfAborted();
     const runner = this.runners[turn.agent];
     if (!runner) throw new SessionError(503, 'agent_unavailable', '当前 Agent 适配器不可用');
@@ -566,7 +603,7 @@ export class TurnManager {
       reasoningEffort: msg.reasoningEffort,
       collaborationMode: msg.collaborationMode,
       permission,
-      text: prepared.text,
+      text: preparedText,
       clientMessageId: nativeInputId(msg.clientTurnId),
       onInputAccepted: () => this.followups.accepted(turn.id),
       invocation: prepared.invocation,

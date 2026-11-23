@@ -1,4 +1,5 @@
-import { Brain, Check, ChevronRight, CircleAlert, Copy, X } from 'lucide-react';
+import { Brain, Check, ChevronRight, CircleAlert, Copy, Link, X } from 'lucide-react';
+import { splitSessionReferenceContext } from '@agentdeck/shared/conversation';
 import { memo, useEffect, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import type { ChatItem } from '../model/conversation-events';
@@ -16,6 +17,41 @@ import {
 import { sessionRemarkPlugins } from '../references/session-reference-markdown';
 import { isConversationControl, useConversationSurface, type ConversationError } from '../ConversationSurface';
 import { ConversationControlView } from './ConversationControlView';
+import { DetailDialog } from '../../../ui/DetailDialog';
+
+function UserMessage({ item }: { item: Extract<ChatItem, { kind: 'user' }> }) {
+  const [details, setDetails] = useState(false);
+  const { message, context } = splitSessionReferenceContext(item.text);
+  return (
+    <div className="group/msg flex flex-col items-end gap-1">
+      <div className="conversation-user">
+        <SessionReferenceText text={message} />
+        <MessageAttachments attachments={item.attachments} />
+      </div>
+      <div className="flex items-center gap-3">
+        {context && (
+          <button
+            type="button"
+            onClick={() => setDetails(true)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Link aria-hidden className="size-3" />
+            引用记录
+          </button>
+        )}
+        <CopyTextButton text={message} label="复制消息内容" />
+      </div>
+      {details && context && (
+        <DetailDialog title="引用记录" onClose={() => setDetails(false)}>
+          <div className="space-y-3">
+            <p className="text-sm leading-6 whitespace-pre-wrap break-words">{context}</p>
+            <CopyTextButton text={item.text} label="复制原生输入" />
+          </div>
+        </DetailDialog>
+      )}
+    </div>
+  );
+}
 
 type CopyState = 'idle' | 'copied' | 'failed';
 function copyFeedback(state: CopyState, label: string) {
@@ -126,15 +162,7 @@ export const MessageItem = memo(function MessageItem({
   if (isConversationControl(item)) return <ConversationControlView item={item} />;
   switch (item.kind) {
     case 'user':
-      return (
-        <div className="group/msg flex flex-col items-end gap-1">
-          <div className="conversation-user">
-            <SessionReferenceText text={item.text} />
-            <MessageAttachments attachments={item.attachments} />
-          </div>
-          <CopyTextButton text={item.text} label="复制消息内容" />
-        </div>
-      );
+      return <UserMessage item={item} />;
     case 'assistant':
       return <AssistantMessage item={item} />;
     case 'reasoning':

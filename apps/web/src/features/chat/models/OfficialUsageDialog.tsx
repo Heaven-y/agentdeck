@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OfficialUsage } from '@agentdeck/shared/conversation';
 import { request } from '../../../lib/http';
 import { DetailDialog } from '../../../ui/DetailDialog';
@@ -6,54 +7,47 @@ import { buttonClass } from '../../../ui/styles';
 
 type State = {
   scope: string;
-  controller: AbortController;
   loading: boolean;
   report?: OfficialUsage;
   error?: string;
 };
 
-/** 仅用户点击时读；退出、切连接或关闭当前聊天后丢弃在途请求。 */
+/** 账号连接共用短期缓存；关闭只取消请求，保留上次结果供再次查看。 */
 export function useOfficialUsage(scope: string | undefined, endpoint?: string) {
-  const pending = useRef<AbortController | undefined>(undefined);
-  const [state, setState] = useState<State>();
-  useEffect(() => () => pending.current?.abort(), [scope]);
-  const view = state?.scope === scope && !state?.controller.signal.aborted ? state : undefined;
+  const client = useQueryClient();
+  const [openedScope, setOpenedScope] = useState<string>();
+  const key = ['official-usage', scope] as const;
+  const query = useQuery<OfficialUsage>({ queryKey: key, queryFn: skipToken, retry: false, gcTime: 10 * 60_000 });
+  useEffect(
+    () => () => {
+      void client.cancelQueries({ queryKey: ['official-usage', scope], exact: true });
+    },
+    [client, scope],
+  );
+  const view: State | undefined =
+    scope && openedScope === scope
+      ? {
+          scope,
+          loading: query.isFetching || (!query.data && !query.error),
+          report: query.data,
+          error: query.error?.message,
+        }
+      : undefined;
   function close() {
-    pending.current?.abort();
-    setState(undefined);
+    void client.cancelQueries({ queryKey: key, exact: true });
+    setOpenedScope(undefined);
   }
   function read() {
     if (!scope || !endpoint) return;
-    pending.current?.abort();
-    const controller = new AbortController();
-    pending.current = controller;
-    setState((previous) => ({
-      scope,
-      controller,
-      loading: true,
-      report: previous?.scope === scope ? previous.report : undefined,
-    }));
-    void request<OfficialUsage>(endpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      cache: 'no-store',
-    }).then(
-      (report) => {
-        if (!controller.signal.aborted) setState({ scope, controller, loading: false, report });
-      },
-      (cause: unknown) => {
-        if (controller.signal.aborted) return;
-        setState((current) =>
-          current?.controller === controller
-            ? {
-                ...current,
-                loading: false,
-                error: cause instanceof Error ? cause.message : '暂时无法读取官方额度。',
-              }
-            : current,
-        );
-      },
-    );
+    setOpenedScope(scope);
+    void client
+      .fetchQuery({
+        queryKey: key,
+        queryFn: ({ signal }) => request<OfficialUsage>(endpoint, { method: 'POST', signal, cache: 'no-store' }),
+        staleTime: openedScope === scope || query.isError ? 0 : 60_000,
+        retry: false,
+      })
+      .catch(() => undefined);
   }
   return { view, close, read };
 }
@@ -61,19 +55,19 @@ export function useOfficialUsage(scope: string | undefined, endpoint?: string) {
 const percent = new Intl.NumberFormat('zh-CN', { style: 'percent', maximumFractionDigits: 1 });
 const time = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
 function remainingLabel(fraction?: number) {
-  if (fraction === undefined) return '剩余未报告';
+  if (fraction === undefined) return '—';
   return fraction > 0 && fraction < 0.001 ? '<0.1%' : percent.format(fraction);
 }
 function resetLabel(at?: string) {
   const stamp = at ? Date.parse(at) : NaN;
-  return Number.isFinite(stamp) ? `重置：${time.format(stamp)}` : '重置时间未报告';
+  return Number.isFinite(stamp) ? `重置：${time.format(stamp)}` : '';
 }
 function UsageGroups({ groups }: { groups: OfficialUsage['groups'] }) {
   if (!groups.length) return <p role="status">暂无额度数据。</p>;
   return groups.map((group, index) => (
     <section key={`${group.name}-${index}`} className="space-y-2 rounded-xl border border-border p-3">
       <h3 className="break-words font-medium">{group.name}</h3>
-      {!group.buckets.length && <p className="text-xs text-muted-foreground">未报告额度详情。</p>}
+      {!group.buckets.length && <p className="text-xs text-muted-foreground">—</p>}
       <dl className="space-y-2">
         {group.buckets.map((bucket, position) => (
           <div key={`${bucket.id}-${position}`} className="flex items-start justify-between gap-3">

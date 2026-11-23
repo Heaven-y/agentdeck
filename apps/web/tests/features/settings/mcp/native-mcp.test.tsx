@@ -55,7 +55,6 @@ afterEach(async () => {
   queryClient.clear();
   vi.restoreAllMocks();
 });
-const sessionStatus = (enabled = false) => ({ agent: 'codex', enabled, available: true, revision: 'original' });
 it('MCP 密钥草稿在统一导航与局部取消时确认放弃，保存期间阻止离开', async () => {
   const guards: SettingsNavigation = new Map();
   const close = vi.fn();
@@ -97,7 +96,6 @@ it('列表不隐式检查连接，秘密为空白，保存冲突保留草稿和�
   const calls: Array<{ url: string; body?: unknown }> = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     calls.push({ url: input as string, body: init?.body ? JSON.parse(init.body as string) : undefined });
-    if ((input as string).includes('/session-tools/')) return Response.json(sessionStatus());
     return init?.method === 'POST'
       ? Response.json({ message: '原生文件已被其他操作修改' }, { status: 409 })
       : Response.json({ ...catalog, instances: [] });
@@ -158,7 +156,6 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
     const url = input as string,
       body = init?.body ? JSON.parse(init.body as string) : undefined;
     calls.push({ url, body });
-    if (url.includes('/session-tools/')) return Response.json(sessionStatus());
     if (init?.method === 'POST')
       return Response.json({
         instanceId,
@@ -216,26 +213,17 @@ it('选择子目录实例先保护草稿，再重读对应目录并绑定控制'
   fireEvent.click(screen.getByRole('button', { name: '重载所选会话的 MCP' }));
   await waitFor(() => expect(calls.at(-1)?.body).toMatchObject({ action: 'reconnect', instanceId }));
 });
-it('专用开关与 MCP 目录双向刷新，自有配置不重复展示且同名项目配置仍可管理', async () => {
-  let enabled = true;
+it('MCP 页面只呈现原生目录，同名项目配置仍按工作区管理', async () => {
   const calls: string[] = [];
-  const managed = { ...catalog.entries[0]!, name: 'agentdeck_sessions', managedBy: 'session-tools' };
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = input as string;
     calls.push(url);
-    if (url.includes('/session-tools/')) {
-      if (init?.method === 'PUT') enabled = JSON.parse(init.body as string).enabled;
-      return Response.json(sessionStatus(enabled));
-    }
     if (url.includes('/native-resources/'))
       return Response.json({ agent: 'codex', entries: [], roots: [], warnings: [], guidance: [] });
     return Response.json({
       ...catalog,
       instances: [],
-      entries: [
-        ...(enabled ? [managed] : []),
-        { ...catalog.entries[0], id: 'project-entry', name: 'agentdeck_sessions', scope: 'project' },
-      ],
+      entries: [catalog.entries[0], { ...catalog.entries[0], id: 'project-entry', scope: 'project' }],
     });
   });
   render(
@@ -248,23 +236,12 @@ it('专用开关与 MCP 目录双向刷新，自有配置不重复展示且同�
       onBack={vi.fn()}
     />,
   );
-  const toggle = await screen.findByRole<HTMLButtonElement>('switch', { name: '会话引用' });
-  await waitFor(() => expect(toggle.disabled).toBe(false));
-  expect(await screen.findByText('暂无 MCP 配置。')).toBeTruthy();
-  expect(screen.queryByText('agentdeck_sessions')).toBeNull();
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
-  await waitFor(() =>
-    expect(calls.filter((url) => url === '/api/native-management/codex/mcp').length).toBeGreaterThan(1),
-  );
-  expect(screen.queryByText('agentdeck_sessions')).toBeNull();
-  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await screen.findByRole('button', { name: catalog.entries[0]!.name });
+  expect(screen.queryByRole('switch', { name: '会话引用' })).toBeNull();
   expect(screen.queryByText(/更多操作|重新读取目录/)).toBeNull();
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
   fireEvent.click(screen.getByRole('button', { name: '工作区' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'agentdeck_sessions' }));
-  expect(screen.getAllByRole('button', { name: '编辑 agentdeck_sessions' })).toHaveLength(1);
+  fireEvent.click(await screen.findByRole('button', { name: catalog.entries[0]!.name }));
+  expect(screen.getAllByRole('button', { name: `编辑 ${catalog.entries[0]!.name}` })).toHaveLength(1);
   expect(calls).toContain('/api/native-management/codex/mcp?projectId=demo');
   expect(calls.some((url) => url.includes('/native-resources/'))).toBe(false);
 });

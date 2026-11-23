@@ -100,6 +100,20 @@ export async function assertCodexSession(id: string, dir: string, options: Codex
   });
 }
 
+/** 只取原生线程报告的磁盘位置，不载入 turns，也不推测 rollout 文件名。 */
+export async function codexSessionRecordPath(
+  id: string,
+  dir: string,
+  options: CodexRuntimeOptions = {},
+): Promise<string> {
+  return withClient(dir, options, async (client) => {
+    const thread = await checkedThread(client, id, dir);
+    const file = text(thread.path);
+    if (!file) throw new SessionError(503, 'session_record_unavailable', 'Codex 未提供此会话的原生记录路径。');
+    return file;
+  });
+}
+
 export async function readCodexSession(
   id: string,
   dir: string,

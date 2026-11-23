@@ -108,7 +108,6 @@ it('点击安装先检查并使用新revision提交，关闭再打开恢复任�
   });
   client.setQueryData(['environment'], { checkedAt: 1 });
   client.setQueryData(['agent-capabilities', 'demo', 'claude'], { models: [] });
-  client.setQueryData(['session-tools', 'claude'], { enabled: true });
   const generation = nativeCapabilitiesGeneration('claude');
   const first = mount();
   const install = await screen.findByRole('button', { name: '安装' });
@@ -144,7 +143,6 @@ it('点击安装先检查并使用新revision提交，关闭再打开恢复任�
     currentVersion: '2.0.0',
   });
   expect(client.getQueryData(['agent-capabilities', 'demo', 'claude'])).toBeUndefined();
-  expect(client.getQueryState(['session-tools', 'claude'])?.isInvalidated).toBe(true);
   expect(nativeCapabilitiesGeneration('claude')).toBe(generation + 1);
   const reads = fetchMock.mock.calls.length;
   await act(async () => {
@@ -159,7 +157,6 @@ it('点击安装先检查并使用新revision提交，关闭再打开恢复任�
 it('安装部分改变文件后失败也刷新环境和能力，普通查新失败不刷新', async () => {
   client.setQueryData(['environment'], { checkedAt: 1 });
   client.setQueryData(['agent-capabilities', 'demo', 'claude'], { models: [] });
-  client.setQueryData(['session-tools', 'claude'], { enabled: true });
   const generation = nativeCapabilitiesGeneration('claude');
   fetchMock.mockResolvedValueOnce(json({ ...newer, phase: 'failed', operationId: null, message: '检查新版失败。' }));
   const first = mount();
@@ -174,7 +171,6 @@ it('安装部分改变文件后失败也刷新环境和能力，普通查新失�
   await screen.findByText('安装后的兼容性检查未通过。');
   await waitFor(() => expect(client.getQueryState(['environment'])?.isInvalidated).toBe(true));
   expect(client.getQueryData(['agent-capabilities', 'demo', 'claude'])).toBeUndefined();
-  expect(client.getQueryState(['session-tools', 'claude'])?.isInvalidated).toBe(true);
   expect(nativeCapabilitiesGeneration('claude')).toBe(generation + 1);
 });
 

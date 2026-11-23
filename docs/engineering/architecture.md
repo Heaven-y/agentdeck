@@ -44,7 +44,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与「�
 | `apps/server/src/bootstrap` | 静态组装 CLI 服务、插件宿主和清理钩子；server.ts 只管理启动生命周期 |
 | `apps/server/src/agents/{claude,codex,antigravity}` | 各 CLI 协议、历史、能力与 configuration；common 存契约辅助及同步目录归属规则 |
 | `apps/server/src/chat`、`sessions` | 回合与恢复缓存、能力目录、会话服务、归档和权限偏好 |
-| `apps/server/src/session-tools` | stdio 只读会话 MCP、原生历史根、签名分页与脱敏错误 |
+| `apps/server/src/sessions/references.ts` | 定位引用的原生记录并附加读取说明；AGY 原生范围读取另有只读进程入口 |
 | `apps/server/src/workspaces`、`settings` | 项目、产品偏好、原生文件与配置事务协调 |
 | `apps/server/src/platform/{files,process,secrets}` | 安全文件读写、文件事务、TOML 修改、子进程和 Windows DPAPI |
 | `apps/server/src/plugins` | 通用插件注册状态、包校验、权限、原生只读服务、后端生命周期和存储 |
@@ -79,7 +79,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与「�
 
 原生页在同一浏览页面读取批次内复用：最多 32 页或 4 MiB，按最近使用淘汰已完成页，正文不入缓存。同页并发订阅独立取消，全部离开才取消底层请求。重开页面使用新的读取标识，避免复用外部 CLI 操作前的旧首页；运行首次绑定 id、回合收尾及管理操作按来源作废缓存。投影游标包含来源代次与查询/项目配置指纹，失效后前端回到首屏，不合并新旧分页。项目改名、换目录、移除后也更新搜索查询；非活跃页面查询保留 10 分钟，失效摘要不再用于项目忙态判断。
 
-旧项目列表和全量来源接口保留兼容；其十万条检查只作结果超限保护，主页面、归档、其他目录和命令面板不再通过该路径全量读取。正文仍仅在选中会话后读取。
+旧项目列表和全量来源接口保留兼容；其十万条检查只作结果超限保护，主页面、归档、其他目录和会话搜索不再通过该路径全量读取。正文仍仅在选中会话后读取。
 
 单条读取、续接和管理先核实原生目录，再验证其唯一项目归属。项目包含子目录时，运行器与能力刷新使用会话的真实目录，不能替换为项目根；Antigravity 多目录摘要没有唯一归属则拒绝续接。
 
@@ -210,7 +210,6 @@ API 和 WebSocket 继续校验会话及来源；鉴权同时检查实际匹配�
 | 插件 | `/api/plugins/*`，安装注册、启停、页面、后端请求、授权宿主服务与设置存储 |
 | 对话 | `/ws`，先进行 `connection.resume` 握手，再有序补收或发送会话操作 |
 | CLI 维护 | `/api/settings/cli-installation/:agent` 读取本机状态，`/check` 查新，`/operations` 安装、更新或修复。详见[程序版本管理](native-configuration.md#cli-程序版本管理) |
-| 会话引用工具 | `/api/session-tools/:agent`，只读 MCP 的登记状态、启停与原生配置事务 |
 
 会话正文和管理只使用项目路径，全局发现不提供正文或写入入口；`/api/sessions/archived?agent=...` 汇总各来源的归档，恢复和删除仍走项目身份校验；旧工作区会话别名返回 404。会话接口在进入解析前设置 no-store，写入确认和原生会话锁仍由服务层维护。前端构建由 Fastify 托管，接口路径不回退为 HTML。
 
