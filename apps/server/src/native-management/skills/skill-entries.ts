@@ -1,8 +1,17 @@
 import path from 'node:path';
+import { parse } from 'yaml';
 import type { NativeSkillEntry } from '@agentdeck/shared/settings';
 import { NativeResourceError, resourceError } from '../../agents/common/configuration/errors';
 import { resourceId } from '../../agents/common/configuration/resources';
-import { contentRevision, decodeUtf8, MAX_CONFIG_BYTES } from '../../platform/files/safe-file';
+import {
+  assertDirectoryUnchanged,
+  contentRevision,
+  decodeUtf8,
+  inspectDirectory,
+  MAX_CONFIG_BYTES,
+  readConfigFile,
+} from '../../platform/files/safe-file';
+import type { LinkedSkill } from '../../settings/resources/native-resources-discovery';
 import { snapshotSkillTree } from './skill-tree';
 import {
   enabledState,
@@ -26,14 +35,46 @@ export function indexNativeSkillPaths(skills: NativeSkill[]) {
   return byPath;
 }
 
-function nameFrom(content: string, fallback: string) {
-  const front = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content)?.[1];
-  const value = front
-    ?.match(/^name:\s*([^\r\n]+)$/m)?.[1]
-    ?.trim()
-    .replace(/^(['"])(.*)\1$/, '$2');
-  if (!value || value.length > 200 || /[\s/\\]/.test(value)) return fallback;
-  return [...value].some((character) => character.charCodeAt(0) < 32) ? fallback : value;
+function frontmatterFields(content: string): Record<string, unknown> {
+  const frontmatter = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(content)?.[1];
+  if (!frontmatter) return {};
+  try {
+    const fields: unknown = parse(frontmatter, { maxAliasCount: 0, logLevel: 'silent' });
+    if (fields && typeof fields === 'object') return fields as Record<string, unknown>;
+  } catch {
+    // 无效的头部保留目录名，不读取正文推断简介。
+  }
+  return {};
+}
+function validSkillName(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value.length > 200 || /[\s/\\]/u.test(value)) return false;
+  return [...value].every((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127);
+}
+export function skillMetadata(content: string, fallback: string) {
+  const { name, description } = frontmatterFields(content);
+  return {
+    name: validSkillName(name) ? name : fallback,
+    description: typeof description === 'string' ? description.trim().slice(0, 4096) : '',
+  };
+}
+
+export async function claudeLinkedEntry(
+  context: SkillContext,
+  { alias, file }: LinkedSkill,
+): Promise<SkillRecord | undefined> {
+  const parents = await inspectDirectory(path.dirname(file));
+  if (!parents) return;
+  const snapshot = await readConfigFile(file);
+  await assertDirectoryUnchanged(parents);
+  if (snapshot.revision === 'missing') return;
+  return nativeSkillEntry(context, {
+    ...skillMetadata(snapshot.content, path.basename(path.dirname(alias.file))),
+    path: alias.file,
+    scope: alias.scope,
+    origin: 'external',
+    source: alias.displayPath,
+    fileOnly: true,
+  });
 }
 async function localSnapshot(file: string) {
   const directory = path.dirname(file);
@@ -43,9 +84,9 @@ async function localSnapshot(file: string) {
     const skill = items.find((item) => item.path === 'SKILL.md');
     if (!skill) throw new NativeResourceError('resource_missing');
     if (skill.data.length > MAX_CONFIG_BYTES) throw new NativeResourceError('too_large');
-    return { name: nameFrom(decodeUtf8(skill.data), fallback), treeRevision: revision };
+    return { ...skillMetadata(decodeUtf8(skill.data), fallback), treeRevision: revision };
   } catch (error) {
-    return { name: fallback, treeRevision: 'unreadable', reason: resourceError(error).message };
+    return { name: fallback, description: '', treeRevision: 'unreadable', reason: resourceError(error).message };
   }
 }
 
@@ -124,7 +165,7 @@ export async function localSkillEntry(
         ]),
       ),
     ),
-    description: nativeSkill?.description ?? '',
+    description: conflict ? '' : nativeSkill?.description || snapshot.description || '',
   };
   return { entry, file, treeRevision: snapshot.treeRevision, nativeSkill };
 }

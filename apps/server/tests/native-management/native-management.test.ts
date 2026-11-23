@@ -49,6 +49,74 @@ async function fixture() {
   return { homeDir, project, service, adapters, native, changed, skill };
 }
 
+it('Claude 已登记的目录链接有原始简介和独立作用域，不跟随项目外链接或开放原文改写', async () => {
+  const { service, skill, project, homeDir } = await fixture();
+  const user = await skill('.store/global', 'global-skill');
+  const workspace = await skill('project/.agents/skills/local', 'local-skill');
+  await writeFile(workspace, '---\nname: local-skill\ndescription: >-\n  项目技能\n  多行简介\n---\n不要显示的正文');
+  await skill('project/.agents/skills/local/references/demo', 'not-a-skill');
+  const link = async (base: string, name: string, file: string) => {
+    const root = path.join(base, '.claude/skills');
+    await mkdir(root, { recursive: true });
+    await symlink(path.dirname(file), path.join(root, name), 'junction');
+  };
+  await link(homeDir, 'global-skill', user);
+  await link(project.dir, 'local-skill', workspace);
+  await link(project.dir, 'outside', user);
+  const result = await service.readSkills('claude', project);
+  expect(result.entries.map((entry) => entry.name).sort()).toEqual(['global-skill', 'local-skill']);
+  const entry = result.entries.find((item) => item.name === 'local-skill')!;
+  expect(entry).toMatchObject({
+    scope: 'project',
+    description: '项目技能 多行简介',
+    fileOnly: true,
+    actions: { edit: false, delete: false, states: [] },
+  });
+  expect(entry).not.toHaveProperty('resourceId');
+  await expect(
+    service.changeSkill(
+      'claude',
+      { id: entry.id, revision: entry.revision, action: 'delete', confirmation: entry.name },
+      project,
+    ),
+  ).rejects.toMatchObject({ code: 'unsupported_action' });
+  expect(
+    (await createNativeResourcesService({ homeDir, env: {} }).list('claude', project)).entries.some(
+      (item) => item.displayPath === entry.source,
+    ),
+  ).toBe(false);
+});
+
+it('Codex 按真实目录归并原生子技能，同名独立技能与其他来源仍保留', async () => {
+  const { service, skill, native, homeDir, project } = await fixture();
+  const bundle = await skill('.store/bundle', 'bundle');
+  const child = await skill('.store/bundle/skills/child', 'child');
+  const independent = await skill('project/.agents/skills/child', 'child');
+  for (const relative of ['.agents/skills', '.codex/skills']) {
+    const root = path.join(homeDir, relative);
+    await mkdir(root, { recursive: true });
+    await symlink(path.dirname(bundle), path.join(root, 'bundle'), 'junction');
+  }
+  const alias = path.join(homeDir, '.codex/skills/bundle');
+  native.mockResolvedValue([
+    { name: 'bundle', path: bundle, scope: 'user' },
+    { name: 'bundle', path: path.join(alias, 'SKILL.md'), scope: 'user' },
+    { name: 'child', path: child, scope: 'user' },
+    { name: 'alias-child', path: path.join(alias, 'skills/alias-child/SKILL.md'), scope: 'user' },
+    { name: 'child', path: independent, scope: 'project' },
+    { name: 'plug:child', path: child, scope: 'user', origin: 'plugin' },
+  ]);
+  const { entries } = await service.readSkills('codex', project);
+  const parent = entries.filter((entry) => entry.name === 'bundle');
+  expect(parent).toHaveLength(1);
+  expect(entries.filter((entry) => entry.parentSkillId === parent[0]!.id).map((entry) => entry.name)).toEqual([
+    'child',
+    'alias-child',
+  ]);
+  expect(entries.find((entry) => entry.scope === 'project')?.parentSkillId).toBeUndefined();
+  expect(entries.find((entry) => entry.origin === 'plugin')?.parentSkillId).toBeUndefined();
+});
+
 it('Claude 同名来源身份独立，四态设置明确写入所选作用域，默认继承不会被 on 替代', async () => {
   const { service, skill, project, homeDir } = await fixture();
   await skill('.claude/skills/demo');
@@ -60,7 +128,7 @@ it('Claude 同名来源身份独立，四态设置明确写入所选作用域，
   const list = await service.readSkills('claude', project);
   expect(new Set(list.entries.map((e) => e.id)).size).toBe(2);
   const entry = list.entries.find((e) => e.scope === 'project')!;
-  expect(entry.description).toBe('');
+  expect(entry.description).toBe('测试技能');
   expect(entry.actions.states).toEqual(['inherit', 'on', 'name-only', 'user-invocable-only', 'off']);
   await service.changeSkill(
     'claude',

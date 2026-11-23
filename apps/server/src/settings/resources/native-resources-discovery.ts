@@ -1,10 +1,11 @@
 import type { NativeResource, NativeResourceRoot } from '@agentdeck/shared/settings';
 import type { Dirent } from 'node:fs';
-import { lstat, opendir } from 'node:fs/promises';
+import { lstat, opendir, readlink } from 'node:fs/promises';
 import path from 'node:path';
 import { NativeResourceError, resourceError } from '../../agents/common/configuration/errors';
 import {
   makeResourceTarget,
+  resourcePathKey,
   type ResourceContext,
   type ResourcePlan,
   type ResourceRoot,
@@ -60,12 +61,45 @@ export async function describeRoot(root: ResourceRoot): Promise<NativeResourceRo
   }
 }
 
+export type LinkedSkill = { alias: ResourceTarget; file: string };
+
+function within(root: string, directory: string) {
+  const relative = path.relative(resourcePathKey(root), resourcePathKey(directory));
+  return !!relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+/** 目录链接只作为清单来源：不跟随链式链接，不读取工作区外的目标，也不授权文件操作。 */
+async function linkedSkill(
+  context: ResourceContext,
+  scan: ResourceScan,
+  name: string,
+): Promise<LinkedSkill | undefined> {
+  const roots =
+    scan.scope === 'project' && context.project
+      ? [context.project.dir]
+      : scan.scope === 'user'
+        ? [context.homeDir, path.dirname(scan.directory)]
+        : [];
+  if (!roots.length) return;
+  const directory = path.join(scan.directory, name);
+  const target = path.resolve(scan.directory, await readlink(directory));
+  if (!roots.some((root) => within(root, target))) return;
+  const parents = await inspectDirectory(target);
+  if (!parents) return;
+  const file = path.join(target, 'SKILL.md');
+  const stat = await optionalStat(file);
+  await assertDirectoryUnchanged(parents);
+  if (!stat?.isFile() || stat.size > MAX_CONFIG_BYTES) return;
+  return { alias: makeResourceTarget(context.agent, scan, path.join(name, 'SKILL.md'), { kind: 'skills' }), file };
+}
+
 export async function discoverResources(context: ResourceContext, plan: ResourcePlan, only?: 'skills') {
   const targets = new Map(plan.targets.map((target) => [target.id, target]));
   const warnings = new Set<string>();
+  const linkedSkills: LinkedSkill[] = [];
   let remaining = MAX_DISCOVERY_ENTRIES;
 
-  async function eachEntry(directory: string, visit: (entry: Dirent) => Promise<void>) {
+  async function eachEntry(directory: string, visit: (entry: Dirent) => Promise<void>, links = false) {
     try {
       const parents = await inspectDirectory(directory);
       if (!parents) return;
@@ -75,7 +109,7 @@ export async function discoverResources(context: ResourceContext, plan: Resource
           warnings.add('目录内容较多，已达到本次扫描上限；可使用原生 CLI 查看其他资源。');
           break;
         }
-        if (entry.isSymbolicLink()) continue;
+        if (!links && entry.isSymbolicLink()) continue;
         await visit(entry);
       }
       await assertDirectoryUnchanged(parents);
@@ -101,9 +135,17 @@ export async function discoverResources(context: ResourceContext, plan: Resource
   }
 
   async function skillFiles(scan: ResourceScan) {
-    await eachEntry(scan.directory, async (entry) => {
-      if (entry.isDirectory()) await addExisting(scan, path.join(entry.name, 'SKILL.md'), 'skills');
-    });
+    await eachEntry(
+      scan.directory,
+      async (entry) => {
+        if (entry.isDirectory()) await addExisting(scan, path.join(entry.name, 'SKILL.md'), 'skills');
+        else if (only === 'skills' && entry.isSymbolicLink()) {
+          const link = await linkedSkill(context, scan, entry.name).catch(() => undefined);
+          if (link) linkedSkills.push(link);
+        }
+      },
+      only === 'skills',
+    );
   }
 
   async function pluginFiles(scan: ResourceScan) {
@@ -188,5 +230,6 @@ export async function discoverResources(context: ResourceContext, plan: Resource
   return {
     targets: await Promise.all([...targets.values()].map((target) => protectClaudePluginResource(context, target))),
     warnings: [...warnings],
+    linkedSkills,
   };
 }
