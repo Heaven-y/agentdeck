@@ -1,17 +1,17 @@
 # 本地安装与打包
 
-支持 Windows x64 本地安装版和便携版。当前本地测试包为 **0.1.2**，构建于 2026-11-20，包含截至本轮的原生会话、配置、恢复与提示体验改进，进度见[路线图](../roadmap.md)。
+支持 Windows x64 本地安装版和便携版。当前本地包为 **0.1.3**，于 2026-11-23 从主线 `48e66e2` 构建，纳入 AGY 账号、空回复和回合错误显示修复，进度见[路线图](../roadmap.md)。
 
-0.1.2 的解压应用与便携版已通过隔离首屏、预加载隔离、空初始数据、单实例、正常退出及端口释放检查。本轮同版更新安装器，原生 NSIS 页面钩子的 11 项隔离回归通过，实际安装包已核对首次安装范围页和目录页。真实覆盖升级、协议登记和卸载由本轮安装测试继续核对；本次没有替用户安装或卸载现有版本。
+0.1.3 的解压版、便携版和已安装版均通过隔离启动检查。本机以原目录和全机范围把 0.1.2 静默原位升级到 0.1.3；卸载登记仍为同一项，程序文件与成品一致，五份已有工作台配置校验值不变。没有另测交互式覆盖、UAC 提示或卸载。0.1.2 的原生 NSIS 页面回归和首次向导验收见 `25f475f:docs/guides/local-installation.md`。
 
-0.1.1 于 2026-11-05 完成本地构建，其首轮候选 NSIS 曾完成隔离安装、启动和卸载，后续重建未逐次重装。原记录见 `b053fe1:docs/guides/local-installation.md`；这些结果不代替 0.1.2 的安装测试。
+0.1.1 于 2026-11-05 完成本地构建，其首轮候选 NSIS 曾完成隔离安装、启动和卸载，后续重建未逐次重装。原记录见 `b053fe1:docs/guides/local-installation.md`；这些结果不代替其他版本的安装测试。
 
 ## 选择安装方式
 
 | 产物 | 使用方式 |
 |---|---|
-| `AgentDeck-0.1.2-x64-setup.exe` | 首次安装选择用户范围和目录；已有一份有效安装时沿用原范围和目录更新；安装结束不自动启动 |
-| `AgentDeck-0.1.2-x64-portable.exe` | 直接运行，程序临时解压后启动，无需安装 |
+| `AgentDeck-0.1.3-x64-setup.exe` | 首次安装选择用户范围和目录；已有一份有效安装时沿用原范围和目录更新；安装结束不自动启动 |
+| `AgentDeck-0.1.3-x64-portable.exe` | 直接运行，程序临时解压后启动，无需安装 |
 | `win-unpacked/` | 解压后的完整应用目录，用于本地验收；须保留整个目录一起移动 |
 
 产物位于仓库 `release/`，该目录不进入 Git。安装版和便携版都包含 Electron、后端、前端与必要资源，不依赖开发仓库或其 node_modules。运行工作台本身不要求单独安装 Node.js；各 CLI 的安装条件仍由其原生发行版决定。
@@ -26,7 +26,7 @@
 
 更新时退出旧版本，再运行新安装包。正常只有一份安装时，向导识别原程序后直接沿用安装范围和目录，无需重复选择；程序文件在原位置更新，工作台数据和 CLI 原生文件继续保留。当前用户与全机范围都已有安装时，先选择要更新的范围，再沿用对应目录。仅有登记、原程序已经不存在时保留安装选择。全机安装仍按 Windows 要求请求管理员权限。
 
-手动指定 `/currentuser`、`/allusers` 或 `/D=` 时继续遵循显式参数；`/D=` 必须放在最后，不加引号，目录可以包含空格。静默安装 `/S` 继续使用 electron-builder 的原生流程，本轮页面回归不代替静默升级验收。便携版更新只需替换便携包。签名、在线更新和公开发布渠道尚未启用。
+手动指定 `/currentuser`、`/allusers` 或 `/D=` 时继续遵循显式参数；`/D=` 必须放在最后，不加引号，目录可以包含空格。静默安装 `/S` 使用 electron-builder 的原生流程；上述本机升级使用 `/S /allusers` 并显式指定原目录。便携版更新只需替换便携包。签名、在线更新和公开发布渠道尚未启用。
 
 制作新包前确认变更范围和版本，规则见[开发指南](dev-environment.md#3-启动与隔离验证)。
 
@@ -43,7 +43,7 @@ npm.cmd run package:desktop
 
 应用采用用户选定的叠卡 A 图标，三版原稿保留在 `apps/desktop/assets/branding/`。网页标签与桌面开发窗口共用 `apps/web/src/ui/assets/agentdeck.png`；安装版把同一文件复制到 `resources/icon.png`。应用 EXE、安装包和快捷方式使用 `apps/desktop/assets/icon.ico`，其多尺寸图层从该 PNG 导出；修改图案时同步更新衍生文件，并核对最终包内资源。
 
-产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。本轮已按用户要求逐个清理 0.1.0、0.1.1 的旧安装版、便携版及 0.1.1 校验清单，历史验收记录保留。
+产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。0.1.2 安装版、便携版和版本专属校验清单保留，旧构建报告已归档。
 
 桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI，SSH 的可选原生加速模块采用 JavaScript 回退。
 
@@ -62,12 +62,12 @@ Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File sc
 最终交付附 SHA-256 清单。可用 PowerShell 核对下载或复制后的文件：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.2-x64-setup.exe
-Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.2-x64-portable.exe
+Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.3-x64-setup.exe
+Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.3-x64-portable.exe
 ```
 
 安装冒烟使用隔离环境；模型和 SSH 链路的验证结果见路线图。
 
 ## 会话链接的安装验收边界
 
-会话链接已接入初始参数、第二实例和页面订阅后的分发。0.1.2 已包含协议安装配置，Windows 协议登记、冷启动、运行中打开链接及卸载清理仍待安装测试；隔离启动检查不宣称完成这些系统操作。协议测试使用独立 Windows 用户，并保留已有协议所有者。
+会话链接已接入初始参数、第二实例和页面订阅后的分发。0.1.3 升级后核对了当前用户的协议登记、公共桌面和开始菜单快捷方式，均指向原安装目录。未通过系统链接实测冷启动、运行中跳转或卸载清理；这些场景使用独立 Windows 用户验证，并保留已有协议所有者。
