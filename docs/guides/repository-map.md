@@ -12,7 +12,12 @@
 | 增加设置分类 | [设置页登记表](../../apps/web/src/features/settings/navigation/page-registry.tsx) | 在相应功能目录编写页面，在表中登记标题、图标、CLI 切换器和渲染组件。需要新增持久化字段时再看 [产品设置协议](../../packages/shared/src/settings/product-settings.ts) |
 | 新增或调整一种 CLI | [支持名单](../../packages/shared/src/conversation/agents.ts)、[原生配置登记表](../../apps/server/src/agents/registry.ts) | 按实际能力实现该 CLI 的运行、历史和配置，接入[后端服务装配](../../apps/server/src/bootstrap/cli-services.ts)。设置、会话列表和探测使用共享身份；[Skills](../../apps/server/src/native-management/skills/adapters.ts)、[原生插件](../../apps/server/src/native-management/plugins/plugin-adapters.ts) 与[会话工具](../../apps/server/src/session-tools/runtime.ts) 按能力分别登记 |
 | 修复 CLI 安装、更新或回滚 | [安装服务](../../apps/server/src/cli-installation/service.ts) | `discovery` 识别当前安装，`native` 和 `npm` 处理对应安装方式，`transaction` 负责占用与文件保护。按钮与任务状态在前端设置的 `installation` |
-| SSH 服务器连接或终端 | [内置插件后端](../../apps/server/src/builtin-plugins/ssh-console/registration.ts)、[内置页面](../../apps/web/src/builtin-plugins/ssh-console/Workspace.tsx) | 后端 `ssh` 管连接、档案与信任，`console` 管监控、作业与终端，前端插件按文件、监控和终端分组 |
+
+## 工作台扩展
+
+| 要修改的内容 | 从哪里开始 | 通常还要看哪里 |
+|---|---|---|
+| 内置 SSH Console 插件 | [内置插件后端](../../apps/server/src/builtin-plugins/ssh-console/registration.ts)、[内置页面](../../apps/web/src/builtin-plugins/ssh-console/Workspace.tsx) | 后端 `ssh` 管连接、档案与信任，`console` 管监控、作业与终端，前端插件按文件、监控和终端分组 |
 | 增加普通工作台插件 | [外部插件示例](../../examples/workbench-plugin/agentdeck.plugin.json) | 页面与命令使用[插件接口](../engineering/workbench-plugins.md)，宿主根据清单加载 |
 
 ## 测试与开发工具

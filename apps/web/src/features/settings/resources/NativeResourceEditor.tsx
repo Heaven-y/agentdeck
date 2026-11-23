@@ -1,12 +1,13 @@
 import { type NativeResourceContext, settingsApi } from '../api';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
-import type { NativeResource, NativeResourceDocument } from '@agentdeck/shared/settings';
+import type { NativeResourceDocument } from '@agentdeck/shared/settings';
 
 import { CodeEditor } from '../../../ui/fields/CodeEditor';
 import { buttonClass } from '../../../ui/styles';
 import { SettingsDetailDialog } from '../navigation/SettingsDetailDialog';
 import { useSettingsLeave } from '../navigation/settings-navigation';
+import type { NativeResourceTarget } from './NativeResourceCatalog';
 import { NativeConfigHelp } from './NativeConfigHelp';
 import { confirmNativeDiscard, nativeSettingsError } from './native-resource-labels';
 import { invalidateNativeCapabilities } from '../../../cli/shared/capability-cache';
@@ -44,7 +45,7 @@ function ConfigHelp({
 
 type EditorProps = {
   context: NativeResourceContext;
-  resource: NativeResource;
+  resource: NativeResourceTarget;
   embedded?: boolean;
   onClose(): void;
   onBack(): void;
@@ -168,18 +169,11 @@ function EditorFooter({ state }: { state: EditorState }) {
   );
 }
 
-function EditorContent({ state, resource }: { state: EditorState; resource: NativeResource }) {
+function EditorContent({ state, resource }: { state: EditorState; resource: NativeResourceTarget }) {
   const { loading, saving, document, content, error, message, reread, edit, editable } = state;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 break-all font-mono text-xs text-muted-foreground">{resource.displayPath}</p>
-        <button type="button" className={buttonClass('outline')} disabled={saving || loading} onClick={reread}>
-          <RefreshCw aria-hidden className="size-4" />
-          重新读取文件
-        </button>
-      </div>
-      <p className="text-sm leading-6 text-muted-foreground">{resource.description}</p>
+      <ResourceEditorHeader resource={resource} disabled={saving || loading} reread={reread} />
       {loading && (
         <p role="status" className="py-8 text-center text-sm text-muted-foreground">
           正在读取文件…
@@ -211,6 +205,29 @@ function EditorContent({ state, resource }: { state: EditorState; resource: Nati
           {message}
         </p>
       )}
+    </>
+  );
+}
+
+function ResourceEditorHeader({
+  resource,
+  disabled,
+  reread,
+}: {
+  resource: NativeResourceTarget;
+  disabled: boolean;
+  reread(): void;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 flex-1 break-all font-mono text-xs text-muted-foreground">{resource.displayPath}</p>
+        <button type="button" className={buttonClass('outline')} disabled={disabled} onClick={reread}>
+          <RefreshCw aria-hidden className="size-4" />
+          重新读取文件
+        </button>
+      </div>
+      {resource.description && <p className="text-sm leading-6 text-muted-foreground">{resource.description}</p>}
     </>
   );
 }

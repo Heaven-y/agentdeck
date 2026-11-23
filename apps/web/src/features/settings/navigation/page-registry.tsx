@@ -23,6 +23,7 @@ const LaunchEnvironment = lazy(() => import('../environment/LaunchEnvironmentPan
 
 type PageContext = {
   agent: AgentKind;
+  workspace?: { id: string; name: string };
   formGuard: MutableRefObject<SettingsLeave>;
   launchDetail: boolean;
   back(): void;
@@ -38,12 +39,13 @@ type SettingsSection = {
   render(context: PageContext): ReactNode;
 };
 function resource(category: NativeResourceCategory) {
-  return ({ agent, back, close }: PageContext) => (
+  return ({ agent, workspace, back, close }: PageContext) => (
     <NativeResources
       key={JSON.stringify([agent, category])}
       embedded
       category={category}
       agent={agent}
+      workspace={workspace}
       onBack={back}
       onClose={close}
     />

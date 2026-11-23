@@ -302,7 +302,7 @@ it('AGY 落盘期间切换连接，恢复先前同模式的成功目录', async 
   });
 });
 
-it.each([1, 2])('读取旧 v%i 缓存并保留目录，刷新后写入去重格式', async (version) => {
+it.each([1, 2])('旧 v%i 派生缓存不复用，成功发现后写入当前格式', async (version) => {
   const f = await fixture();
   await createCapabilitiesService({ claude: f.provider }, f.options).refresh(f.ws, 'claude');
   const file = path.join(f.root, 'model-cache', 'claude.json');
@@ -313,13 +313,13 @@ it.each([1, 2])('读取旧 v%i 缓存并保留目录，刷新后写入去重格�
   const stored = { version, catalogs: [{ key, models: [{ id: 'legacy-model', label: '旧缓存模型' }] }] };
   await writeFile(file, JSON.stringify(stored));
   const cached = await createCapabilitiesService({}, f.options).read(f.ws, 'claude');
-  expect(cached).toMatchObject({ discovered: version === 2, models: [{ id: 'legacy-model', label: '旧缓存模型' }] });
+  expect(cached).toMatchObject({ discovered: false, models: [] });
   expect(cached.defaultModel).toBeUndefined();
   expect(cached.defaultReasoningEffort).toBeUndefined();
   const other = { ...f.ws, dir: path.join(f.root, 'other') };
   await createCapabilitiesService({ claude: f.provider }, f.options).refresh(other, 'claude');
   const upgraded = createCapabilitiesService({}, f.options);
-  expect((await upgraded.read(f.ws, 'claude')).discovered).toBe(version === 2);
+  expect((await upgraded.read(f.ws, 'claude')).discovered).toBe(false);
   expect((await upgraded.read(other, 'claude')).models).toEqual(f.catalog.models);
 });
 

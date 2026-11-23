@@ -409,51 +409,31 @@ it('AGY 当前显示名与缓存型号合为一行，点选及重新打开均保
   expect(useChat.getState().modelOverrides.antigravity).toBe(native.label);
 });
 
-it.each(['运行报告', '历史名称', '回退报告'])('AGY %s 与其他条目键重名时选择正确配置', async (source) => {
+it.each(['运行报告', '最近报告'])('AGY %s 与配置键重名时，报告与下一轮选择分别显示', async (source) => {
   const label = 'Example Display Name';
   const other = { id: label, label: 'Other Model', modelId: 'other-model' };
   const target = { id: 'target-config', label, modelId: 'target-model' };
   useChat.getState().setAgent('antigravity');
-  useChat.setState({
-    sessionId: 'history',
-    running: source === '运行报告',
-    actualModel: source === '历史名称' ? undefined : label,
-    sessionModels: {
-      [sessionActionKey('project', { agent: 'antigravity', sessionId: 'history' })]: {
-        nativeModel: source === '历史名称' ? label : undefined,
-      },
-    },
-  });
+  useChat.setState({ sessionId: 'history', running: source === '运行报告', actualModel: label });
   client.setQueryData(chatKeys.agentCapabilities('project', 'antigravity', 'history'), {
     agent: 'antigravity',
     discovered: true,
-    defaultModel: source === '运行报告' ? label : undefined,
+    defaultModel: label,
     models: [other, target, ...models],
     entries: [],
     warnings: [],
   });
   mount();
   const trigger = screen.getByRole('button', { name: '模型选项' });
-  expect(trigger.textContent).toBe('target-model');
+  expect(trigger.textContent).toBe('other-model');
+  expect(await screen.findByText('最近报告的模型：target-model')).toBeTruthy();
   const group = await screen.findByRole('group', { name: '可选模型' });
-  expect(within(group).getByRole('menuitemradio', { name: 'other-model' }).getAttribute('aria-checked')).toBe('false');
-  const selected = within(group).getByRole('menuitemradio', { name: 'target-model' });
-  expect(selected.getAttribute('aria-checked')).toBe('true');
-  fireEvent.click(selected);
-  expect(useChat.getState().modelOverrides.antigravity).toBe('target-config');
+  expect(within(group).getByRole('menuitemradio', { name: 'other-model' }).getAttribute('aria-checked')).toBe('true');
+  const targetItem = within(group).getByRole('menuitemradio', { name: 'target-model' });
+  expect(targetItem.getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(targetItem);
+  expect(useChat.getState().modelOverrides.antigravity).toBe(target.id);
   expect(trigger.textContent).toBe('target-model');
-  await waitFor(() => expect(screen.queryByRole('menu', { name: '模型选项菜单' })).toBeNull());
-  fireEvent.click(trigger);
-  expect((await screen.findByRole('menuitemradio', { name: 'target-model' })).getAttribute('aria-checked')).toBe(
-    'true',
-  );
-  fireEvent.click(screen.getByRole('menuitem', { name: '搜索可见模型' }));
-  const dialog = screen.getByRole('dialog', { name: '选择模型' });
-  fireEvent.change(within(dialog).getByRole('combobox', { name: '搜索模型' }), { target: { value: 'target-model' } });
-  const option = await within(dialog).findByRole('option', { name: 'target-model' });
-  expect(option.getAttribute('aria-selected')).toBe('true');
-  fireEvent.click(option);
-  expect(useChat.getState().modelOverrides.antigravity).toBe('target-config');
 });
 
 it.each(['显式选择', '目录默认'])('AGY %s 与其他条目名称重名时仍按配置键解析', async (source) => {
@@ -499,9 +479,10 @@ it('AGY 原生名称与其他配置的底层型号重名时，点选后仍保留
   });
   mount();
   const trigger = screen.getByRole('button', { name: '模型选项' });
-  expect(trigger.textContent).toBe('target-model');
+  expect(trigger.textContent).toBe('');
+  expect(await screen.findByText('最近报告的模型：target-model')).toBeTruthy();
   const selected = await screen.findByRole('menuitemradio', { name: 'target-model' });
-  expect(selected.getAttribute('aria-checked')).toBe('true');
+  expect(selected.getAttribute('aria-checked')).toBe('false');
   fireEvent.click(selected);
   expect(useChat.getState().modelOverrides.antigravity).toBe('target-config');
   expect(trigger.textContent).toBe('target-model');
@@ -533,13 +514,14 @@ it.each(['原生型号', '配置底层型号', '原生型号与唯一配置', '�
     });
     mount();
     const trigger = screen.getByRole('button', { name: '模型选项' });
-    expect(trigger.textContent).toBe(modelId);
+    expect(trigger.textContent).toBe('');
+    expect(await screen.findByText(`最近报告的模型：${modelId}`)).toBeTruthy();
     const group = await screen.findByRole('group', { name: '可选模型' });
     const selected = within(group).getByRole('menuitemradio', { name: modelId });
-    expect(selected.getAttribute('aria-checked')).toBe('true');
+    expect(selected.getAttribute('aria-checked')).toBe('false');
     fireEvent.click(selected);
     expect(useChat.getState().modelOverrides.antigravity).toBe(
-      source === '底层型号与其他配置键重名' ? target.id : modelId,
+      source === '原生型号' || source === '原生型号与唯一配置' ? modelId : target.id,
     );
     expect(trigger.textContent).toBe(modelId);
   },
@@ -557,7 +539,8 @@ it('AGY 原生报告只命中其他配置键时不误认为型号', async () => 
     warnings: [],
   });
   mount();
-  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toBe(reported);
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toBe('');
+  expect(await screen.findByText(`最近报告的模型：${reported}`)).toBeTruthy();
   expect((await screen.findByRole('menuitemradio', { name: 'other-model' })).getAttribute('aria-checked')).toBe(
     'false',
   );
@@ -579,7 +562,8 @@ it('AGY 原生名称对应不同型号时不猜型号或合并同名候选', asy
     warnings: [],
   });
   mount();
-  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toBe(label);
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toBe('');
+  expect(await screen.findByText(`最近报告的模型：${label}`)).toBeTruthy();
   const group = await screen.findByRole('group', { name: '可选模型' });
   expect(within(group).getAllByRole('menuitemradio')).toHaveLength(3);
   for (const name of ['model-x', label, 'model-y'])

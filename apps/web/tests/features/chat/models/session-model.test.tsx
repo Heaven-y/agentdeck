@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { settingsKeys } from '../../../../src/features/settings/api';
-import { sessionsApi, sessionsKeys } from '../../../../src/features/sessions/api';
+import { sessionsApi } from '../../../../src/features/sessions/api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ProductSettingsSchema } from '@agentdeck/shared/settings';
 import { type SessionHistory, type SessionSummary } from '@agentdeck/shared/conversation';
-import { SessionList } from '../../../../src/features/sessions/list/SessionList';
+import { Sidebar } from '../../../../src/app/sidebar/Sidebar';
+import { chatKeys } from '../../../../src/features/chat/api';
 import { ModelOptionsMenu } from '../../../../src/features/chat/models/ModelOptionsMenu';
 
 import { sessionActionKey, useChat } from '../../../../src/features/chat/state/chat-store';
@@ -15,7 +16,8 @@ import { sessionActionKey, useChat } from '../../../../src/features/chat/state/c
 const row = (agent: 'claude' | 'codex', sessionId: string, title: string, updatedAt: number): SessionSummary => ({
   agent,
   sessionId,
-  projectId: null,
+  projectId: 'workspace',
+  capabilities: { rename: true, fork: 'native', delete: 'native', archive: agent === 'codex' ? 'native' : 'workbench' },
   title,
   updatedAt: new Date(updatedAt).toISOString(),
   running: false,
@@ -43,8 +45,16 @@ beforeEach(() => {
   };
   useChat.getState().selectWorkspace('workspace');
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  client.setQueryData(sessionsKeys.sessions('workspace', 'claude'), [claude]);
-  client.setQueryData(sessionsKeys.sessions('workspace', 'codex'), [codex]);
+  for (const row of [claude, codex]) {
+    client.setQueryData(chatKeys.agentCapabilities('workspace', row.agent, row.sessionId), {
+      agent: row.agent,
+      defaultModel: 'cli-model',
+      models: [],
+      entries: [],
+      warnings: [],
+      discovered: true,
+    });
+  }
   client.setQueryData(settingsKeys.environment, { tools: [], checkedAt: 1 });
 });
 afterEach(() => {
@@ -52,10 +62,16 @@ afterEach(() => {
   client.clear();
   vi.restoreAllMocks();
 });
+const workspace = { id: 'workspace', name: '示例', dir: '~/projects/demo' };
 function showList(withModel = false) {
   render(
     <QueryClientProvider client={client}>
-      <SessionList workspaceId="workspace" />
+      <Sidebar
+        projects={[workspace]}
+        currentProjectId={workspace.id}
+        sessionsByProject={{ [workspace.id]: [claude, codex] }}
+        onAddProject={vi.fn()}
+      />
       {withModel && <ModelOptionsMenu disabled={false} />}
     </QueryClientProvider>,
   );
@@ -74,24 +90,27 @@ it('会话标题单行截断，列表不把来源或显式模型当作实际模�
   expect(screen.queryByText('requested-model')).toBeNull();
   expect(read).not.toHaveBeenCalled();
 });
-it('已加载历史模型保留于所属来源缓存，切回同一会话时模型按钮复用报告', async () => {
+it('下一轮模型不取自历史，最近报告随同一会话保留', async () => {
   const model = 'claude-sonnet-5-long-native-id';
   const read = vi
     .spyOn(sessionsApi, 'sessionEvents')
     .mockResolvedValue({ session: record(claude), events: [], actualModel: model });
   showList(true);
   await act(() => useChat.getState().openSession(claude));
-  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain(model);
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain('cli-model');
+  expect(screen.getByRole('button', { name: '模型选项' }).textContent).not.toContain(model);
+  fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
+  await screen.findByText(`最近报告的模型：${model}`);
+  fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
   expect(screen.queryByText('模型未报告')).toBeNull();
   act(() => useChat.getState().newSession('codex'));
-  act(() => {
-    client.setQueryData(sessionsKeys.sessions('workspace', 'claude'), [{ ...claude }]);
-  });
   expect(screen.queryByText(model)).toBeNull();
   expect(useChat.getState().sessionModels[sessionActionKey('workspace', claude)]?.actualModel).toBe(model);
   expect(useChat.getState().sessionModels[sessionActionKey('workspace', codex)]).toBeUndefined();
   await act(() => useChat.getState().openSession(claude));
-  expect(screen.getByRole('button', { name: '模型选项' }).title).toContain(model);
+  expect(screen.getByRole('button', { name: '模型选项' }).title).toContain('cli-model');
+  fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
+  await screen.findByText(`最近报告的模型：${model}`);
   expect(read).toHaveBeenCalledTimes(1);
 });
 it('迟到默认不覆盖历史模型，空模型和迟到旧历史不污染另一来源', async () => {
@@ -129,18 +148,12 @@ it('列表行没有原生模型字段，未读历史时详情不显示任何模�
   expect(within(screen.getByRole('dialog')).queryByText(/^实际模型：/)).toBeNull();
   expect(read).not.toHaveBeenCalled();
 });
-it('历史是会话模型的唯一来源：更新列表不改变模型按钮，列表缺失时仍显示历史值', async () => {
+it('原生会话配置不是响应报告，也不代替下一轮选择', async () => {
   vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue({ session: record(codex, 'model-A'), events: [] });
   showList(true);
   await act(() => useChat.getState().openSession(codex));
-  expect(screen.getByRole('button', { name: '模型选项' }).title).toContain('model-A');
-  act(() => {
-    client.setQueryData(sessionsKeys.sessions('workspace', 'codex'), [{ ...codex, title: '刷新后的标题' }]);
-  });
-  expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain('model-A');
+  expect(screen.getByRole('button', { name: '模型选项' }).title).toContain('cli-model');
+  fireEvent.click(screen.getByRole('button', { name: '模型选项' }));
+  expect(screen.queryByText(/最近报告的模型/)).toBeNull();
   expect(useChat.getState().actualModel).toBeUndefined();
-  act(() => {
-    client.setQueryData(sessionsKeys.sessions('workspace', 'codex'), []);
-  });
-  await waitFor(() => expect(screen.getByRole('button', { name: '模型选项' }).title).toContain('model-A'));
 });

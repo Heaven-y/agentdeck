@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { legacySessionCapabilities, type SessionRef } from '@agentdeck/shared/conversation';
+import type { SessionRef } from '@agentdeck/shared/conversation';
 import { type Workspace } from '@agentdeck/shared/projects';
 import type { WorkspaceStore } from '../../../src/workspaces/store';
 import { registerSessionRoutes } from '../../../src/http/conversation/sessions.routes';
@@ -57,6 +57,8 @@ function setup(projects = [ws, other]) {
   const app = Fastify();
   apps.push(app);
   const codex: SessionProvider = {
+    capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' },
+    page: async () => ({ items: [] }),
     list: vi.fn(async () => [{ sessionId: 's1', summary: 'Codex 调参', lastModified: 200 }]),
     read: vi.fn(async () => ({
       session: { sessionId: 's1', summary: 'Codex 调参', lastModified: 200 },
@@ -72,6 +74,8 @@ function setup(projects = [ws, other]) {
     })),
   };
   const antigravity: SessionProvider = {
+    capabilities: { rename: false, fork: null, delete: null, archive: null },
+    page: async () => ({ items: await antigravity.list(ws.dir) }),
     // Antigravity 的列表不按目录过滤，归属只能靠 workspaceUris。
     list: vi.fn(async () => [
       {
@@ -307,7 +311,7 @@ describe('会话接口', () => {
     expect(r.json()).toEqual([
       {
         agent: 'claude',
-        capabilities: legacySessionCapabilities('claude'),
+        capabilities: { rename: true, fork: 'native', delete: 'native', archive: null },
         sessionId: 's1',
         // 列表行没带 cwd，不能拿「当前查的是 w1」兜底——否则同一条会话在每个项目下都出现。
         projectId: null,
@@ -447,7 +451,7 @@ describe('会话接口', () => {
     expect((await app.inject('/api/projects/w1/sessions?agent=claude')).json()).toEqual([
       {
         agent: 'claude',
-        capabilities: legacySessionCapabilities('claude'),
+        capabilities: { rename: true, fork: 'native', delete: 'native', archive: null },
         sessionId: 's1',
         projectId: 'w1',
         title: '本项目',
@@ -489,7 +493,7 @@ describe('会话接口', () => {
     expect(listed.json()).toEqual([
       {
         agent: 'codex',
-        capabilities: legacySessionCapabilities('codex'),
+        capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' },
         sessionId: 's1',
         projectId: null,
         title: 'Codex 调参',

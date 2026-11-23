@@ -185,9 +185,8 @@ it('已存在网页等价操作的命令指向具体入口，未接入不冒称�
   );
   const catalog = await fake.discover(directory);
   const reason = (name: string) => catalog.entries.find((entry) => entry.name === name)?.unavailableReason;
-  expect(reason('model')).toMatch(/模型选项/);
+  expect(reason('model')).toMatch(/选择模型/);
   expect(reason('config')).toMatch(/设置/);
   expect(reason('clear')).toMatch(/新会话/);
-  expect(reason('custom-command')).toMatch(/尚未接入/);
-  expect(reason('custom-command')).not.toMatch(/请使用.*CLI/);
+  expect(reason('custom-command')).toMatch(/Claude Code 终端/);
 });

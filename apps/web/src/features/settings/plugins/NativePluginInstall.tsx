@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { NativePluginCatalog, NativePluginPrepareInput } from '@agentdeck/shared/settings';
 import { buttonClass, inputClass } from '../../../ui/styles';
-import { confirmNativeDiscard } from '../resources/native-resource-labels';
+import { confirmNativeDiscard, nativeScopeNames } from '../resources/native-resource-labels';
 import { useSettingsLeave } from '../navigation/settings-navigation';
+
 export function NativePluginInstall({
   catalog,
   busy,
@@ -13,34 +14,82 @@ export function NativePluginInstall({
   onPrepare(input: NativePluginPrepareInput): void;
 }) {
   const [source, setSource] = useState('');
-  const [scope, setScope] = useState<'user' | 'project' | 'local'>('user');
-  const [market, setMarket] = useState(false);
-  const dirty = source !== '' || market || scope !== 'user';
+  const [selectedScope, setScope] = useState<NativePluginCatalog['installScopes'][number]>();
+  const [addMarketplace, setMarket] = useState(false);
+  const scope = catalog.installScopes.find((value) => value === selectedScope) ?? catalog.installScopes[0];
+  const market = catalog.canAddMarketplace && (addMarketplace || !catalog.canInstall);
+  const dirty = source !== '';
   useSettingsLeave((action) => {
     if (confirmNativeDiscard(dirty)) action();
   }, dirty);
+  if (!scope) return null;
   return (
-    <form
-      className="space-y-3 rounded-xl border border-border p-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onPrepare({
-          action: market ? 'marketplace-add' : 'install',
-          source: source.trim(),
-          scope,
-          revision: catalog.revision,
-        });
-      }}
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <strong className="text-sm">添加插件或市场</strong>
-        {catalog.canAddMarketplace && (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={market} onChange={(event) => setMarket(event.target.checked)} />
-            添加市场来源
-          </label>
-        )}
-      </div>
+    <details>
+      <summary className="w-fit cursor-pointer text-sm font-medium">
+        {catalog.canInstall ? '添加插件' : '添加市场来源'}
+      </summary>
+      <form
+        className="space-y-3 border-l border-border pl-3 pt-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!source.trim() || busy) return;
+          onPrepare({
+            action: market ? 'marketplace-add' : 'install',
+            source: source.trim(),
+            scope,
+            revision: catalog.revision,
+          });
+        }}
+      >
+        <InstallSource catalog={catalog} market={market} source={source} setMarket={setMarket} setSource={setSource} />
+        <div className="flex flex-wrap items-center gap-2">
+          {catalog.installScopes.length > 1 && (
+            <label className="flex items-center gap-2 text-sm">
+              安装范围
+              <select
+                aria-label="安装范围"
+                className={inputClass}
+                value={scope}
+                onChange={(event) => setScope(event.target.value as typeof scope)}
+              >
+                {catalog.installScopes.map((value) => (
+                  <option key={value} value={value}>
+                    {nativeScopeNames[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button className={buttonClass('primary')} type="submit" disabled={busy}>
+            预览操作
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
+function InstallSource({
+  catalog,
+  market,
+  source,
+  setMarket,
+  setSource,
+}: {
+  catalog: NativePluginCatalog;
+  market: boolean;
+  source: string;
+  setMarket(value: boolean): void;
+  setSource(value: string): void;
+}) {
+  return (
+    <>
+      {catalog.canInstall && catalog.canAddMarketplace && (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={market} onChange={(event) => setMarket(event.target.checked)} />
+          添加市场来源
+        </label>
+      )}
       <label className="block space-y-1 text-sm">
         <span>{market ? '市场来源' : '安装来源'}</span>
         <input
@@ -58,26 +107,6 @@ export function NativePluginInstall({
           autoComplete="off"
         />
       </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-sm">
-          <span className="shrink-0 whitespace-nowrap">安装范围</span>
-          <select
-            aria-label="安装范围"
-            className={inputClass}
-            value={scope}
-            onChange={(event) => setScope(event.target.value as typeof scope)}
-          >
-            {catalog.installScopes.map((item) => (
-              <option key={item} value={item}>
-                {item === 'user' ? '用户' : item === 'project' ? '项目' : '个人项目'}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className={buttonClass('primary')} type="submit" disabled={busy || !catalog.installScopes.length}>
-          预览操作
-        </button>
-      </div>
-    </form>
+    </>
   );
 }

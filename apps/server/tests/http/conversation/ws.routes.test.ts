@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { expect, it } from 'vitest';
 import WebSocket from 'ws';
@@ -30,15 +31,25 @@ it('发送参数错误按clientTurnId回传，客户端可结束等待且不泄�
   });
   try {
     await once(ws, 'open');
+    const ready = once(ws, 'message');
+    ws.send(
+      JSON.stringify({
+        type: 'connection.resume',
+        token: randomUUID(),
+        create: true,
+        rebuild: false,
+        afterSequence: 0,
+      }),
+    );
+    expect(JSON.parse(String((await ready)[0])).type).toBe('connection.ready');
     const response = once(ws, 'message');
     ws.send(
       JSON.stringify({ type: 'chat.send', clientTurnId: 'client-request', text: 2, private: 'synthetic-secret' }),
     );
     const [data] = await response;
-    expect(JSON.parse(String(data))).toEqual({
-      type: 'error',
-      clientTurnId: 'client-request',
-      message: '消息格式不正确',
+    expect(JSON.parse(String(data))).toMatchObject({
+      type: 'connection.event',
+      message: { type: 'error', clientTurnId: 'client-request', message: '消息格式不正确' },
     });
   } finally {
     ws.terminate();

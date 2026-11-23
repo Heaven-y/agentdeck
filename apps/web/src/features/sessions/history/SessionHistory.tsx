@@ -1,7 +1,5 @@
-import { sessionsKeys } from '../api';
-import { useQueryClient } from '@tanstack/react-query';
 import { MessagesSquare } from 'lucide-react';
-import type { AgentKind, SessionSummary } from '@agentdeck/shared/conversation';
+import type { AgentKind } from '@agentdeck/shared/conversation';
 
 import { useChat } from '../../chat/state/chat-store';
 import { agentVersion, useEnvironment } from '../../settings/environment/use-environment';
@@ -50,20 +48,15 @@ function SelectedSession({
   agent: AgentKind;
   sessionId: string;
 }) {
-  const client = useQueryClient();
   const environment = useEnvironment();
   const { history, failure, notReplayable, loading, retry } = useSessionHistory(projectId, { agent, sessionId });
-  // 标题优先用原生会话记录；读取中退到左栏已缓存的列表摘要，避免先闪一下「未命名会话」。
-  const cached = client.getQueryData<SessionSummary[]>(sessionsKeys.sessions(projectId, agent));
-  const summary = cached?.find((session) => session.sessionId === sessionId);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SessionHeader
         agent={agent}
-        title={history?.session.summary || summary?.title || ''}
+        title={history?.session.summary ?? ''}
         version={agentVersion(environment.data, agent)}
         projectDir={projectDir}
-        running={summary?.running}
       />
       <SessionTimeline
         events={history?.events ?? []}

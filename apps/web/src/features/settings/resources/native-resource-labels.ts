@@ -3,8 +3,8 @@ import type { NativeResourceKind, NativeResourceScope } from '@agentdeck/shared/
 
 export const nativeScopeNames: Record<NativeResourceScope, string> = {
   user: '用户',
-  project: '当前项目',
-  local: '个人项目',
+  project: '项目共享',
+  local: '仅我',
   directory: '目录',
   managed: '管理员',
 };

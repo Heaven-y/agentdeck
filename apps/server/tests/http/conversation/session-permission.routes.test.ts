@@ -32,6 +32,8 @@ async function fixture() {
   const preferences = createSessionPreferences({ configDir: root });
   const activity = createWorkspaceActivity();
   const provider: SessionProvider = {
+    capabilities: { rename: false, fork: null, delete: null, archive: null },
+    page: async () => ({ items: [] }),
     list: async () => [],
     assertBelongs: vi.fn(async (id) => {
       if (id !== 'native') throw new SessionError(404, 'session_missing', '没有此会话');

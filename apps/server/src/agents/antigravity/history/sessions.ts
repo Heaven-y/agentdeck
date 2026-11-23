@@ -55,7 +55,7 @@ function nativeSummary(row: SummaryRow): NativeSessionSummary {
 
 /**
  * 摘要来自原生 SQLite；正文经已核验身份的原生轨迹接口读取，不维护第二份会话。
- * 列表读取失败时降级为空，避免一个库的问题拖垮整个会话面板。
+ * 摘要库读取失败只影响此来源；不能当成空列表或会话不存在。
  */
 export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> = {}): SessionProvider {
   const dbPath = api.dbPath ?? ANTIGRAVITY_DB_PATH;
@@ -66,7 +66,7 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
     try {
       return read(dbPath, page);
     } catch {
-      return [];
+      throw new SessionError(503, 'session_runtime_failed', 'Antigravity 会话列表读取失败，请重试。');
     }
   }
 
@@ -151,18 +151,23 @@ export function createAntigravitySessions(api: Partial<AntigravitySessionsApi> =
       rename: !!api.management?.rename,
       fork: api.management ? 'native' : null,
       delete: api.management ? 'native' : null,
+      archive: null,
     },
     list(_dir, _signal, archived = false) {
-      if (archived) return Promise.reject(new SessionError(400, 'unsupported_action', 'Antigravity 不支持归档会话'));
-      return Promise.resolve(rows().map(nativeSummary));
+      return Promise.resolve().then(() => {
+        if (archived) throw new SessionError(400, 'unsupported_action', 'Antigravity 不支持归档会话');
+        return rows().map(nativeSummary);
+      });
     },
     page(_dir, page, signal, archived = false) {
-      signal?.throwIfAborted();
-      if (archived) return Promise.reject(new SessionError(400, 'unsupported_action', 'Antigravity 不支持原生归档'));
-      const entries = rows(page);
-      return Promise.resolve({
-        items: entries.map(nativeSummary),
-        nextCursor: entries.length === page.limit ? String(Number(page.cursor ?? 0) + page.limit) : undefined,
+      return Promise.resolve().then(() => {
+        signal?.throwIfAborted();
+        if (archived) throw new SessionError(400, 'unsupported_action', 'Antigravity 不支持原生归档');
+        const entries = rows(page);
+        return {
+          items: entries.map(nativeSummary),
+          nextCursor: entries.length === page.limit ? String(Number(page.cursor ?? 0) + page.limit) : undefined,
+        };
       });
     },
     read: readHistory,

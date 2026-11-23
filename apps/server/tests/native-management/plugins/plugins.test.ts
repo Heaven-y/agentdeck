@@ -1,3 +1,4 @@
+import { pluginHelp } from './plugin-help';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,7 +21,7 @@ async function fixture() {
   let changes = 0;
   const run: ProcessRunner = async (exe, args, options) => {
     commands.push(args);
-    const value = args[0] === '--version' ? '2.1.317' : args[1] === 'list' ? JSON.stringify(records) : null;
+    const value = pluginHelp('claude', args) ?? (args[1] === 'list' ? JSON.stringify(records) : null);
     return value === null
       ? action(exe, args, options)
       : { stdout: Buffer.from(value), stderr: Buffer.alloc(0), exitCode: 0 };

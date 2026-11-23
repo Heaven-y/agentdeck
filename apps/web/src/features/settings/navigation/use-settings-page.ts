@@ -5,6 +5,7 @@ import { guardSettingsNavigation, leaveSettings } from './settings-navigation';
 
 import type { SettingsPage } from './page-registry';
 export type SettingsPageProps = {
+  workspace?: { id: string; name: string };
   onClose(): void;
   onNative?(agent: AgentKind): void;
   onLaunchEnvironment?(agent: AgentKind): void;

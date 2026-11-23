@@ -11,11 +11,6 @@ export function antigravityFields(config: ConfigObject): ModelSettingField[] {
       group: 'model',
       hint: '选择原生模型或填写服务商的模型 ID；留空使用原生默认。',
     }),
-    field('reasoningEffort', '推理强度', '随模型选择', {
-      group: 'model',
-      readOnly: true,
-      hint: '选择原生模型列表中的不同强度版本。',
-    }),
     field('contextWindow', '上下文窗口', custom?.maxTokens, {
       group: 'model',
       placeholder: '由模型决定，如 128K / 1M',

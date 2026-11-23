@@ -6,7 +6,8 @@ import { nativeScopeNames, nativeSettingsError } from '../resources/native-resou
 import NativeMcpEditor from './NativeMcpEditor';
 import NativeMcpRuntime, { McpOAuthCard } from './NativeMcpRuntime';
 import { NativeMcpRow } from './NativeMcpRow';
-import { useGuardedSettingsNavigation } from '../navigation/settings-navigation';
+import { inNativeScope } from '../resources/native-resource-scope';
+import { useGuardedSettingsNavigation, useSettingsLeave } from '../navigation/settings-navigation';
 import { SessionToolsPanel } from './SessionToolsPanel';
 type Editor = { entry?: NativeMcpEntry; source: NativeMcpSource };
 function Sources({
@@ -24,16 +25,18 @@ function Sources({
   if (!source) return null;
   return (
     <div className="flex flex-wrap items-end gap-2">
-      <label className="min-w-40 flex-1 space-y-1 text-sm">
-        <span>新增配置作用域</span>
-        <select className={inputClass} value={source.id} onChange={(e) => setId(e.target.value)}>
-          {sources.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {sources.length > 1 && (
+        <label className="min-w-40 flex-1 space-y-1 text-sm">
+          <span>新增配置作用域</span>
+          <select className={inputClass} value={source.id} onChange={(e) => setId(e.target.value)}>
+            {sources.map((s) => (
+              <option key={s.id} value={s.id}>
+                {nativeScopeNames[s.scope]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <button type="button" className={buttonClass('outline')} disabled={disabled} onClick={() => onAdd(source)}>
         添加 MCP
       </button>
@@ -43,18 +46,21 @@ function Sources({
 function Instances({ catalog, id, setId }: { catalog: McpCatalog; id: string; setId(value: string): void }) {
   if (!catalog.instances.length) return null;
   return (
-    <label className="block space-y-1 text-sm">
-      <span>运行实例</span>
-      <select className={inputClass} value={id} onChange={(e) => setId(e.target.value)}>
-        <option value="">项目配置与单次检查</option>
-        {catalog.instances.map((i) => (
-          <option key={i.instanceId} value={i.instanceId}>
-            {i.sessionId ?? '新会话'} · {i.cwd ? `${i.cwd} · ` : ''}
-            {i.instanceId.slice(0, 8)}
-          </option>
-        ))}
-      </select>
-    </label>
+    <details>
+      <summary className="w-fit cursor-pointer text-sm text-muted-foreground">会话连接</summary>
+      <label className="mt-2 block space-y-1 text-sm">
+        <span>运行实例</span>
+        <select className={inputClass} value={id} onChange={(e) => setId(e.target.value)}>
+          <option value="">项目配置与单次检查</option>
+          {catalog.instances.map((i) => (
+            <option key={i.instanceId} value={i.instanceId}>
+              {i.sessionId ?? '新会话'} · {i.cwd ? `${i.cwd} · ` : ''}
+              {i.instanceId.slice(0, 8)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </details>
   );
 }
 function useCatalog(context: NativeManagementContext, reload: number, instanceId: string) {
@@ -93,7 +99,13 @@ function CatalogBody({
 }) {
   const [busy, setBusy] = useState(false);
   const [editor, setEditor] = useState<Editor>();
-  const entries = catalog.entries.filter((entry) => entry.managedBy !== 'session-tools');
+  const entries = catalog.entries.filter(
+    (entry) => entry.managedBy !== 'session-tools' && inNativeScope(context, entry.scope),
+  );
+  const sources = catalog.sources.filter((source) => inNativeScope(context, source.scope));
+  useSettingsLeave((action) => {
+    if (!busy) action();
+  }, busy);
   async function change(entry: NativeMcpEntry, action: 'delete' | 'enable' | 'disable') {
     if (action === 'delete' && !window.confirm(`删除 ${entry.name} 的${nativeScopeNames[entry.scope]}持久配置？`))
       return;
@@ -109,7 +121,7 @@ function CatalogBody({
     }
   }
   function edit(entry: NativeMcpEntry) {
-    const source = catalog.sources.find((s) => s.id === entry.sourceId);
+    const source = sources.find((s) => s.id === entry.sourceId);
     if (source) setEditor({ entry, source });
   }
   return (
@@ -119,7 +131,11 @@ function CatalogBody({
           {warning}
         </p>
       ))}
-      <Sources catalog={catalog} disabled={busy || !!editor} onAdd={(source) => setEditor({ source })} />
+      <Sources
+        catalog={{ ...catalog, sources }}
+        disabled={busy || !!editor}
+        onAdd={(source) => setEditor({ source })}
+      />
       {editor && (
         <NativeMcpEditor
           key={editor.entry?.id ?? editor.source.id}
@@ -132,35 +148,24 @@ function CatalogBody({
           }}
         />
       )}
-      {entries.map((entry) => (
-        <NativeMcpRow
-          key={entry.id}
-          context={context}
-          entry={entry}
-          instanceId={instanceId}
-          busy={busy}
-          editing={!!editor}
-          edit={() => edit(entry)}
-          change={(action) => void change(entry, action)}
-        />
-      ))}
+      <div className="divide-y divide-border">
+        {entries.map((entry) => (
+          <NativeMcpRow
+            key={entry.id}
+            context={context}
+            entry={entry}
+            instanceId={instanceId}
+            busy={busy}
+            editing={!!editor}
+            edit={() => edit(entry)}
+            change={(action) => void change(entry, action)}
+          />
+        ))}
+      </div>
       {catalog.operations?.map((operation) => (
         <McpOAuthCard key={operation.id} context={context} initial={operation} />
       ))}
-      {entries.length === 0 && <p className="text-sm text-muted-foreground">尚未添加其他 MCP 配置。</p>}
-    </>
-  );
-}
-function McpGuidance({ agent }: { agent: NativeManagementContext['agent'] }) {
-  return (
-    <>
-      <p className="text-sm text-muted-foreground">配置更改在下次启动会话时生效。</p>
-      {agent === 'antigravity' && (
-        <details className="text-xs leading-6 text-muted-foreground">
-          <summary className="w-fit cursor-pointer">连接与授权帮助</summary>
-          <p>连接、授权和缺少的变量请在 Antigravity 的 MCP 面板中管理。</p>
-        </details>
-      )}
+      {entries.length === 0 && <p className="text-sm text-muted-foreground">暂无 MCP 配置。</p>}
     </>
   );
 }
@@ -175,25 +180,19 @@ export default function NativeMcpPanel({
 }) {
   const [instanceId, setInstanceId] = useState('');
   const leave = useGuardedSettingsNavigation();
-  const { catalog, error, setError } = useCatalog(context, reload, instanceId);
+  const [retry, setRetry] = useState(0);
+  const { catalog, error, setError } = useCatalog(context, reload + retry, instanceId);
   const current = catalog && (catalog.instanceId ?? '') === instanceId;
   const sessionEntry = current ? catalog.entries.find((entry) => entry.managedBy === 'session-tools') : undefined;
   return (
     <section aria-label="MCP 管理" className="min-w-0 space-y-4">
-      <SessionToolsPanel key={context.agent} agent={context.agent} reload={reload} onChanged={onChanged}>
-        {sessionEntry && (
-          <NativeMcpRuntime
-            key={`${sessionEntry.revision}:${instanceId}`}
-            context={context}
-            entry={sessionEntry}
-            instanceId={instanceId || undefined}
-          />
-        )}
-      </SessionToolsPanel>
-      <McpGuidance agent={context.agent} />
+      <GlobalSessionTools context={context} reload={reload + retry} onChanged={onChanged} entry={sessionEntry} />
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
+          {error}{' '}
+          <button type="button" className="underline" onClick={() => setRetry((n) => n + 1)}>
+            重试
+          </button>
         </p>
       )}
       {catalog && <Instances catalog={catalog} id={instanceId} setId={(id) => leave(() => setInstanceId(id))} />}
@@ -210,5 +209,24 @@ export default function NativeMcpPanel({
         !error && <p role="status">正在读取 MCP 配置…</p>
       )}
     </section>
+  );
+}
+
+function GlobalSessionTools({
+  context,
+  reload,
+  onChanged,
+  entry,
+}: {
+  context: NativeManagementContext;
+  reload: number;
+  onChanged(): void;
+  entry?: NativeMcpEntry;
+}) {
+  if (context.projectId) return null;
+  return (
+    <SessionToolsPanel compact key={context.agent} agent={context.agent} reload={reload} onChanged={onChanged}>
+      {entry && <NativeMcpRuntime key={entry.revision} context={context} entry={entry} />}
+    </SessionToolsPanel>
   );
 }

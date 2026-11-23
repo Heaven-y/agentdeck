@@ -11,7 +11,6 @@ import type { PluginContext, PluginInventory } from './plugin-types';
 type PluginAdapter = {
   read(context: PluginContext): Promise<PluginInventory>;
   resolve(env: NodeJS.ProcessEnv): ResolvedCommand | Promise<ResolvedCommand>;
-  version: string;
   manifestFiles: readonly string[];
   installScopes: NativePluginCatalog['installScopes'];
   installSelector: boolean;
@@ -23,7 +22,6 @@ const adapters: Record<AgentKind, PluginAdapter | undefined> = {
   claude: {
     read: claudePlugins,
     resolve: (env) => resolveLocalCommand('claude', env),
-    version: '2.1.317',
     manifestFiles: ['.claude-plugin/plugin.json'],
     installScopes: ['user', 'project', 'local'],
     installSelector: true,
@@ -43,7 +41,6 @@ const adapters: Record<AgentKind, PluginAdapter | undefined> = {
   codex: {
     read: codexPlugins,
     resolve: (env) => resolveCodexCommand({ env }),
-    version: '0.166.0',
     // 离线目录已用同一份 manifest 确定版本和描述，无需重读。
     manifestFiles: [],
     installScopes: ['user'],
@@ -59,7 +56,6 @@ const adapters: Record<AgentKind, PluginAdapter | undefined> = {
   antigravity: {
     read: antigravityPlugins,
     resolve: (env) => resolveLocalCommand('agy', env),
-    version: '1.5.3',
     manifestFiles: ['plugin.json', '.antigravity-plugin/plugin.json'],
     installScopes: ['user'],
     installSelector: false,

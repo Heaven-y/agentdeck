@@ -1,3 +1,4 @@
+import { pluginHelp } from './plugin-help';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -41,7 +42,7 @@ async function fixture() {
     command: () => ({ command: process.execPath, args: [] }),
     run: async (_exe, args) => {
       commands.push(args);
-      return { stdout: Buffer.from('0.166.0'), stderr: Buffer.alloc(0), exitCode: 0 };
+      return { stdout: Buffer.from(pluginHelp('codex', args) ?? ''), stderr: Buffer.alloc(0), exitCode: 0 };
     },
     readCodexPolicy: async () => policy,
   });
@@ -63,9 +64,9 @@ it('Codex 离线列表不用 plugin RPC 或联网 list，定点启停保留未�
   expect(text).toContain('enabled = false');
   expect(text).toContain('extra = "keep"');
   expect(text).toContain('# retained');
-  expect(f.commands.every((args) => args[0] === '--version')).toBe(true);
+  expect(f.commands.every((args) => args.at(-1) === '--help')).toBe(true);
 });
-it('Codex 插件版本探测与 app-server 共用官方 npm 入口，不采用通用 shim 的另一份程序', async () => {
+it('Codex 插件命令探测与 app-server 共用官方 npm 入口，不采用通用 shim 的另一份程序', async () => {
   const f = await fixture();
   const npmEntry = path.join(f.root, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
   const otherEntry = path.join(f.root, 'other-codex.js');
@@ -81,11 +82,14 @@ it('Codex 插件版本探测与 app-server 共用官方 npm 入口，不采用�
     readCodexPolicy: async () => f.policy,
     run: async (_command, args) => {
       commands.push(args);
-      return { stdout: Buffer.from('0.166.0'), stderr: Buffer.alloc(0), exitCode: 0 };
+      return { stdout: Buffer.from(pluginHelp('codex', args) ?? ''), stderr: Buffer.alloc(0), exitCode: 0 };
     },
   });
   await service.read('codex');
-  expect(commands).toEqual([[npmEntry, '--version']]);
+  expect(commands).toEqual([
+    [npmEntry, 'plugin', '--help'],
+    [npmEntry, 'plugin', 'marketplace', '--help'],
+  ]);
 });
 it('Codex 托管来源禁止启停，未核实策略不得开放写入', async () => {
   const f = await fixture();
@@ -131,7 +135,7 @@ it('Codex 显式 Git 市场刷新和后续原生 list 都限定同一来源', as
     run: (_exe, args) => {
       calls.push(args);
       return Promise.resolve({
-        stdout: Buffer.from(args[0] === '--version' ? '0.166.0' : args[1] === 'list' ? '{"installed":[]}' : '{}'),
+        stdout: Buffer.from(pluginHelp('codex', args) ?? (args[1] === 'list' ? '{"installed":[]}' : '{}')),
         stderr: Buffer.alloc(0),
         exitCode: 0,
       });

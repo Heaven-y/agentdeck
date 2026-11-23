@@ -6,6 +6,7 @@ import type { NativeConfigSource } from '../config';
 export type SkillContext = ResourceContext;
 export type NativeSkill = {
   name: string;
+  description?: string;
   path?: string;
   scope?: NativeSkillEntry['scope'];
   /** CLI 的原始作用域用于保持已有来源 ID，展示作用域可单独归一化。 */
@@ -14,6 +15,7 @@ export type NativeSkill = {
   origin?: NativeSkillOrigin;
   source?: string;
   ownerRoot?: string;
+  fileOnly?: boolean;
 };
 export function enabledState(skill?: NativeSkill): NativeSkillState {
   if (skill?.enabled === undefined) return 'unknown';
@@ -52,7 +54,7 @@ export type SkillStateChange = {
 export type SkillAdapter = {
   readNative(context: SkillContext): Promise<NativeSkill[]>;
   readConfig(context: SkillContext): Promise<NativeConfigSource[]>;
-  verifyVersion(context: SkillContext): Promise<boolean>;
+  verifyVersion?(context: SkillContext): Promise<boolean>;
   localOrigin?(resource: NativeResource): NativeSkillOrigin | undefined;
   visibility(skill: LocalSkill): SkillVisibility;
   restrictConflicts?(records: SkillRecord[]): void;

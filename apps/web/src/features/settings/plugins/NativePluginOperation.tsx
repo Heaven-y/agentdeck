@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { NativePluginOperation as Operation } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../../ui/styles';
 import { nativeScopeNames } from '../resources/native-resource-labels';
-const scopes: Record<string, string> = { ...nativeScopeNames, unknown: '未知' };
+const scopes: Record<string, string> = { ...nativeScopeNames, unknown: '来源未标注', external: '外部来源' };
 export const pluginScopeLabel = (scope: string) => scopes[scope] ?? scope;
 const labels: Record<Operation['status'], string> = {
   prepared: '待开始',

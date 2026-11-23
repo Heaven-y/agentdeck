@@ -70,12 +70,14 @@ function launch(input: LaunchInput): AntigravityProcess {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
-function argumentsFor(input: AgentTurnInput, settings?: string): string[] {
+function argumentsFor(input: AgentTurnInput, selection: AntigravityLaunchSelection, settings?: string): string[] {
+  const model = selection.model ?? input.model;
+  const effort = selection.modelSetsEffort ? undefined : (input.reasoningEffort ?? selection.defaultReasoningEffort);
   const args = ['--input-format', 'stream-json', '--output-format', 'stream-json'];
   if (input.sessionId) args.push('--conversation', input.sessionId);
-  if (input.model) args.push('--model', input.model);
+  if (model) args.push('--model', model);
   if (settings) args.push('--settings', settings);
-  if (input.reasoningEffort) args.push('--effort', input.reasoningEffort);
+  if (effort) args.push('--effort', effort);
   args.push(...antigravityPermissionArgs(input.permission));
   return args;
 }
@@ -136,7 +138,6 @@ class AntigravityTurn {
       // 显式选择也要翻译应用键，确保命中对应的原生自定义条目。
       const selection = await resolveSelection(defaultModel, this.input);
       this.selection = launchSelectionValue(selection);
-      const model = this.selection.model ?? this.input.model;
       if (this.selection.nativeSettings)
         this.nativeSettings = await prepareNativeSettings(this.selection.nativeSettings);
       if (this.preparation.signal.aborted) {
@@ -145,14 +146,7 @@ class AntigravityTurn {
       }
       this.child = start({
         cwd: this.input.workspace.dir,
-        args: argumentsFor(
-          {
-            ...this.input,
-            model,
-            reasoningEffort: this.input.reasoningEffort ?? this.selection.defaultReasoningEffort,
-          },
-          this.nativeSettings?.path,
-        ),
+        args: argumentsFor(this.input, this.selection, this.nativeSettings?.path),
       });
       this.listen(this.child);
       this.timer = setTimeout(() => this.fail('Antigravity 启动超时，请检查本机登录与配置。'), 30_000);

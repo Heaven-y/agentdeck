@@ -10,7 +10,7 @@ import {
 import type { Workspace } from '@agentdeck/shared/projects';
 import type { CapabilityProvider, NativeCapabilityCatalog, NativeInvocation } from '../../agents/capability-types';
 import { SessionError } from '../../agents/errors';
-import { createModelCache, type CachedModelCatalog, type ModelCacheWriteGuard } from './model-cache';
+import { createModelCache, type ModelCatalogSnapshot, type ModelCacheWriteGuard } from './model-cache';
 import { createCapabilityRetention } from './capability-memory';
 
 type Entry = NativeCapabilityCatalog['entries'][number];
@@ -75,7 +75,7 @@ export function createCapabilitiesService(
   options: { configDir?: string; antigravityConnection?: () => Promise<AntigravityConnection | undefined> } = {},
 ) {
   const cache = new Map<string, NativeCapabilityCatalog>();
-  const models = new Map<string, CachedModelCatalog | undefined>();
+  const models = new Map<string, ModelCatalogSnapshot | undefined>();
   const refreshing = new Map<string, symbol>();
   const reading = new Map<string, Promise<void>>();
   const restoring = new Map<string, Promise<AgentCapabilities>>();
@@ -109,15 +109,15 @@ export function createCapabilitiesService(
   function publicCatalog(
     agent: AgentKind,
     catalog?: NativeCapabilityCatalog,
-    savedModels?: CachedModelCatalog,
+    savedModels?: ModelCatalogSnapshot,
     connection?: AntigravityConnection,
   ): AgentCapabilities {
     if (!catalog)
       return {
         agent,
-        discovered: savedModels?.current ?? false,
+        discovered: !!savedModels,
         commandsDiscovered: false,
-        ...structuredClone(savedModels?.snapshot ?? { models: [] }),
+        ...structuredClone(savedModels ?? { models: [] }),
         ...(connection ? { antigravityConnection: connection } : {}),
         features: nativeFeaturesFor(agent),
         entries: [],

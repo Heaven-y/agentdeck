@@ -2,17 +2,11 @@
 
 基础核对日期：2026-11-10；AGY 上下文与回合恢复复核于 2026-11-17。本文只定义当前指标口径与接入限制；逐阶段实验完整保存在 `b053fe1:docs/engineering/cli-observability.md`，初始评估在 `6856c1d`。
 
-## 对齐的 DSH 体验
+## 轨迹与统计入口
 
-最初参考的 DSH 0.2.2-rc.1 Trajectory 是按轮次和步骤组织的事件表、时间概览及记录检查器，覆盖消息、工具、子调用、压缩、输入输出、用量和耗时。它不是单纯的会话分支树。
+轨迹按一次用户输入下的步骤组织，复用原生报告的工具调用、命令、输入输出、审批、状态和耗时。会话归档与父子关系属于会话管理，可在各自入口查看。
 
-DSH 的生成速度同时依赖提供方输出 token 数与首个 token 至完成的计时；另有首 token 延迟、模型时间、工具时间和全日志汇总。其数据来自自己维护的会话日志。工作台应复用各 CLI 的原生记录，不能为了照齐统计补造一份完整 transcript。
-
-本项目采用“执行过程”作为轨迹主线：一轮消息下按顺序展示工具调用、文件操作、命令、状态和耗时；可取得的输入、输出、错误、审批和子调用作为步骤详情。会话归档、分支和父子关系仍属于会话管理信息，放在轨迹之外的辅助区域，不把分支树冒充执行时间线。
-
-依据为安装包中的 `@deepseek-ai/dsh-client-ui-trajectory/README.zh.md`、`@deepseek-ai/dsh-session-stats/README.zh.md`，以及 chat 客户端的计时投影。参考范围限于交互和指标定义。
-
-输入框外下方显示上下文及耗时、平均 tok/s；点击统计可展开 token 分项。本轮运行中或无新值时，保留同会话已加载的最近有效速度并标记“最近一次”，不算作本轮数据。完整的已有历史统计可在轨迹查看。Antigravity 使用官方彩色标识。
+输入框下方显示上下文、耗时和平均 tok/s，点击展开 token 分项。本轮暂无新值时，显示同会话最近已加载的有效速度并标为「最近一次」。已加载的历史用量在对应轨迹轮次展示。
 
 ## 能力对照
 
@@ -30,7 +24,7 @@ DSH 的生成速度同时依赖提供方输出 token 数与首个 token 至完�
 ## 计量规则
 
 - 输出 token、输入 token、缓存 token 与上下文占用是不同指标，不能把它们混成一个数。累计使用量不能除以模型窗口冒充上下文占比。
-- “回合平均输出速度”按本轮输出 token 与整轮耗时计算，包含工具、审批和等待；与 DSH 的生成阶段速度分开。只有输出计数范围和计时范围一致时显示。
+- 「回合平均输出速度」使用本轮输出 token 与整轮耗时，包含工具、审批和等待；生成阶段均速只用同一次生成的输出量和计时。两者分别呈现，计数与时间范围需一致。
 - 实时接收时间受缓冲、网络和 CLI 转发影响。没有可靠 token 计数时隐藏速度，不用字符数或 delta 包数代替 token。若使用 tokenizer，应明确标记估算。
 - 同一原生响应的累计 usage 只更新最新值；会话累计量取差前核对基线、恢复和重置。无法取得基线时不追认本轮增量。
 - 公开推理与输出总量可能存在包含关系，不能简单相加。费用只在原生报告且范围明确时显示，不为自定义服务套用固定价格表。
@@ -41,7 +35,7 @@ DSH 的生成速度同时依赖提供方输出 token 数与首个 token 至完�
 
 ## Claude 的接入点与限制
 
-核对版本：CLI 2.1.317、SDK 0.3.286；不是自动追踪的当前安装版本。`result.usage` 表示本回合主循环用量；`modelUsage` 与 `total_cost_usd` 是会话累计，可能包含子代理、压缩和辅助请求。思考 token 若报告通常属于输出量的子集。
+核对版本：CLI 2.1.317、SDK 0.3.286。`result.usage` 表示本回合主循环用量；`modelUsage` 与 `total_cost_usd` 是会话累计，可能包含子代理、压缩和辅助请求。思考 token 若报告通常属于输出量的子集。
 
 `stream_event.message_delta.usage.output_tokens` 按单个 API 响应累计；`assistant.message.usage` 可保留早期占位值，且同一消息会分块重复出现，不能逐条相加。`duration_api_ms` 含 API 等待，不能直接当纯解码时长。首条完整助手消息、message_start 与首个可见文字的计时含义也不同。
 
@@ -111,13 +105,13 @@ AGY 生成终态报告明确的地区不支持时，显示脱敏的地区拒绝�
 
 ## 界面与验证
 
-已提供“对话 / 轨迹”切换、按轮虚拟步骤表和点击打开的右栏详情，复用同一会话条目。回合或步骤完成后显示对应 token、耗时及平均速度，输入区显示上下文占比。审批与停止在轨迹中仍可操作，视图切换保留草稿。
+轨迹的视图切换、统计位置与可用操作见[界面约定](../product/ui-layout.md#42-执行轨迹与用量)。
 
 当前验证覆盖统计去重、跨轮 ID、失败/取消、原生生成计时与界面；外部模型服务结果和账号模式状态见[路线图](../roadmap.md#已有验收证据)。
 
 ## 证据入口
 
 - Claude：[SDK 用量](https://platform.claude.com/docs/en/agent-sdk/cost-tracking)、[类型参考](https://platform.claude.com/docs/en/agent-sdk/typescript)、[流事件](https://platform.claude.com/docs/en/build-with-claude/streaming)，以及本机 SDK 类型与实现。
-- Codex：统计字段基线为本机 `app-server generate-json-schema` 的 0.166.0 schema；2026-11-20 另用 0.170.0 本机 schema 与同版本官方源码核查逐回复型号限制，见[能力矩阵 E11](native-capability-matrix.md#证据索引)。早期网页取证失败的记录仍保留在历史文档。
+- Codex：统计字段基线为本机 `app-server generate-json-schema` 的 0.166.0 schema；2026-11-20 另用 0.170.0 本机 schema 与同版本官方源码核查逐回复型号，见[能力矩阵 E11](native-capability-matrix.md#证据索引)。
 - Antigravity：[headless](https://antigravity.google/docs/cli/headless/)、[statusLine](https://antigravity.google/docs/cli/statusline)、本机 protobuf 描述和隔离 GetCascadeTrajectory 读取。
 - 当前数据入口：[Claude 上下文](../../apps/server/src/agents/claude/run/query.ts)、[Antigravity 映射](../../apps/server/src/agents/antigravity/run/mapper.ts)、[前端上下文状态](../../apps/web/src/features/chat/models/ContextStatus.tsx)、[事件归并](../../apps/web/src/features/conversation/model/conversation-events.ts)。

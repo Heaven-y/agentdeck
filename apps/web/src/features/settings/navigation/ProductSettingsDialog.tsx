@@ -6,7 +6,7 @@ import { SettingsNavigation, AgentNavigation } from './SettingsPageNavigation';
 import { settingsSection, sectionFor } from './page-registry';
 import { useSettingsPage, type SettingsPageProps } from './use-settings-page';
 export type { SettingsPage } from './page-registry';
-/** 设置占用应用工作区；只管理全局/用户配置，表单离开统一经过保护，敏感内容不跨分类保留。 */
+/** 表单离开统一经过保护，敏感内容不跨分类保留。 */
 export default function ProductSettingsDialog(props: SettingsPageProps) {
   const state = useSettingsPage(props);
   const scrollport = useRef<HTMLDivElement>(null);
@@ -53,6 +53,7 @@ export default function ProductSettingsDialog(props: SettingsPageProps) {
                 <Suspense fallback={<p role="status">正在读取设置…</p>}>
                   {section.render({
                     agent: state.currentAgent,
+                    workspace: props.workspace,
                     formGuard: state.formGuardRef,
                     launchDetail: state.page === 'launch',
                     back: () => state.changePage(state.currentAgent),

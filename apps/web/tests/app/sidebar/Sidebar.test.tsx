@@ -27,12 +27,14 @@ const base = {
 const claudeSession: SessionSummary = {
   ...base,
   agent: 'claude',
+  capabilities: { rename: true, fork: 'native', delete: 'native', archive: null },
   sessionId: 'claude-1',
   title: '检查这个脚本',
 };
 const codexSession: SessionSummary = {
   ...base,
   agent: 'codex',
+  capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' },
   sessionId: 'codex-1',
   title: '解释构建失败',
 };
@@ -467,7 +469,7 @@ it('侧栏保留各CLI复制入口，管理动作按原生能力显示', async (
   managedSidebar([
     claudeSession,
     codexSession,
-    { ...claudeSession, agent: 'antigravity', sessionId: 'agy', title: '引力会话' },
+    { ...claudeSession, agent: 'antigravity', sessionId: 'agy', title: '引力会话', capabilities: undefined },
   ]);
   expect(screen.getByRole('button', { name: /Antigravity.*更多操作/ })).toBeTruthy();
   const menuButton = screen.getByRole('button', { name: /Claude.*更多操作/ });

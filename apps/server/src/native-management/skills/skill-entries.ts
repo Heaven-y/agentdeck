@@ -66,7 +66,7 @@ function localState(
   nativeSkill: NativeSkill | undefined,
   state: NativeSkillEntry['state'],
 ) {
-  if (origin === 'plugin') return enabledState(nativeSkill);
+  if (origin === 'plugin') return nativeSkill?.fileOnly ? 'unknown' : enabledState(nativeSkill);
   return origin === 'managed' || origin === 'synced' ? 'unknown' : state;
 }
 function localAccess(
@@ -81,7 +81,7 @@ function localAccess(
       origin,
       state: 'unknown',
       actions: readOnlyActions(),
-      unavailableReason: '此目录对应多个技能来源，暂不能修改。请在 CLI 中管理。',
+      unavailableReason: '一个目录对应多个原生技能来源，无法单独修改。',
     };
   const { resource, nativeSkill } = local;
   const reason = resource.unavailableReason ?? snapshotReason;
@@ -109,9 +109,10 @@ export async function localSkillEntry(
   const access = localAccess(adapter, local, conflict, snapshot.reason);
   const entry: NativeSkillEntry = {
     id: resource.id,
-    name: snapshot.name,
+    name: nativeSkill?.name ?? snapshot.name,
     scope: resource.scope,
     source: resource.displayPath,
+    fileOnly: !nativeSkill || nativeSkill.fileOnly,
     ...access,
     revision: contentRevision(
       Buffer.from(
@@ -123,7 +124,7 @@ export async function localSkillEntry(
         ]),
       ),
     ),
-    description: '',
+    description: nativeSkill?.description ?? '',
   };
   return { entry, file, treeRevision: snapshot.treeRevision, nativeSkill };
 }
@@ -143,11 +144,11 @@ export function nativeSkillEntry(context: SkillContext, skill: NativeSkill): Ski
       scope: skill.scope ?? 'unknown',
       origin,
       source: skill.source ?? skill.path ?? 'CLI 内置技能',
-      state: enabledState(skill),
+      state: skill.fileOnly ? 'unknown' : enabledState(skill),
       revision: contentRevision(Buffer.from(JSON.stringify(skill))),
-      description: '',
+      description: skill.description ?? '',
       actions: readOnlyActions(),
-      unavailableReason: origin === 'plugin' ? '请在所属插件中管理。' : '此技能只能在 CLI 中管理。',
+      fileOnly: skill.fileOnly,
     },
     nativeSkill: skill,
   };

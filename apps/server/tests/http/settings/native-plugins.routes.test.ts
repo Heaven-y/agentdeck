@@ -16,6 +16,7 @@ it('插件路由要求鉴权和 Origin，严格拒绝任意命令参数且不泄
     marketplaces: [],
     operations: [],
     installScopes: ['user'],
+    canInstall: true,
     canAddMarketplace: true,
     warnings: [],
   });

@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { NativeSessionPageInput } from '../../contracts';
 
@@ -39,17 +40,9 @@ function queryFor(columns: Set<string>): string {
   return `select ${BASE_COLUMNS.join(', ')}\nfrom conversation_summaries${where}\norder by last_modified_time desc`;
 }
 
-/** 读表里实际有哪些列；读不到时按「没有任何可过滤列」处理。 */
 function tableColumns(db: DatabaseSync): Set<string> {
-  try {
-    const info = db.prepare('pragma table_info(conversation_summaries)').all();
-    const names = info
-      .map((row) => (row as Record<string, unknown>).name)
-      .filter((name): name is string => typeof name === 'string');
-    return new Set(names);
-  } catch {
-    return new Set();
-  }
+  const info = db.prepare('pragma table_info(conversation_summaries)').all();
+  return new Set(info.map((row) => row.name).filter((name): name is string => typeof name === 'string'));
 }
 
 /** SQLite 的 TEXT/INTEGER 都可能出现在列里，统一收敛成字符串；NULL 或对象视为缺失。 */
@@ -76,14 +69,11 @@ function toSummaryRow(value: unknown): SummaryRow | undefined {
   };
 }
 
-/**
- * 只读读取 Antigravity 的会话摘要。
- * 库不存在、表结构变化、文件损坏或锁冲突都按「没有可展示的会话」处理，绝不向调用方抛错。
- */
+/** 新安装尚无摘要库时返回空列表；已有库无法读取时保留失败。 */
 export function readSummaries(dbPath: string, page?: NativeSessionPageInput): SummaryRow[] {
-  let db: DatabaseSync | undefined;
+  if (!statSync(dbPath, { throwIfNoEntry: false })) return [];
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
     const sql = queryFor(tableColumns(db));
     const rows = page
       ? db.prepare(`${sql}, conversation_id asc limit ? offset ?`).all(page.limit, Number(page.cursor ?? 0))
@@ -94,11 +84,9 @@ export function readSummaries(dbPath: string, page?: NativeSessionPageInput): Su
       if (summary) result.push(summary);
     }
     return result;
-  } catch {
-    return [];
   } finally {
     try {
-      db?.close();
+      db.close();
     } catch {
       // 关闭失败不影响已经读到的结果，也不把异常抛给列表调用方。
     }

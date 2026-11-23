@@ -17,12 +17,13 @@ describe('原生交互能力边界', () => {
     expect(headless.images).toMatchObject({ support: 'unsupported', available: false });
     const acp = nativeFeaturesFor('antigravity', {
       runtime: 'antigravity-acp',
-      cliVersion: '1.5.3',
+      cliVersion: '1.5.14',
       handshake: 'confirmed',
       protocolVersion: 1,
       acpCapabilities: { image: true, embeddedContext: true },
+      implemented: ['images'],
     });
-    expect(acp.images).toMatchObject({ support: 'supported', available: false });
+    expect(acp.images).toMatchObject({ support: 'supported', available: true });
     expect(acp.documents).toMatchObject({ support: 'supported', available: false });
     expect(acp.questions).toMatchObject({ support: 'unknown', available: false });
   });

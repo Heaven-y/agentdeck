@@ -122,15 +122,15 @@ describe('Antigravity 会话摘要读取', () => {
     expect(readSummaries(path.join(tmpdir(), 'agentdeck-no-such.db'))).toEqual([]);
   });
 
-  it('表结构不符时返回空数组', async () => {
+  it('表结构不符时报告读取失败', async () => {
     const dbPath = await makeEmptyDb();
-    expect(readSummaries(dbPath)).toEqual([]);
+    expect(() => readSummaries(dbPath)).toThrow();
   });
 
-  it('不是 SQLite 文件时返回空数组', async () => {
+  it('损坏的库不当成空列表', async () => {
     const dbPath = fixturePath('broken');
     await writeFile(dbPath, '这不是数据库', 'utf8');
-    expect(readSummaries(dbPath)).toEqual([]);
+    expect(() => readSummaries(dbPath)).toThrow();
   });
 
   it('空表返回空数组', async () => {
@@ -210,7 +210,7 @@ describe('Antigravity 会话提供方', () => {
       { ...row, id: 'b', title: '手动标题' },
       { ...row, id: 'c', title: null, preview: null },
     ]);
-    const { items } = await createAntigravitySessions({ dbPath }).page!(dir, { limit: 3 });
+    const { items } = await createAntigravitySessions({ dbPath }).page(dir, { limit: 3 });
     expect(items.map(({ summary }) => summary)).toEqual(['首条'.repeat(30), '手动标题', '']);
   });
 
@@ -247,13 +247,15 @@ describe('Antigravity 会话提供方', () => {
     expect(item?.lastModified).toBe(expected);
   });
 
-  it('汇总读取抛错时列表仍然为空', async () => {
+  it('汇总读取失败时列表和归属验证都报告读取错误', async () => {
     const provider = createAntigravitySessions({
       readSummaries: () => {
         throw new Error('锁冲突');
       },
     });
-    await expect(provider.list(dir)).resolves.toEqual([]);
+    const failure = { status: 503, code: 'session_runtime_failed' };
+    await expect(provider.page(dir, { limit: 1 })).rejects.toMatchObject(failure);
+    await expect(provider.read('missing', dir)).rejects.toMatchObject(failure);
   });
 
   it('归档列表按不支持处理', async () => {
@@ -372,7 +374,7 @@ describe('Antigravity 原生管理接线', () => {
   });
   it('按已接入能力显示动作，核对归属后调用原生管理，分支结果保留原生身份', async () => {
     const { dir, provider, management } = setup();
-    expect(provider.capabilities).toEqual({ rename: true, fork: 'native', delete: 'native' });
+    expect(provider.capabilities).toEqual({ rename: true, fork: 'native', delete: 'native', archive: null });
     await provider.mutate('source-session', dir, { action: 'rename', title: '新标题' });
     await provider.mutate('source-session', dir, { action: 'delete', confirmed: true });
     expect(management.rename).toHaveBeenCalledExactlyOnceWith('source-session', dir, '新标题');

@@ -1,46 +1,30 @@
 # AgentDeck
 
-Windows 本机桌面工作台，按项目集中使用 Claude Code、Codex 和 Antigravity 的原生会话。各 CLI 保留自己的会话、配置、工具与权限机制，AgentDeck 插件提供独立工具页面。
+AgentDeck 是 Windows 本机桌面工作台，用于按项目组织 Claude Code、Codex 和 Antigravity 的原生会话。各 CLI 继续管理自己的会话、配置、工具和权限。
 
-界面参考 DSH：左侧工作区列表，中央对话，右侧按需打开会话信息。会话按时间混排，以图标区分 CLI；SSH Console 从左上入口打开。
-
-## 功能与进度
+## 主要功能
 
 | 部分 | 当前能力 |
 |---|---|
-| 桌面与项目 | Electron 窗口、单实例和退出清理；项目可添加、改名、更换目录及移除，原生目录明确的其他会话可预填为项目 |
-| 会话历史 | 三个 CLI 均可发现与读取历史，提供各自已接入的重命名、分支、删除和归档；已核实归属的子代理可单独查看 |
-| 原生对话 | 三种 CLI 新建、续接、流式事件和中断；Claude/Codex 原生审批，AGY 原生软拒；支持后台并行与短暂断线/刷新恢复 |
-| 会话引用与统计 | 复制稳定会话链接、点击定位和跨 CLI 只读历史工具；执行轨迹、原生用量及可靠计时；AGY 官方额度可显式查看，不与 API Key 用量混用 |
-| 原生配置 | 按各 CLI 的真实作用域浏览配置、规则、Skills、MCP 和原生插件入口；在运行环境页手动检查新版，安装缺失的 CLI、更新可用版本或修复损坏的安装 |
-| SSH | 左上进入 SSH Console，多服务器、全磁盘与负载、进程、只读 Slurm 作业、只读文件导航、多终端、分屏和搜索；服务器独立于项目管理 |
-| 插件 | 本地安装静态页面插件，按声明权限使用自己的设置、项目摘要和命令；支持启停和卸载外部安装副本 |
-| 本地分发 | Windows x64 0.1.3 本地安装版/便携版；已验证从 0.1.2 全机版原位升级 |
-
-初次开发可从[按功能找代码](docs/guides/repository-map.md)开始。交付进度和验收记录见[路线图](docs/roadmap.md)。
+| 项目与会话 | 按目录管理项目；混合浏览三个 CLI 的历史，搜索、续聊、归档，并按来源提供重命名、分支和删除 |
+| 原生对话 | 新建、续接、流式输出和中断；支持后台并行、断线补收和刷新恢复。Claude Code 和 Codex 的原生审批可在对话中处理 |
+| 会话引用与轨迹 | 复制会话链接，跳转或用只读工具跨 CLI 读取历史；查看执行步骤、耗时、token 和上下文用量 |
+| 原生配置 | 按各 CLI 的作用域管理模型、连接、规则、Skills、MCP 和原生插件；在「运行环境」安装、更新或修复 CLI |
 
 ## 启动
 
-本地安装版和便携版直接运行，使用方法见[安装指南](docs/guides/local-installation.md)。源码开发需要 Windows 10/11、Node.js 22+。按需安装对应 CLI，服务器使用已有 SSH 与运行环境。
+Windows x64 安装版和便携版的使用与升级见[本地安装指南](docs/guides/local-installation.md)。从源码开发需要 Windows 10/11、Node.js 22+，并按需安装对应 CLI。
 
 ```powershell
 npm.cmd ci
 npm.cmd run dev:desktop
 ```
 
-桌面开发入口直接加载 Vite 页面，界面和样式保存后热更新；后端或桌面主进程变化会自动重启应用。浏览器开发可运行 `npm.cmd run dev`，生产式本机服务可运行 `npm.cmd start`。本地打包、安装与卸载说明见[本地安装指南](docs/guides/local-installation.md)，环境变量和隔离验证方式见[开发指南](docs/guides/dev-environment.md)。
+桌面开发模式支持界面热更新，后端或主进程变化时自动重启。浏览器开发用 `npm.cmd run dev`，生产式本机服务用 `npm.cmd start`。环境变量、隔离验证和 Git 流程见[开发指南](docs/guides/dev-environment.md)。
 
-## 使用边界
+## 文档
 
-- 会话正文由各 CLI 原生存储保存。
-- 启动与浏览只做本机探测、配置和历史读取。首次打开模型菜单会按需获取原生能力，之后复用缓存；模型回合只在显式发送后启动。
-- 模型、工具、权限和配置作用域遵循各 CLI 的原生接口。
-- 后端仅监听回环地址，并校验会话与请求来源；SSH 凭据不进入项目配置或模型输入。
-- AgentDeck 插件扩展工作台；CLI 原生 Skills、MCP 和插件仍由各 CLI 解释执行。
-- 会话列表在启动及应用内操作后更新；终端查找使用本机缓冲。
-
-## 文档与开发
-
-从[文档导航](docs/README.md)依次阅读产品需求、界面约定、架构和现行决策。`npm run check` 是完整工程门禁，日常按改动影响范围验证；提交、合并与推送遵循[分支规范](docs/guides/dev-environment.md#17-本仓库的-git-分支与提交)。
-
-已完成计划和旧设计见[历史追溯](docs/engineering/decisions.md#历史追溯)。
+- [文档导航](docs/README.md)：产品需求、界面约定与实现说明。
+- [路线图](docs/roadmap.md)：已交付能力、后续事项与验收记录。
+- [按功能找代码](docs/guides/repository-map.md)：源码和对应测试。
+- [工作台扩展](docs/engineering/workbench-plugins.md)：插件的使用与开发。

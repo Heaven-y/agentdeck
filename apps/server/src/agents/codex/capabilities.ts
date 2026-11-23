@@ -67,6 +67,10 @@ export async function readNativeSkills(
   return { skills, hasErrors: entries.some((entry) => list(entry.errors).length > 0) };
 }
 
+export function codexSkillDescription(skill: RecordValue): string {
+  return text(record(skill.interface).shortDescription) || text(skill.description);
+}
+
 function skillEntry(skill: RecordValue): Entry | undefined {
   const name = text(skill.name);
   const skillPath = text(skill.path);
@@ -77,7 +81,7 @@ function skillEntry(skill: RecordValue): Entry | undefined {
     id: capabilityId('codex', 'skill', name, skillPath),
     kind: 'skill',
     name,
-    description: text(record(skill.interface).shortDescription) || text(skill.description),
+    description: codexSkillDescription(skill),
     source: `${scopes[text(skill.scope)] ?? '原生技能'} · ${path.basename(path.dirname(skillPath))}`,
     available,
     ...(!available ? { unavailableReason: '此技能已在本机 Codex 中禁用。' } : {}),

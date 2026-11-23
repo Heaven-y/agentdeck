@@ -3,7 +3,8 @@ import { ChevronRight, FilePlus2 } from 'lucide-react';
 import { buttonClass } from '../../../ui/styles';
 import { nativeKindNames, nativeScopeNames } from './native-resource-labels';
 
-export type NativeResourceSelection = { resource: NativeResource } | { root: NativeResourceRoot };
+export type NativeResourceTarget = Pick<NativeResource, 'id' | 'label' | 'displayPath'> & { description?: string };
+export type NativeResourceSelection = { resource: NativeResourceTarget } | { root: NativeResourceRoot };
 
 function ResourceRow({ resource, open }: { resource: NativeResource; open(): void }) {
   const state = resource.unavailableReason ?? (resource.exists ? '文件已存在' : '文件尚未创建');

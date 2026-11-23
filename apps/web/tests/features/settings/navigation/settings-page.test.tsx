@@ -144,7 +144,7 @@ it('记忆重新读取期间不使用旧值修改，读回后才允许保存', a
   await act(async () => resolve({ enabled: false, override: false }));
   fireEvent.click(screen.getByLabelText('启用自动记忆'));
   await waitFor(() => expect(save).toHaveBeenCalledWith('enabled'));
-  expect(screen.getByLabelText<HTMLInputElement>('启用自动记忆').checked).toBe(true);
+  await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('启用自动记忆').checked).toBe(true));
 });
 it('一级分类和返回工作台均保护未保存设置，确认后离开', async () => {
   mockApi();

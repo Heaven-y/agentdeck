@@ -44,7 +44,7 @@ it('恢复原位置已被占用时保留隔离内容并报告结果待核实', a
     await fs.mkdir(directory);
     await fs.writeFile(path.join(directory, 'SKILL.md'), 'replacement');
   });
-  await expect(deleteSkillTree(directory, revision)).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  await expect(deleteSkillTree(directory, revision)).rejects.toMatchObject({ code: 'skill_delete_incomplete' });
   expect(await fs.readFile(path.join(directory, 'SKILL.md'), 'utf8')).toBe('replacement');
   const quarantine = (await fs.readdir(root)).find((name) => name.startsWith('.deleted-'))!;
   expect(await fs.readFile(path.join(root, quarantine, 'SKILL.md'), 'utf8')).toBe('changed');

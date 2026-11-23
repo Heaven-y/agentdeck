@@ -2,7 +2,7 @@ import { useSessionPages } from '../queries/use-session-pages';
 import { LoadMoreSessions } from './LoadMoreSessions';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Archive, ArrowLeft } from 'lucide-react';
-import { legacySessionCapabilities, type SessionSummary } from '@agentdeck/shared/conversation';
+import type { SessionSummary } from '@agentdeck/shared/conversation';
 import { type Workspace } from '@agentdeck/shared/projects';
 
 import { buttonClass, inputClass } from '../../../ui/styles';
@@ -24,13 +24,20 @@ function ArchivedActions({
   disabled: boolean;
   choose(action: Selection['action']): void;
 }) {
-  const actions = session.capabilities ?? legacySessionCapabilities(session.agent);
+  const actions = session.capabilities;
   return (
     <div className="flex gap-1">
-      <button type="button" className={buttonClass('outline')} disabled={disabled} onClick={() => choose('unarchive')}>
-        恢复
-      </button>
-      {actions.delete && (
+      {actions?.archive && (
+        <button
+          type="button"
+          className={buttonClass('outline')}
+          disabled={disabled}
+          onClick={() => choose('unarchive')}
+        >
+          恢复
+        </button>
+      )}
+      {actions?.delete && (
         <button type="button" className={buttonClass('ghost')} disabled={disabled} onClick={() => choose('delete')}>
           删除
         </button>

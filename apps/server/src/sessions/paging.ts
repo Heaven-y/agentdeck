@@ -165,15 +165,7 @@ export function createSessionPaging() {
     }
     return cache.read(
       source,
-      async (abort): Promise<NativeSessionPage> => {
-        if (provider.page)
-          return provider.page(homedir(), { limit: SESSION_PAGE_SIZE, cursor: source.cursor }, abort, source.archived);
-        // 仅旧提供方兼容；三个内置 CLI 均实现原生分页。
-        const rows = await provider.list(homedir(), abort, source.archived);
-        const offset = Number(source.cursor ?? 0);
-        const items = rows.slice(offset, offset + SESSION_PAGE_SIZE);
-        return { items, nextCursor: offset + items.length < rows.length ? String(offset + items.length) : undefined };
-      },
+      (abort) => provider.page(homedir(), { limit: SESSION_PAGE_SIZE, cursor: source.cursor }, abort, source.archived),
       signal,
     );
   }

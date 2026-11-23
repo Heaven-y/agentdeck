@@ -80,7 +80,15 @@ function OpenPalette({
   );
 }
 
-function OpenSettings({ guardRef, close }: { guardRef: MutableRefObject<SettingsLeave>; close(): void }) {
+function OpenSettings({
+  guardRef,
+  close,
+  workspace,
+}: {
+  guardRef: MutableRefObject<SettingsLeave>;
+  close(): void;
+  workspace?: Pick<Workspace, 'id' | 'name'>;
+}) {
   return (
     <Suspense
       fallback={
@@ -89,7 +97,7 @@ function OpenSettings({ guardRef, close }: { guardRef: MutableRefObject<Settings
         </p>
       }
     >
-      <SettingsDialog guardRef={guardRef} onClose={close} />
+      <SettingsDialog guardRef={guardRef} onClose={close} workspace={workspace} />
     </Suspense>
   );
 }
@@ -257,7 +265,7 @@ export function App() {
       />
       <SettingsWorkspace
         opened={settings.opened}
-        settings={<OpenSettings guardRef={settings.guardRef} close={settings.close} />}
+        settings={<OpenSettings guardRef={settings.guardRef} close={settings.close} workspace={current} />}
       >
         <WorkspaceLayout
           dockOpen={sidebarVisible}

@@ -130,6 +130,7 @@ export function createClaudeSessions(
     };
   }
   return {
+    capabilities: { rename: true, fork: 'native', delete: 'native', archive: null },
     async media(id, dir, locator, signal) {
       signal?.throwIfAborted();
       const source = await readSource(id, dir);

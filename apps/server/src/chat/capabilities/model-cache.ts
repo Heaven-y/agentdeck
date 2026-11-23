@@ -19,23 +19,18 @@ const ModelCatalog = z.object({
   defaultModel: z.string().min(1).max(512).optional(),
   defaultReasoningEffort: z.string().min(1).max(100).optional(),
 });
-const LegacyStored = z.strictObject({
-  version: z.union([z.literal(1), z.literal(2)]),
-  catalogs: z.array(ModelCatalog.extend({ key: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).max(32),
-});
-type Catalogs = z.infer<typeof LegacyStored>['catalogs'];
+type Catalogs = Array<ModelCatalogSnapshot & { key: string }>;
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const AGY_IDENTITY_VERSION = 2;
 const Stored = z.strictObject({
   version: z.literal(3),
-  identityVersion: z.union([z.literal(1), z.literal(AGY_IDENTITY_VERSION)]).optional(),
+  identityVersion: z.literal(AGY_IDENTITY_VERSION).optional(),
   directories: z.array(z.strictObject({ key: Digest, catalog: Digest })).max(32),
   catalogs: z.array(ModelCatalog.extend({ id: Digest }).strict()).max(32),
 });
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const EMPTY_CACHE = '{"version":3,"directories":[],"catalogs":[]}\n';
 export type ModelCatalogSnapshot = z.infer<typeof ModelCatalog>;
-export type CachedModelCatalog = { snapshot: ModelCatalogSnapshot; current: boolean };
 export type ModelCacheWriteGuard = { currentRequest: () => boolean; currentScope?: () => Promise<boolean> };
 
 /** 不合并目录作用域；仅对已解析的公开模型快照做内容去重。 */
@@ -62,27 +57,17 @@ function bounded(catalogs: Catalogs, agent: AgentKind): Buffer | undefined {
   }
   return undefined;
 }
-function decode(content: string, agent: AgentKind): { catalogs: Catalogs; current: boolean } {
-  const value: unknown = JSON.parse(content);
-  const stored = Stored.safeParse(value);
-  if (!stored.success) {
-    const legacy = LegacyStored.parse(value);
-    // 旧 AGY 默认值的身份语义未知，不能与新发现的目录合并。
-    if (agent === 'antigravity') return { catalogs: [], current: false };
-    return { catalogs: legacy.catalogs, current: legacy.version === 2 };
-  }
+function decode(content: string, agent: AgentKind): Catalogs {
+  const data = Stored.parse(JSON.parse(content));
   // 旧 v3 即使有模型身份版本，也没有 AGY 连接身份，不能归给当前模式。
-  const modeAware = stored.data.identityVersion === AGY_IDENTITY_VERSION;
-  if (modeAware !== (agent === 'antigravity')) return { catalogs: [], current: false };
-  const snapshots = new Map(stored.data.catalogs.map(({ id, ...catalog }) => [id, catalog]));
-  return {
-    current: true,
-    catalogs: stored.data.directories.map(({ key, catalog }) => {
-      const snapshot = snapshots.get(catalog);
-      if (!snapshot) throw new Error('模型缓存引用缺失');
-      return { key, ...snapshot };
-    }),
-  };
+  const modeAware = data.identityVersion === AGY_IDENTITY_VERSION;
+  if (modeAware !== (agent === 'antigravity')) return [];
+  const snapshots = new Map(data.catalogs.map(({ id, ...catalog }) => [id, catalog]));
+  return data.directories.map(({ key, catalog }) => {
+    const snapshot = snapshots.get(catalog);
+    if (!snapshot) throw new Error('模型缓存引用缺失');
+    return { key, ...snapshot };
+  });
 }
 
 /** 只缓存模型元数据，目录用摘要标识；技能路径、诊断与认证材料不写入。 */
@@ -100,13 +85,12 @@ export function createModelCache(configDir: string) {
     const file = path.join(directory, `${agent}.json`);
     const snapshot = parents ? await readConfigFile(file) : { content: '', revision: 'missing' };
     let catalogs: Catalogs = [];
-    let current = false;
     try {
-      ({ catalogs, current } = decode(snapshot.content, agent));
+      catalogs = decode(snapshot.content, agent);
     } catch {
       // 派生缓存可由下一次成功发现重建，不把损坏内容当作已获取模型。
     }
-    return { file, snapshot, catalogs, current };
+    return { file, snapshot, catalogs };
   }
   async function commit(
     current: Awaited<ReturnType<typeof load>>,
@@ -128,7 +112,7 @@ export function createModelCache(configDir: string) {
       serial(async () => {
         const stored = await load(agent);
         const catalog = stored.catalogs.find((entry) => entry.key === hash(key));
-        return catalog ? { snapshot: ModelCatalog.parse(catalog), current: stored.current } : undefined;
+        return catalog && ModelCatalog.parse(catalog);
       }),
     write: (agent: AgentKind, key: string, catalog: ModelCatalogSnapshot, guard: ModelCacheWriteGuard) =>
       serial(async () => {
@@ -136,10 +120,7 @@ export function createModelCache(configDir: string) {
         if (!parsed.success || !guard.currentRequest()) return;
         const current = await load(agent);
         const identity = hash(key);
-        // v1 缺少模型身份与默认值，升级时只把本次新发现的目录标记为完整。
-        const catalogs = current.current
-          ? current.catalogs.filter((catalog) => catalog.key !== identity).slice(-31)
-          : [];
+        const catalogs = current.catalogs.filter((catalog) => catalog.key !== identity).slice(-31);
         catalogs.push({ key: identity, ...parsed.data });
         const bytes = bounded(catalogs, agent);
         if (bytes) await commit(current, bytes, guard);

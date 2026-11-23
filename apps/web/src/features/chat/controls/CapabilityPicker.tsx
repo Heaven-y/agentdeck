@@ -117,7 +117,7 @@ function CapabilityDialog({ disabled, onClose }: { disabled: boolean; onClose():
             aria-expanded={showUnavailable}
             onClick={() => setShowUnavailable(!showUnavailable)}
           >
-            {showUnavailable ? '收起不可用能力说明' : `查看不可用能力（${restrictedCount}）`}
+            {showUnavailable ? '收起终端命令' : `另有 ${restrictedCount} 项暂不可调用`}
           </button>
         )}
         <ul aria-label="原生技能与命令" className="space-y-2">

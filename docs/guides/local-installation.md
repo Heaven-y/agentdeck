@@ -4,7 +4,7 @@
 
 0.1.3 的解压版、便携版和已安装版均通过隔离启动检查。本机以原目录和全机范围把 0.1.2 静默原位升级到 0.1.3；卸载登记仍为同一项，程序文件与成品一致，五份已有工作台配置校验值不变。没有另测交互式覆盖、UAC 提示或卸载。0.1.2 的原生 NSIS 页面回归和首次向导验收见 `25f475f:docs/guides/local-installation.md`。
 
-0.1.1 于 2026-11-05 完成本地构建，其首轮候选 NSIS 曾完成隔离安装、启动和卸载，后续重建未逐次重装。原记录见 `b053fe1:docs/guides/local-installation.md`；这些结果不代替其他版本的安装测试。
+0.1.1 的首轮候选安装、启动和卸载记录见 `b053fe1:docs/guides/local-installation.md`。
 
 ## 选择安装方式
 
@@ -20,7 +20,7 @@
 
 ## 数据和升级
 
-项目、服务器档案、插件设置等使用[工作台数据目录](../engineering/architecture.md#51-工作台数据)，原生会话仍由各 CLI 保存。便携版只免安装，业务数据仍按同样规则保存，并非随 exe 携带。
+项目、偏好和插件数据保存在[工作台数据目录](../engineering/architecture.md#51-工作台数据)，原生会话由各 CLI 保存。便携版免安装，仍使用同一个数据位置。
 
 同一用户正常只运行一个实例，再次启动会聚焦现有窗口。退出会停止本机服务并清理本应用持有的连接与子进程。卸载安装版保留工作台数据及 CLI 原生文件。
 
@@ -66,7 +66,7 @@ Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.3-x64-setup.
 Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.3-x64-portable.exe
 ```
 
-安装冒烟使用隔离环境；模型和 SSH 链路的验证结果见路线图。
+验收范围见[路线图](../roadmap.md#已有验收证据)。
 
 ## 会话链接的安装验收边界
 

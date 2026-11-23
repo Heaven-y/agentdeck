@@ -11,7 +11,6 @@ export * from './messages/attachments';
 export * from './messages/followups';
 export * from './messages/runtime-tasks';
 export * from './capabilities/native-actions';
-export * from './sessions/legacy-session-capabilities';
 export * from './protocol-version';
 export * from './messages/permissions';
 export * from './sessions/recovery';

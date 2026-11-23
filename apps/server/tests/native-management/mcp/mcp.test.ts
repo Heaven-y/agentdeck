@@ -49,7 +49,7 @@ it('Claude 原生命令补默认参数后仍确认成功，混合状态未知字
       revision: next.revision,
       config: { transport: 'stdio', command: 'node' },
     }),
-  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  ).rejects.toMatchObject({ code: 'mcp_change_unconfirmed' });
 });
 async function fixture() {
   const homeDir = await mkdtemp(path.join(os.tmpdir(), 'agentdeck-mcp-'));
@@ -101,7 +101,7 @@ it.each(['条目仍存在', '写后不可读', '执行中超时'])('Claude 移�
       name: 'demo',
       config: { transport: 'stdio', command: 'other-node' },
     }),
-  ).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  ).rejects.toMatchObject({ code: 'mcp_change_unconfirmed' });
   expect(run.mock.calls.map(([, args]) => args.slice(0, 2))).toEqual([['mcp', 'remove']]);
 });
 it.each(['claude', 'codex', 'antigravity'] as const)('%s 只将完全匹配的用户会话工具归入专用入口', async (agent) => {
@@ -420,7 +420,7 @@ it('持久修改后重启失败要核对结果，但不覆盖原始的 revision 
     name: 'demo',
     config: { transport: 'stdio' as const, command: 'node' },
   };
-  await expect(service.saveMcp('codex', input)).rejects.toMatchObject({ code: 'result_unconfirmed' });
+  await expect(service.saveMcp('codex', input)).rejects.toMatchObject({ code: 'mcp_change_unconfirmed' });
   expect(await readFile(file, 'utf8')).toContain('command = "node"');
   await expect(service.saveMcp('codex', input)).rejects.toMatchObject({ code: 'revision_conflict' });
 });
