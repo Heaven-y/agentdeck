@@ -2,6 +2,7 @@ import { request } from '../../lib/http';
 import type {
   WorkbenchPluginBackendRequest,
   WorkbenchPluginBackendResponse,
+  WorkbenchPluginHostRequest,
   WorkbenchPluginCatalog,
   WorkbenchPluginPage,
   WorkbenchPluginStorage,
@@ -22,6 +23,8 @@ export const pluginApi = {
       body: JSON.stringify(input),
       signal,
     }),
+  host: (id: string, input: WorkbenchPluginHostRequest, signal?: AbortSignal) =>
+    request<unknown>(`${pluginUrl(id)}/host`, { method: 'POST', body: JSON.stringify(input), signal }),
   setEnabled: (id: string, enabled: boolean, revision: string) =>
     request<WorkbenchPluginCatalog>(pluginUrl(id), { method: 'PUT', body: JSON.stringify({ enabled, revision }) }),
   remove: (id: string, revision: string) =>

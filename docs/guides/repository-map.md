@@ -17,8 +17,8 @@
 
 | 要修改的内容 | 从哪里开始 | 通常还要看哪里 |
 |---|---|---|
-| 工作台插件宿主 | [通用后端装配](../../apps/server/src/bootstrap/plugins.ts)、[页面容器](../../apps/web/src/features/plugins/PluginWorkspace.tsx) | 接口与生命周期见[工作台插件](../engineering/workbench-plugins.md)；业务扩展在 [agentdeck-plugins](https://github.com/Heaven-y/agentdeck-plugins) 仓库 |
-| 增加普通工作台插件 | [外部插件示例](../../examples/workbench-plugin/agentdeck.plugin.json) | 页面与命令使用[插件接口](../engineering/workbench-plugins.md)，宿主根据清单加载 |
+| 工作台插件宿主 | [通用后端装配](../../apps/server/src/bootstrap/plugins.ts)、[页面容器](../../apps/web/src/features/plugins/PluginWorkspace.tsx) | [业务服务注入](../../apps/server/src/bootstrap/plugin-services.ts)复用原生分页；前端 `plugins` 管贡献入口、命令和事件。接口见[工作台插件](../engineering/workbench-plugins.md)，业务与 SDK 在 [agentdeck-plugins](https://github.com/Heaven-y/agentdeck-plugins) 仓库 |
+| 增加工作台插件 | [静态插件示例](../../examples/workbench-plugin/agentdeck.plugin.json)、[v2 示例与 SDK](https://github.com/Heaven-y/agentdeck-plugins/tree/main/examples/project-helper) | 页面、设置、输入和会话操作从清单贡献，宿主按权限提供[插件接口](../engineering/workbench-plugins.md) |
 
 ## 测试与开发工具
 

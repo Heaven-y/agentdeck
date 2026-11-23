@@ -11,6 +11,10 @@ const permissions = {
   'project-context': '当前项目名称和目录',
   backend: '运行本机服务，访问本机文件和网络',
   clipboard: '读取与写入剪贴板',
+  projects: '已添加项目的名称和目录',
+  'session-history': '原生会话列表和历史',
+  'session-context': '当前会话信息和轮次事件',
+  composer: '读取和编辑输入框草稿',
 };
 
 function PluginEntry({

@@ -9,7 +9,7 @@ Electron 主进程（apps/desktop）
   └─ 本机 Fastify（apps/server）
        ├─ HTTP + WebSocket → React 页面（apps/web）
        ├─ 项目、原生会话、CLI 适配、配置与能力目录
-       └─ 工作台插件宿主 → 外部静态页面与内置模块
+       └─ 工作台插件宿主 → 外部页面、贡献入口与按需本机后端
 共享协议与校验（packages/shared）
 ```
 
@@ -47,7 +47,7 @@ Electron 负责入口、生命周期及本机路径访问。目录选择与「�
 | `apps/server/src/session-tools` | stdio 只读会话 MCP、原生历史根、签名分页与脱敏错误 |
 | `apps/server/src/workspaces`、`settings` | 项目、产品偏好、原生文件与配置事务协调 |
 | `apps/server/src/platform/{files,process,secrets}` | 安全文件读写、文件事务、TOML 修改、子进程和 Windows DPAPI |
-| `apps/server/src/plugins` | 通用插件注册状态、包校验、权限、后端生命周期和存储 |
+| `apps/server/src/plugins` | 通用插件注册状态、包校验、权限、原生只读服务、后端生命周期和存储 |
 | `apps/server/src/cli-installation` | 安装识别、原生与 npm 安装、替换事务 |
 | `apps/server/src/native-management` | 按 skills、mcp、plugins 分组的原生管理，写租约由 access 统一协调 |
 | `apps/server/src/http` | 访问控制与请求生命周期，对话和设置接口分别在 conversation 和 settings |
@@ -207,7 +207,7 @@ API 和 WebSocket 继续校验会话及来源；鉴权同时检查实际匹配�
 | 设置 | `/api/settings/product`、`/environment`、`/launch-environment/:agent`，原生文件由 `/api/native-resources/:agent` 提供 |
 | 模型设置 | `/api/settings/models/:agent` 读取与保存表单；`/catalog` 的 GET 只读缓存，POST 原生获取，工作目录由可选 projectId 解析；`/context-window` 只读 AGY 当前模型窗口，可选 model 使用启动选择器相同的身份 |
 | 官方额度 | AGY：`POST /api/settings/models/antigravity/official-usage`；Codex：`POST /api/workspaces/:id/codex/official-usage`，有会话时可传 `sessionId` 校验归属并使用原生目录。均为用户显式查询，不写入缓存 |
-| 插件 | `/api/plugins/*`，安装注册、启停、静态页面与权限内的设置存储 |
+| 插件 | `/api/plugins/*`，安装注册、启停、页面、后端请求、授权宿主服务与设置存储 |
 | 对话 | `/ws`，先进行 `connection.resume` 握手，再有序补收或发送会话操作 |
 | CLI 维护 | `/api/settings/cli-installation/:agent` 读取本机状态，`/check` 查新，`/operations` 安装、更新或修复。详见[程序版本管理](native-configuration.md#cli-程序版本管理) |
 | 会话引用工具 | `/api/session-tools/:agent`，只读 MCP 的登记状态、启停与原生配置事务 |
@@ -222,7 +222,7 @@ API 和 WebSocket 继续校验会话及来源；鉴权同时检查实际匹配�
 
 ## 7. 工作台扩展
 
-插件宿主负责安装、权限、页面与独立后端装载、更新和启停；各扩展在独立仓库维护业务及资源释放。包格式、宿主接口和验收见[工作台插件](workbench-plugins.md)。
+插件宿主负责安装、权限、页面与命令贡献、事件、授权宿主服务、可选独立后端装载、更新和启停；各扩展在独立仓库维护业务及资源释放。原生 CLI 继续拥有智能体循环和配置，工作台通过已有服务提供插件所需能力。包格式、宿主接口和验收见[工作台插件](workbench-plugins.md)。
 
 ## 8. 本地打包与验证
 

@@ -1,34 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
+import type { WorkbenchPlugin, WorkbenchPluginPageContribution } from '@agentdeck/shared/plugins';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { pluginApi } from './plugin-api';
-import { handlePluginRequest, pluginDocument } from './plugin-bridge';
+import { pluginDocument } from './plugin-bridge';
+import { connectPluginChannel } from './plugin-channel';
+import { currentPluginSession, type PluginInvocation } from './use-plugin-pages';
+import { useChat } from '../chat/state/chat-store';
+import { pluginEvents } from './plugin-events';
 
-function messageData(value: unknown): (Record<string, unknown> & { id: string }) | undefined {
-  if (!value || typeof value !== 'object') return;
-  const data = value as Record<string, unknown>;
-  if (typeof data.id === 'string') return data as Record<string, unknown> & { id: string };
-}
-function acceptsRequest(requests: number, remaining: number, controllers: Map<string, AbortController>, id: string) {
-  return requests < 16 && remaining > 0 && !controllers.has(id);
-}
-
-export default function PluginFrame({
-  plugin,
-  project,
-  command,
-  visible = true,
-}: {
+type Props = {
   plugin: WorkbenchPlugin;
   visible?: boolean;
   project?: Workspace;
-  command?: { id: string; sequence: number };
-}) {
+  page?: WorkbenchPluginPageContribution;
+  invocations?: PluginInvocation[];
+  delivered?(sequence: number): void;
+};
+export default function PluginFrame(props: Props) {
+  const [generation, retry] = useState(0);
+  return (
+    <PluginDocumentFrame
+      key={`${props.plugin.installedAt ?? 0}:${generation}`}
+      {...props}
+      retry={() => retry((value) => value + 1)}
+    />
+  );
+}
+function PluginDocumentFrame({
+  plugin,
+  project,
+  visible = true,
+  page,
+  invocations = [],
+  delivered,
+  retry,
+}: Props & { retry(): void }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const theme = useUiPreferences((state) => state.theme);
   const currentProject = useRef(project);
-  const context = useRef({ visible, theme });
+  const [ready, setReady] = useState(false);
+  const context = useRef({ visible, theme, page });
   const sendContext = useCallback(() => {
     const styles = getComputedStyle(document.documentElement);
     const colors = Object.fromEntries(
@@ -36,93 +48,97 @@ export default function PluginFrame({
         .filter((key) => key.startsWith('--color-'))
         .map((key) => [key, styles.getPropertyValue(key)]),
     );
+    const session = currentPluginSession();
+    const project = currentProject.current?.id === session.workspaceId ? currentProject.current : null;
     frame.current?.contentWindow?.postMessage(
-      { type: 'agentdeck.plugin.context', context: { ...context.current, colors } },
+      {
+        type: 'agentdeck.plugin.context',
+        context: {
+          ...context.current,
+          colors,
+          ...(plugin.manifest.permissions.includes('session-context') ? { session } : {}),
+          ...(plugin.manifest.permissions.includes('project-context') ? { project } : {}),
+        },
+      },
       '*',
     );
-  }, []);
+  }, [plugin]);
   useEffect(() => {
-    context.current = { visible, theme };
+    context.current = { visible, theme, page };
     sendContext();
-  }, [visible, theme, sendContext]);
+  }, [visible, theme, page, sendContext]);
+  useEffect(() => {
+    currentProject.current = project;
+    sendContext();
+  }, [project, sendContext]);
   const [htmlDocument, setDocument] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
-    currentProject.current = project;
-  }, [project]);
+    const manifest = plugin.manifest;
+    if (manifest.apiVersion !== 2 || !manifest.events?.length) return;
+    return useChat.subscribe((state, previous) => {
+      for (const event of pluginEvents(state, previous)) {
+        if (event.name === 'context.changed') sendContext();
+        if (manifest.events?.includes(event.name))
+          frame.current?.contentWindow?.postMessage({ type: 'agentdeck.plugin.event', event }, '*');
+      }
+    });
+  }, [plugin, sendContext]);
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    let requests = 0;
-    const controllers = new Map<string, AbortController>();
-    let remaining = 60;
-    const timer = setInterval(() => {
-      remaining = 60;
-    }, 1000);
-    const receive = (event: MessageEvent<unknown>) => {
-      if (event.source !== frame.current?.contentWindow) return;
-      const data = messageData(event.data);
-      if (!data) return;
-      if (data.type === 'agentdeck.plugin.cancel') {
-        controllers.get(data.id)?.abort();
-        return;
-      }
-      if (data.type !== 'agentdeck.plugin.request') return;
-      if (!acceptsRequest(requests, remaining, controllers, data.id)) return;
-      remaining--;
-      const pendingId = data.id;
-      const requestController = new AbortController();
-      controllers.set(pendingId, requestController);
-      const target = frame.current?.contentWindow;
-      requests++;
-      void handlePluginRequest(plugin.manifest, data, currentProject.current, requestController.signal)
-        .then(
-          (result) => {
-            if (active) target?.postMessage({ type: 'agentdeck.plugin.response', id: data.id, result }, '*');
-          },
-          (reason: unknown) => {
-            if (active)
-              target?.postMessage(
-                {
-                  type: 'agentdeck.plugin.response',
-                  id: data.id,
-                  error: reason instanceof Error ? reason.message : '插件请求失败',
-                },
-                '*',
-              );
-          },
-        )
-        .finally(() => {
-          requests--;
-          controllers.delete(pendingId);
-        });
-    };
-    window.addEventListener('message', receive);
+    const disconnect = connectPluginChannel({
+      manifest: plugin.manifest,
+      target: () => frame.current?.contentWindow,
+      project: () => currentProject.current,
+      ready: () => {
+        setReady(true);
+        sendContext();
+      },
+    });
     void pluginApi
       .page(plugin.manifest.id, controller.signal)
-      .then((page) => {
-        if (active) setDocument(pluginDocument(page.html, plugin.manifest.apiVersion));
+      .then((value) => {
+        if (active) setDocument(pluginDocument(value.html, plugin.manifest.apiVersion));
       })
-      .catch(() => {
-        if (active) setError('插件页面无法加载，请核对插件是否已启用。');
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : '插件页面加载失败。');
       });
     return () => {
       active = false;
       controller.abort();
-      for (const pending of controllers.values()) pending.abort();
-      clearInterval(timer);
-      window.removeEventListener('message', receive);
+      disconnect();
     };
-  }, [plugin]);
-  const sendCommand = () => {
-    if (command) frame.current?.contentWindow?.postMessage({ type: 'agentdeck.plugin.command', id: command.id }, '*');
-  };
-  useEffect(sendCommand, [command]);
+  }, [plugin, sendContext]);
+  const sent = useRef(0);
+  useEffect(() => {
+    if (!ready) return;
+    for (const invocation of invocations) {
+      if (invocation.sequence <= sent.current) continue;
+      sent.current = invocation.sequence;
+      frame.current?.contentWindow?.postMessage(
+        {
+          type: 'agentdeck.plugin.command',
+          id: invocation.id,
+          sequence: invocation.sequence,
+          conversationId: invocation.session.conversationId,
+          ...(plugin.manifest.permissions.includes('session-context') ? { session: invocation.session } : {}),
+        },
+        '*',
+      );
+      delivered?.(invocation.sequence);
+    }
+  }, [ready, invocations, delivered, plugin]);
   if (error)
     return (
-      <p role="alert" className="p-4 text-sm text-destructive-foreground">
-        {error}
-      </p>
+      <div className="p-4 text-sm">
+        <p role="alert" className="text-destructive-foreground">
+          {error}
+        </p>
+        <button type="button" className="mt-2 underline" onClick={retry}>
+          重试
+        </button>
+      </div>
     );
   if (!htmlDocument)
     return (
@@ -138,10 +154,7 @@ export default function PluginFrame({
       sandbox={plugin.manifest.apiVersion === 2 ? 'allow-scripts allow-forms' : 'allow-scripts'}
       referrerPolicy="no-referrer"
       className="h-full min-h-0 w-full border-0 bg-background"
-      onLoad={() => {
-        sendContext();
-        sendCommand();
-      }}
+      onLoad={sendContext}
     />
   );
 }

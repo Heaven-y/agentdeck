@@ -81,7 +81,7 @@ describe('工作台插件宿主', () => {
     for (const patch of [
       { entry: '../outside.html' },
       { entry: 'nested\\entry.html' },
-      { apiVersion: 2 },
+      { apiVersion: 999 },
       { permissions: ['shell'] },
     ]) {
       const other = await fixture();

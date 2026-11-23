@@ -1,17 +1,19 @@
 import { Blocks, Puzzle, SquareTerminal } from 'lucide-react';
-import type { WorkbenchPlugin } from '@agentdeck/shared/plugins';
+import { pluginPages, type WorkbenchPlugin, type WorkbenchPluginPageContribution } from '@agentdeck/shared/plugins';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { sidebarItemClass } from '../../ui/sidebar-styles';
 
 export function PluginNavigation({
   plugins,
   selected,
+  selectedPage,
   open,
   manage,
 }: {
   plugins: WorkbenchPlugin[];
   selected?: string;
-  open(id?: string): void;
+  selectedPage?: WorkbenchPluginPageContribution;
+  open(id?: string, page?: string): void;
   manage(): void;
 }) {
   const collapsed = useUiPreferences((state) => state.sidebarCollapsed || state.sidebarAutoCollapsed);
@@ -22,23 +24,29 @@ export function PluginNavigation({
         <Blocks aria-hidden className="size-4 shrink-0" />
         {!collapsed && <span>插件</span>}
       </button>
-      {visible.map(({ manifest }) => {
-        const Icon = manifest.icon === 'terminal' ? SquareTerminal : Puzzle;
-        return (
-          <button
-            key={manifest.id}
-            type="button"
-            aria-label={manifest.name}
-            title={manifest.name}
-            aria-current={selected === manifest.id ? 'page' : undefined}
-            onClick={() => open(manifest.id)}
-            className={`${sidebarItemClass(collapsed)} aria-[current]:bg-surface-selected aria-[current]:font-medium aria-[current]:text-interactive`}
-          >
-            <Icon aria-hidden className="size-4 shrink-0" />
-            {!collapsed && <span className="truncate">{manifest.name}</span>}
-          </button>
-        );
-      })}
+      {visible.flatMap(({ manifest }) =>
+        pluginPages(manifest)
+          .filter((page) => page.location === 'sidebar')
+          .map((page) => {
+            const Icon = manifest.icon === 'terminal' ? SquareTerminal : Puzzle;
+            return (
+              <button
+                key={`${manifest.id}:${page.id}`}
+                type="button"
+                aria-label={page.title}
+                title={page.title}
+                aria-current={
+                  selected === manifest.id && (!selectedPage || selectedPage.id === page.id) ? 'page' : undefined
+                }
+                onClick={() => open(manifest.id, page.id)}
+                className={`${sidebarItemClass(collapsed)} aria-[current]:bg-surface-selected aria-[current]:font-medium aria-[current]:text-interactive`}
+              >
+                <Icon aria-hidden className="size-4 shrink-0" />
+                {!collapsed && <span className="truncate">{page.title}</span>}
+              </button>
+            );
+          }),
+      )}
     </section>
   );
 }

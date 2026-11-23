@@ -1,4 +1,5 @@
 import { createPlugins } from './bootstrap/plugins';
+import { createPluginHostServices } from './bootstrap/plugin-services';
 import { createCliServices } from './bootstrap/cli-services';
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
@@ -89,7 +90,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     dirExists,
   });
   const activity = createWorkspaceActivity();
-  const plugins = await createPlugins(config.configDir);
+  const plugins = await createPlugins(config.configDir, (input, signal) => pluginHost(input, signal));
   const cli = createCliServices({
     configDir: config.configDir,
     store,
@@ -97,6 +98,7 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     installationBackend: options.cliInstallationBackend,
     probeRunner: options.probeRunner,
   });
+  const pluginHost = createPluginHostServices(store, cli.sessions);
   const { turns } = cli;
   // 探测只用于启动日志，不阻塞窗口出现；安装需等待探测子进程完成。
   const startupProbes = probes.probeAll();

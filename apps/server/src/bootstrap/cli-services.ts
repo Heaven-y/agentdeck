@@ -293,6 +293,7 @@ export function createCliServices({
   });
 
   return {
+    sessions,
     turns,
     loginAntigravity: (launch: (env: NodeJS.ProcessEnv) => Promise<boolean>) =>
       nativeActivity.run('antigravity', async () => {

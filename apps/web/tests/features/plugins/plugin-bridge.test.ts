@@ -33,9 +33,11 @@ it('授权项目仅返回名称和目录，存储目标固定为清单身份', a
   await handlePluginRequest(plugin, request('storage.get'));
   expect(read).toHaveBeenCalledExactlyOnceWith('fixture');
   const project = await handlePluginRequest(plugin, request('project.get'), {
-    id: 'project',
-    name: '示例',
-    dir: 'fixtures',
+    project: {
+      id: 'project',
+      name: '示例',
+      dir: 'fixtures',
+    },
   });
   expect(project).toEqual({ id: 'project', name: '示例', dir: 'fixtures' });
 });
