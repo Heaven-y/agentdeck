@@ -42,7 +42,6 @@ export function guardSessionProvider(
   provider: SessionProvider,
   activity: CliActivity,
 ): SessionProvider {
-  const page = provider.page?.bind(provider);
   const listProjects = provider.listProjects?.bind(provider);
   const subagents = provider.subagents?.bind(provider);
   const media = provider.media?.bind(provider);
@@ -55,7 +54,7 @@ export function guardSessionProvider(
     assertBelongs: (...args) => activity.run(agent, () => provider.assertBelongs(...args)),
     mutate: (...args) => activity.run(agent, () => provider.mutate(...args)),
     fork: (...args) => activity.run(agent, () => provider.fork(...args)),
-    ...(page ? { page: (...args: Parameters<typeof page>) => activity.run(agent, () => page(...args)) } : {}),
+    page: (...args) => activity.run(agent, () => provider.page(...args)),
     ...(listProjects
       ? { listProjects: (...args: Parameters<typeof listProjects>) => activity.run(agent, () => listProjects(...args)) }
       : {}),

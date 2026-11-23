@@ -16,6 +16,8 @@ function fixture(events?: AgentEvent[]) {
   const state = { events, cwd: workspace.dir, projects: [workspace], error: undefined as Error | undefined };
   function provider(agent: AgentKind): SessionProvider {
     return {
+      capabilities: { rename: false, fork: null, delete: null, archive: null },
+      page: async () => ({ items: [] }),
       list: async () => [],
       assertBelongs: async () => state.cwd,
       read: async (id, dir) => {

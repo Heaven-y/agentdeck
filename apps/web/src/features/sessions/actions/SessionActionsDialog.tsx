@@ -1,12 +1,7 @@
-import { sessionsKeys } from '../api';
 import { invalidateSessionPages } from '../queries/session-queries';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  legacySessionCapabilities,
-  type SessionActionInput,
-  type SessionSummary,
-} from '@agentdeck/shared/conversation';
+import { type SessionActionInput, type SessionSummary } from '@agentdeck/shared/conversation';
 
 import { DetailDialog } from '../../../ui/DetailDialog';
 import { buttonClass, inputClass } from '../../../ui/styles';
@@ -116,15 +111,7 @@ function DeleteSession({ session, submit }: { session: SessionSummary; submit: S
     </section>
   );
 }
-function SessionActionError({
-  workspaceId,
-  session,
-  error,
-}: {
-  workspaceId: string;
-  session: SessionSummary;
-  error?: string;
-}) {
+function SessionActionError({ session, error }: { session: SessionSummary; error?: string }) {
   const client = useQueryClient();
   if (!error) return null;
   return (
@@ -136,8 +123,6 @@ function SessionActionError({
         type="button"
         className={buttonClass('outline')}
         onClick={() => {
-          void client.invalidateQueries({ queryKey: sessionsKeys.sessions(workspaceId, session.agent) });
-          void client.invalidateQueries({ queryKey: sessionsKeys.archivedSessions(session.agent) });
           void invalidateSessionPages(client, { queryKey: ['sessions', 'pages', session.agent] });
         }}
       >
@@ -161,7 +146,7 @@ function SessionActionForm({
       return (
         <ArchiveSession
           archived={action === 'unarchive'}
-          local={(session.capabilities ?? legacySessionCapabilities(session.agent)).archive === 'workbench'}
+          local={session.capabilities?.archive === 'workbench'}
           submit={submit}
         />
       );
@@ -213,7 +198,7 @@ export function SessionActionsDialog({ workspaceId, session, archived, action, o
             当前会话正在运行，结束后才能管理。
           </p>
         )}
-        <SessionActionError workspaceId={workspaceId} session={session} error={operation?.error} />
+        <SessionActionError session={session} error={operation?.error} />
         <fieldset disabled={busy || running} className="min-w-0 space-y-5">
           <SessionActionForm action={action} session={session} archived={archived} submit={submit} />
         </fieldset>

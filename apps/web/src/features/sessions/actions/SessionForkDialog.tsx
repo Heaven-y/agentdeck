@@ -1,4 +1,3 @@
-import { sessionsKeys } from '../api';
 import { invalidateSessionPages } from '../queries/session-queries';
 import { useEffect, useRef } from 'react';
 import type { SessionRef } from '@agentdeck/shared/conversation';
@@ -66,7 +65,6 @@ export function SessionForkDialog({ workspaceId, session, pointId, onClose }: Pr
               type="button"
               className={buttonClass('outline')}
               onClick={() => {
-                void client.invalidateQueries({ queryKey: sessionsKeys.sessions(workspaceId, session.agent) });
                 void invalidateSessionPages(client, { queryKey: ['sessions', 'pages', session.agent] });
               }}
             >

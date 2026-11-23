@@ -16,6 +16,7 @@ const projects = [
 ];
 const row = (id: string, projectId: string | null): SessionSummary => ({
   agent: 'codex',
+  capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' },
   sessionId: id,
   title: `归档${id}`,
   projectId,

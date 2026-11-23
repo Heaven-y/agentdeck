@@ -123,9 +123,9 @@ export type SessionProvider = {
     locator: NativeMediaLocator,
     signal?: AbortSignal,
   ): Promise<{ data: Buffer; mimeType: string }>;
-  capabilities?: Partial<SessionCapabilities>;
+  capabilities: SessionCapabilities;
   list(dir: string, signal?: AbortSignal, archived?: boolean): Promise<NativeSessionRow[]>;
-  page?(
+  page(
     dir: string,
     input: NativeSessionPageInput,
     signal?: AbortSignal,

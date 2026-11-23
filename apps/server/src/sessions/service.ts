@@ -1,6 +1,5 @@
 import {
   NativeSessionIdSchema,
-  legacySessionCapabilities,
   type AgentKind,
   type SessionActionInput,
   type SessionCapabilities,
@@ -67,7 +66,8 @@ export function createSessionsService(
   const catalog = createSessionCatalog();
   const paging = createSessionPaging();
   function capabilities(agent: AgentKind): SessionCapabilities {
-    const actions = { ...legacySessionCapabilities(agent), ...providers[agent]?.capabilities };
+    const provider = providerOf(providers, agent);
+    const actions = { ...provider.capabilities };
     if (!actions.archive && operations.preferences) actions.archive = 'workbench';
     return actions;
   }
@@ -266,6 +266,8 @@ export function createSessionsService(
         agent,
         () =>
           operations.withIdleSession({ agent, sessionId: id }, async () => {
+            if (!capabilities(agent).fork)
+              throw new SessionError(400, 'unsupported_action', '当前 CLI 不支持创建会话分支。');
             // 提供方在锁内核验源与分叉点；原生返回后仍在锁内复核新身份。
             const native = await scopedWorkspace(ws, agent, id);
             await assertNotArchived(agent, id);
@@ -285,6 +287,8 @@ export function createSessionsService(
           const provider = providerOf(providers, agent);
           const actions = capabilities(agent);
           const archiveAction = input.action === 'archive' || input.action === 'unarchive';
+          if ((input.action === 'rename' && !actions.rename) || (input.action === 'delete' && !actions.delete))
+            throw new SessionError(400, 'unsupported_action', '当前 CLI 不支持此会话操作。');
           if (archiveAction && !actions.archive)
             throw new SessionError(400, 'unsupported_action', `${AGENT_LABELS[agent]} 不支持归档会话`);
           await operations.withIdleSession({ agent, sessionId: id }, async () => {

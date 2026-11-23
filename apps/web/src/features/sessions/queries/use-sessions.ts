@@ -1,21 +1,12 @@
 import { ApiError } from '../../../lib/http';
 import { sessionsApi, sessionsKeys } from '../api';
-// 会话数据的查询层：项目会话列表与单条原生历史都用 react-query 缓存，
+// 会话数据的查询层：单条原生历史用 react-query 缓存，
 // 历史读取的失败按错误码分类，界面据此区分「不可回放」「会话不存在」与「读取出错」。
 import { useQuery } from '@tanstack/react-query';
-import type { AgentKind, SessionHistory, SessionRef } from '@agentdeck/shared/conversation';
+import type { SessionHistory, SessionRef } from '@agentdeck/shared/conversation';
 
 /** 历史读取的失败分类：由 use-sessions 从接口错误码推导，界面只负责各说各话。 */
 export type SessionHistoryFailure = { kind: 'not-replayable' | 'missing' | 'network' | 'failed'; message: string };
-
-/** 项目会话列表：与左栏、对话区共用同一个缓存键，切项目不重复取。 */
-export function sessionListQuery(projectId: string, agent: AgentKind) {
-  return {
-    queryKey: sessionsKeys.sessions(projectId, agent),
-    queryFn: ({ signal }: { signal: AbortSignal }) => sessionsApi.listSessions(projectId, agent, false, signal),
-    retry: false as const,
-  };
-}
 
 /** 单条历史：只有选中会话后才请求，切换会话时取消上一次读取。 */
 export function useSessionHistory(

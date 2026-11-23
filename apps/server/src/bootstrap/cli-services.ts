@@ -190,6 +190,7 @@ export function createCliServices({
       codex: guardSessionProvider(
         'codex',
         {
+          capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' },
           list: (dir, signal, archived) => listCodexSessions(dir, { signal, archived }),
           page: (dir, input, signal, archived) => pageCodexSessions(dir, input, { signal, archived }),
           read: (id, dir, signal) => readCodexSession(id, dir, { signal }),

@@ -54,7 +54,7 @@ async function main() {
           run: () => Promise.reject(new ProcessError('executable_missing', '控制台夹具不探测本机 CLI')),
         }),
       );
-      server.get('/api/projects/:id/sessions', () => Promise.resolve([]));
+      server.get('/api/sessions/page', () => Promise.resolve({ items: [] }));
       server.get('/__fixture', () => Promise.resolve({ shells: fixture.shells, resources: metrics.state }));
       server.post<{ Body: { failure: boolean } }>('/__fixture/resource-failure', (req) => {
         metrics.state.failure = req.body.failure;

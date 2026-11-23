@@ -18,6 +18,7 @@ function fixture() {
     return { items, nextCursor: offset + items.length < rows.length ? String(offset + items.length) : undefined };
   });
   const provider = {
+    capabilities: { rename: true, fork: 'native', delete: 'native', archive: null },
     list,
     page,
     mutate: vi.fn(),

@@ -1,12 +1,7 @@
 import { Menu, MenuButton, MenuItem, useMenuStore } from '@ariakit/react';
 import { Archive, ArchiveRestore, GitFork, Link, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react';
 import { useRef } from 'react';
-import {
-  legacySessionCapabilities,
-  type SessionActionInput,
-  type SessionSummary,
-  type SessionCapabilities,
-} from '@agentdeck/shared/conversation';
+import { type SessionActionInput, type SessionSummary, type SessionCapabilities } from '@agentdeck/shared/conversation';
 import { buttonClass, menuItemClass, popoverClass } from '../../../ui/styles';
 import { AGENT_LABELS } from '../../../cli/shared/labels';
 
@@ -23,19 +18,20 @@ const actions = {
 };
 
 function visibleActions(
-  capabilities: SessionCapabilities,
+  capabilities: SessionCapabilities | undefined,
   archived: boolean,
   localActions: boolean,
 ): SessionMenuAction[] {
+  const { rename, fork, archive, delete: remove } = capabilities ?? {};
   const visible: SessionMenuAction[] = [];
   if (!archived) {
-    if (capabilities.rename) visible.push('rename');
+    if (rename) visible.push('rename');
     if (localActions) visible.push('pin');
-    if (capabilities.fork) visible.push('fork');
+    if (fork) visible.push('fork');
   }
   visible.push('copy');
-  if (capabilities.archive) visible.push(archived ? 'unarchive' : 'archive');
-  if (capabilities.delete) visible.push('delete');
+  if (archive) visible.push(archived ? 'unarchive' : 'archive');
+  if (remove) visible.push('delete');
   return visible;
 }
 
@@ -61,7 +57,7 @@ export function SessionMenu({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useMenuStore({ placement: 'bottom-start' });
-  const capabilities = session.capabilities ?? legacySessionCapabilities(session.agent);
+  const capabilities = session.capabilities;
   const visible = visibleActions(capabilities, archived, localActions);
   if (!visible.length) return null;
   const revealClass = hoverReveal

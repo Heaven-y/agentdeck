@@ -594,8 +594,8 @@ it.each(['claude', 'codex', 'antigravity'] as const)(
   '%s 新会话和结束事件更新列表，取消尚未完成的旧枚举',
   async (agent) => {
     useChat.getState().newSession(agent);
-    const queryKey = sessionsKeys.sessions('w1', agent);
-    const original = deferred<string[]>();
+    const queryKey = sessionsKeys.pages(agent, 'active', '', 'w1');
+    const original = deferred<ReturnType<typeof pinnedPage>>();
     let latest = ['native-session'];
     let originalSignal: AbortSignal | undefined;
     const observer = new QueryObserver(queryClient, {
@@ -607,7 +607,7 @@ it.each(['claude', 'codex', 'antigravity'] as const)(
           originalSignal = signal;
           return original.promise;
         }
-        return Promise.resolve(latest);
+        return Promise.resolve(pinnedPage(latest));
       },
     });
     const unsubscribe = observer.subscribe(() => undefined);
@@ -618,14 +618,14 @@ it.each(['claude', 'codex', 'antigravity'] as const)(
         turnId,
         event: { type: 'session', agent, sessionId: 'native-session', model: '', cwd: 'project' },
       });
-      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(['native-session']));
+      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(pinnedPage(['native-session'])));
       expect(originalSignal?.aborted).toBe(true);
       latest = ['updated-native-session'];
       emit({ type: 'turn.finished', turnId, workspaceId: 'w1', agent });
-      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(['updated-native-session']));
+      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(pinnedPage(['updated-native-session'])));
       expect(useChat.getState().running).toBe(false);
     } finally {
-      original.resolve(['obsolete-session']);
+      original.resolve(pinnedPage(['obsolete-session']));
       unsubscribe();
       await queryClient.cancelQueries({ queryKey });
       queryClient.removeQueries({ queryKey });
@@ -683,15 +683,15 @@ describe('原生会话管理状态', () => {
   it('归档时另一项目首次加载被取消后重新读取，不停留在 pending/idle', async () => {
     vi.mocked(queryClient.invalidateQueries).mockRestore();
     vi.spyOn(sessionsApi, 'sessionAction').mockResolvedValue(undefined);
-    const queryKey = sessionsKeys.sessions('other-loading', 'codex');
-    const unrelatedKey = sessionsKeys.sessions('other-loading', 'claude');
-    const original = deferred<string[]>();
+    const queryKey = sessionsKeys.pages('codex', 'active', '', 'other-loading');
+    const unrelatedKey = sessionsKeys.pages('claude', 'active', '', 'other-loading');
+    const original = deferred<ReturnType<typeof pinnedPage>>();
     let originalSignal: AbortSignal | undefined;
     const read = vi.fn(({ signal }: { signal: AbortSignal }) => {
       originalSignal ??= signal;
-      return read.mock.calls.length === 1 ? original.promise : Promise.resolve(['latest-session']);
+      return read.mock.calls.length === 1 ? original.promise : Promise.resolve(pinnedPage(['latest-session']));
     });
-    queryClient.setQueryData(unrelatedKey, ['unrelated-session']);
+    queryClient.setQueryData(unrelatedKey, pinnedPage(['unrelated-session']));
     const observer = new QueryObserver(queryClient, { queryKey, queryFn: read, retry: false, staleTime: Infinity });
     const unsubscribe = observer.subscribe(() => undefined);
     try {
@@ -701,11 +701,11 @@ describe('原生会话管理状态', () => {
       await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
       expect(originalSignal?.aborted).toBe(true);
       await vi.waitFor(() =>
-        expect(observer.getCurrentResult()).toMatchObject({ status: 'success', data: ['latest-session'] }),
+        expect(observer.getCurrentResult()).toMatchObject({ status: 'success', data: pinnedPage(['latest-session']) }),
       );
       expect(queryClient.getQueryState(unrelatedKey)?.isInvalidated).toBe(false);
     } finally {
-      original.resolve(['obsolete-session']);
+      original.resolve(pinnedPage(['obsolete-session']));
       unsubscribe();
       await queryClient.cancelQueries({ queryKey });
       queryClient.removeQueries({ queryKey });
@@ -1163,10 +1163,10 @@ describe('chat-store', () => {
     await vi.waitFor(() => expect(refresh).toHaveBeenCalledWith({ predicate: expect.any(Function) }));
     const filter = refresh.mock.lastCall?.[0]?.predicate;
     const lists = queryClient.getQueryCache();
-    queryClient.setQueryData(sessionsKeys.sessions('w1', 'codex'), []);
-    queryClient.setQueryData(sessionsKeys.sessions('w2', 'claude'), []);
-    expect(filter?.(lists.find({ queryKey: sessionsKeys.sessions('w1', 'codex') })!)).toBe(true);
-    expect(filter?.(lists.find({ queryKey: sessionsKeys.sessions('w2', 'claude') })!)).toBe(false);
+    queryClient.setQueryData(sessionsKeys.pages('codex', 'active', '', 'w1'), pinnedPage([]));
+    queryClient.setQueryData(sessionsKeys.pages('claude', 'active', '', 'w2'), pinnedPage([]));
+    expect(filter?.(lists.find({ queryKey: sessionsKeys.pages('codex', 'active', '', 'w1') })!)).toBe(true);
+    expect(filter?.(lists.find({ queryKey: sessionsKeys.pages('claude', 'active', '', 'w2') })!)).toBe(false);
     expect(useChat.getState().running).toBe(true);
   });
 
@@ -1614,3 +1614,7 @@ it('长回合补齐两段旧页后只结算一次，恢复绝对分叉点且保�
   expect(items.find((item) => item.id === reply?.id)).toBe(reply);
   expect(items.some((item) => item.kind === 'turn-status')).toBe(false);
 });
+
+function pinnedPage(items: string[]) {
+  return { pages: [{ items }], pageParams: [undefined] };
+}

@@ -68,6 +68,8 @@ function setup() {
     fork: vi.fn(async (_id: string, _dir: string, _input: { pointId?: string }) => ({ sessionId: forkedId })),
   };
   const codex = {
+    capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'native' } as const,
+    page: async () => ({ items: [] }),
     list: vi.fn(async () => []),
     read: vi.fn(async (): Promise<NativeSessionRead> => ({
       session: { sessionId: sourceId, summary: '源会话', lastModified: 100 },

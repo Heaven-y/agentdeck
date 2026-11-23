@@ -41,39 +41,41 @@ export function registerWsRoutes(app: FastifyInstance, deps: { turns: TurnManage
       if (peer.isOpen()) ws.ping();
     }, 15_000);
     heartbeat.unref();
-    let socket: Socket = {
-      send: (msg) => ws.send(JSON.stringify(msg)),
-      isOpen: () => ws.readyState === WS_OPEN,
-    };
-    let mode: 'initial' | 'legacy' | 'recovery' | 'rejected' = 'initial';
+    let socket: Socket | undefined;
+    let rejected = false;
+    const send = (message: Parameters<Socket['send']>[0]) =>
+      socket ? socket.send(message) : peer.send(JSON.stringify(message));
 
     ws.on('message', (data) => {
+      if (rejected) return;
       let parsed: unknown;
       try {
         parsed = JSON.parse(rawText(data));
       } catch {
-        socket.send({ type: 'error', message: '消息不是合法的 JSON' });
+        send({ type: 'error', message: '消息不是合法的 JSON' });
         return;
       }
-      if (mode === 'rejected') return;
-      const resume = ResumeRequestSchema.safeParse(parsed);
-      if (mode === 'initial' && resume.success) {
-        const attached = recovery.attach(peer, resume.data);
-        mode = attached ? 'recovery' : 'rejected';
-        if (attached) socket = attached;
+      if (!socket) {
+        const resume = ResumeRequestSchema.safeParse(parsed);
+        if (!resume.success) {
+          rejected = true;
+          send({ type: 'error', ...sendingIdentity(parsed), message: '请先建立会话连接。' });
+          ws.close(1008);
+          return;
+        }
+        socket = recovery.attach(peer, resume.data);
+        rejected = !socket;
         return;
       }
-      if (mode === 'initial') mode = 'legacy';
+      const active = socket;
       const msg = ClientMessageSchema.safeParse(parsed);
       if (!msg.success) {
-        socket.send({ type: 'error', ...sendingIdentity(parsed), message: '消息格式不正确' });
+        send({ type: 'error', ...sendingIdentity(parsed), message: '消息格式不正确' });
         return;
       }
-      const handled =
-        mode === 'recovery' ? recovery.handle(peer, socket, msg.data) : deps.turns.handle(socket, msg.data);
-      handled.catch(() => {
-        if (socket.isOpen())
-          socket.send({
+      void recovery.handle(peer, active, msg.data).catch(() => {
+        if (peer.isOpen())
+          send({
             type: 'error',
             ...sendingIdentity(msg.data),
             message: '会话操作失败，请检查原生运行状态后重试',
@@ -83,8 +85,7 @@ export function registerWsRoutes(app: FastifyInstance, deps: { turns: TurnManage
 
     ws.on('close', () => {
       clearInterval(heartbeat);
-      if (mode === 'recovery') recovery.detach(peer, socket);
-      else deps.turns.socketClosed(socket);
+      if (socket) recovery.detach(peer, socket);
     });
   });
   return recovery;

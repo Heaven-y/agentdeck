@@ -42,7 +42,9 @@ export function createSessionToolsRuntime(configDir: string) {
       // 目录环境，避免继承调用方 CLI 的不同档案。此处不修改进程全局环境。
       claude: createClaudeSessions(undefined, undefined, { preserveToolContent: true }),
       codex: {
+        capabilities: { rename: false, fork: null, delete: null, archive: null },
         list: unsupported,
+        page: unsupported,
         mutate: unsupported,
         fork: unsupported,
         assertBelongs: async (id, dir, signal) =>
