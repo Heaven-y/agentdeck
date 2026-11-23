@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { Plus, Puzzle } from 'lucide-react';
 import type {
   NativeManagementContext,
   NativePluginCatalog,
@@ -15,7 +15,13 @@ import { NativePluginOperation, pluginTaskActive, pluginScopeLabel } from './Nat
 import { inNativeScope } from '../resources/native-resource-scope';
 import { NativePluginInstall } from './NativePluginInstall';
 import { NativePluginDetails } from './NativePluginDetails';
-import { useGuardedSettingsNavigation } from '../navigation/settings-navigation';
+import {
+  catalogListClass,
+  ResourceDetails,
+  ResourceEmpty,
+  ResourceRow,
+  useResourceReturnFocus,
+} from '../resources/ResourceList';
 type DetailSelection = { entry: NativePluginEntry; operationId?: string };
 const visibleDetail = (detail: DetailSelection | undefined, configuration?: Operation) =>
   configuration?.status === 'succeeded' ? undefined : detail?.entry;
@@ -29,59 +35,112 @@ const labels: Partial<Record<NativePluginAction, string>> = {
   'marketplace-remove': '移除来源',
   'marketplace-refresh': '刷新来源',
 };
-function PluginRow({
+function PluginActions({
   entry,
   busy,
-  onDetail,
   onPrepare,
 }: {
   entry: NativePluginEntry;
   busy: boolean;
-  onDetail(): void;
   onPrepare(input: NativePluginPrepareInput): void;
 }) {
+  const available = entry.actions.filter(
+    (action) =>
+      !['configure', 'install'].includes(action) &&
+      !(action === 'enable' && entry.enabled === true) &&
+      !(action === 'disable' && entry.enabled === false),
+  );
+  if (!available.length) return null;
   return (
-    <details className="group min-w-0">
-      <summary className="flex cursor-pointer list-none items-center gap-3 py-2 [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">{entry.name}</span>
-        {entry.enabled !== null && (
-          <span className="text-xs text-muted-foreground">{entry.enabled ? '已启用' : '已禁用'}</span>
-        )}
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground group-open:rotate-90" aria-hidden />
-      </summary>
-      <div className="space-y-2 pb-3">
-        {entry.version && <p className="text-xs text-muted-foreground">版本 {entry.version}</p>}
-        <p className="break-all text-xs text-muted-foreground">
-          {entry.source} · {pluginScopeLabel(entry.scope)}
-        </p>
-        {entry.reason && <p className="text-xs text-muted-foreground">{entry.reason}</p>}
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={buttonClass('outline')} disabled={busy} onClick={onDetail}>
-            详情 · {entry.name}
-          </button>
-          {entry.actions
-            .filter(
-              (action) =>
-                !['configure', 'install'].includes(action) &&
-                !(action === 'enable' && entry.enabled === true) &&
-                !(action === 'disable' && entry.enabled === false),
-            )
-            .map((action) => (
-              <button
-                type="button"
-                className={buttonClass(action === 'uninstall' ? 'danger' : 'outline')}
-                key={action}
-                disabled={busy}
-                onClick={() => onPrepare({ action, id: entry.id, revision: entry.revision })}
-              >
-                {labels[action]}
-              </button>
-            ))}
-        </div>
-      </div>
-    </details>
+    <div className="flex flex-wrap gap-2">
+      {available.map((action) => (
+        <button
+          type="button"
+          key={action}
+          disabled={busy}
+          className={buttonClass(action === 'uninstall' ? 'danger' : 'outline')}
+          onClick={() => onPrepare({ action, id: entry.id, revision: entry.revision })}
+        >
+          {labels[action]}
+        </button>
+      ))}
+    </div>
   );
 }
+type PluginFailure = { source: 'catalog' | 'operation' | 'progress'; message: string };
+
+function PluginFailureMessage({ failure, retry }: { failure?: PluginFailure; retry(): void }) {
+  if (!failure) return null;
+  return (
+    <p role="alert" className="text-sm text-destructive-foreground">
+      {failure.message}{' '}
+      {failure.source === 'catalog' && (
+        <button type="button" className="underline" onClick={retry}>
+          重试
+        </button>
+      )}
+    </p>
+  );
+}
+
+function PluginList({
+  catalog,
+  locked,
+  onDetail,
+  onView,
+}: {
+  catalog: NativePluginCatalog;
+  locked: boolean;
+  onDetail(entry: NativePluginEntry, trigger: HTMLButtonElement): void;
+  onView(view: 'install' | 'markets', trigger: HTMLButtonElement): void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs font-medium text-muted-foreground">{catalog.entries.length} 个已安装插件</span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {catalog.marketplaces.length > 0 && (
+            <button
+              type="button"
+              className={buttonClass('ghost')}
+              onClick={(event) => onView('markets', event.currentTarget)}
+            >
+              市场来源
+            </button>
+          )}
+          {catalog.installScopes.length > 0 && (catalog.canInstall || catalog.canAddMarketplace) && (
+            <button
+              type="button"
+              className={buttonClass('primary')}
+              disabled={locked}
+              onClick={(event) => onView('install', event.currentTarget)}
+            >
+              <Plus aria-hidden className="size-4" />
+              {catalog.canInstall ? '添加插件' : '添加市场来源'}
+            </button>
+          )}
+        </div>
+      </div>
+      {catalog.entries.length ? (
+        <ul className={catalogListClass}>
+          {catalog.entries.map((entry) => (
+            <ResourceRow
+              key={entry.id}
+              name={entry.name}
+              description={entry.description || (entry.version ? `版本 ${entry.version}` : undefined)}
+              icon={Puzzle}
+              status={entry.enabled === null ? undefined : entry.enabled ? '已启用' : '已禁用'}
+              onOpen={(button) => onDetail(entry, button)}
+            />
+          ))}
+        </ul>
+      ) : (
+        <ResourceEmpty>暂无已安装插件。</ResourceEmpty>
+      )}
+    </div>
+  );
+}
+
 export default function NativePluginsPanel({
   context,
   reload,
@@ -92,12 +151,12 @@ export default function NativePluginsPanel({
   onChanged(): void;
 }) {
   const { agent, projectId } = context;
-  const leave = useGuardedSettingsNavigation();
   const [catalog, setCatalog] = useState<NativePluginCatalog>();
   const [operations, setOperations] = useState<Operation[]>([]);
-  const [error, setError] = useState('');
+  const [failure, setFailure] = useState<PluginFailure>();
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<DetailSelection>();
+  const [view, setView] = useState<'install' | 'markets'>();
   const [refresh, setRefresh] = useState(0);
   const mounted = useRef(true);
   const changed = useRef(onChanged);
@@ -118,11 +177,11 @@ export default function NativePluginsPanel({
         if (!controller.signal.aborted) {
           setCatalog(value);
           setOperations(value.operations);
-          setError('');
+          setFailure((previous) => (previous?.source === 'catalog' ? undefined : previous));
         }
       })
       .catch((reason) => {
-        if (!controller.signal.aborted) setError(nativeSettingsError(reason));
+        if (!controller.signal.aborted) setFailure({ source: 'catalog', message: nativeSettingsError(reason) });
       });
     return () => controller.abort();
   }, [agent, projectId, reload, refresh]);
@@ -140,6 +199,7 @@ export default function NativePluginsPanel({
       void Promise.all(activeIds.split(',').map((id) => nativePluginsApi.operation({ agent, projectId }, id)))
         .then((values) => {
           if (!current) return;
+          setFailure((previous) => (previous?.source === 'progress' ? undefined : previous));
           setOperations((previous) =>
             previous.map((op) => values.find((value) => value.operationId === op.operationId) ?? op),
           );
@@ -147,8 +207,9 @@ export default function NativePluginsPanel({
             changed.current();
           }
         })
-        .catch((reason) => {
-          if (current) setError(nativeSettingsError(reason));
+        .catch(() => {
+          if (current)
+            setFailure((previous) => previous ?? { source: 'progress', message: '暂时读不到插件操作进度，正在重试。' });
         })
         .finally(() => {
           polling = false;
@@ -186,34 +247,31 @@ export default function NativePluginsPanel({
     target: { configurationId?: string; operationId?: string } = {},
   ) => {
     setBusy(true);
-    setError('');
+    setFailure(undefined);
     try {
-      acceptOperation(await action(), target.configurationId);
+      const operation = await action();
+      acceptOperation(operation, target.configurationId);
+      return operation;
     } catch (reason) {
       await syncOperation(target.operationId);
-      if (mounted.current) setError(nativeSettingsError(reason));
+      if (mounted.current) setFailure({ source: 'operation', message: nativeSettingsError(reason) });
     } finally {
       if (mounted.current) setBusy(false);
     }
   };
   const prepare = (input: NativePluginPrepareInput) =>
-    void run(() => nativePluginsApi.prepare(context, input), {
+    run(() => nativePluginsApi.prepare(context, input), {
       configurationId: input.action === 'configure' ? input.id : undefined,
     });
   const locked = busy || !!activeIds;
   const configuration = operations.find((operation) => operation.operationId === detail?.operationId);
   const visibleEntry = visibleDetail(detail, configuration);
   const scoped = pluginCatalogForScope(context, catalog);
+  const inDetail = !!visibleEntry || !!view;
+  const remember = useResourceReturnFocus(inDetail);
   return (
     <section aria-label="原生插件管理" className="min-w-0 space-y-4">
-      {error && (
-        <p role="alert" className="text-sm text-destructive-foreground">
-          {error}{' '}
-          <button type="button" className="underline" onClick={() => setRefresh((n) => n + 1)}>
-            重新读取
-          </button>
-        </p>
-      )}
+      <PluginFailureMessage failure={failure} retry={() => setRefresh((n) => n + 1)} />
       {operations
         .slice()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -239,40 +297,64 @@ export default function NativePluginsPanel({
         ))}
       {scoped ? (
         <>
-          <NativePluginInstall catalog={scoped} busy={locked} onPrepare={prepare} />
+          {scoped.warnings.map((warning) => (
+            <p key={warning} className="text-xs text-muted-foreground">
+              {warning}
+            </p>
+          ))}
+          <div hidden={inDetail}>
+            <PluginList
+              catalog={scoped}
+              locked={locked}
+              onDetail={(entry, button) => {
+                remember(button);
+                setDetail({ entry });
+              }}
+              onView={(next, button) => {
+                remember(button);
+                setView(next);
+              }}
+            />
+          </div>
           {visibleEntry && (
             <NativePluginDetails
               key={visibleEntry.id}
               context={context}
               entry={visibleEntry}
               busy={locked || previewPending(configuration)}
-              onPrepare={prepare}
+              onPrepare={(input) => void prepare(input)}
               onClose={() => setDetail(undefined)}
+            >
+              <PluginActions
+                entry={visibleEntry}
+                busy={locked || previewPending(configuration)}
+                onPrepare={(input) => void prepare(input)}
+              />
+            </NativePluginDetails>
+          )}
+          {view === 'install' && (
+            <NativePluginInstall
+              catalog={scoped}
+              busy={locked}
+              onBack={() => setView(undefined)}
+              onPrepare={(input) => {
+                void prepare(input).then((operation) => {
+                  if (operation) setView(undefined);
+                });
+              }}
             />
           )}
-          {scoped.warnings.map((warning) => (
-            <p key={warning} className="text-xs text-muted-foreground">
-              {warning}
-            </p>
-          ))}
-          <div className="divide-y divide-border">
-            {scoped.entries.map((entry) => (
-              <PluginRow
-                key={entry.id}
-                entry={entry}
-                busy={locked}
-                onPrepare={prepare}
-                onDetail={() => {
-                  if (visibleEntry?.id !== entry.id) leave(() => setDetail({ entry }));
-                }}
-              />
-            ))}
-            {!scoped.entries.length && <p className="text-sm text-muted-foreground">暂无已安装插件。</p>}
-          </div>
-          <PluginMarkets markets={scoped.marketplaces} locked={locked} prepare={prepare} />
+          {view === 'markets' && (
+            <PluginMarkets
+              markets={scoped.marketplaces}
+              locked={locked}
+              prepare={(input) => void prepare(input)}
+              onBack={() => setView(undefined)}
+            />
+          )}
         </>
       ) : (
-        !error && <p role="status">正在读取原生插件…</p>
+        !failure && <p role="status">正在读取原生插件…</p>
       )}
     </section>
   );
@@ -293,15 +375,15 @@ function PluginMarkets({
   markets,
   locked,
   prepare,
+  onBack,
 }: {
   markets: NativePluginCatalog['marketplaces'];
   locked: boolean;
   prepare(input: NativePluginPrepareInput): void;
+  onBack(): void;
 }) {
-  if (!markets.length) return null;
   return (
-    <details className="space-y-3">
-      <summary className="w-fit cursor-pointer text-sm font-medium">市场来源</summary>
+    <ResourceDetails title="市场来源" onBack={onBack}>
       {markets.map((market) => (
         <article key={market.id} className="space-y-2 border-b border-border py-2">
           <p className="break-all text-sm">
@@ -323,6 +405,6 @@ function PluginMarkets({
           </div>
         </article>
       ))}
-    </details>
+    </ResourceDetails>
   );
 }

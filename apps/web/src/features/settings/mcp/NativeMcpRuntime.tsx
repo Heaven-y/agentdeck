@@ -75,24 +75,28 @@ export function McpOAuthCard({ context, initial }: { context: NativeManagementCo
   const [operation, setOperation] = useState(initial),
     [error, setError] = useState('');
   const waiting = ['running', 'waiting'].includes(operation.state);
+  const { agent, projectId } = context;
   useEffect(() => {
     if (!waiting) return;
     let alive = true;
     const timer = setInterval(() => {
       void nativeMcpApi
-        .oauth(context, operation.id, 'read')
+        .oauth({ agent, projectId }, operation.id, 'read')
         .then((value) => {
-          if (alive) setOperation(value);
+          if (alive) {
+            setOperation(value);
+            setError('');
+          }
         })
         .catch(() => {
-          if (alive) setError('无法读取授权进度，请刷新后查看。');
+          if (alive) setError('暂时读不到授权进度，正在重试。');
         });
     }, 1500);
     return () => {
       alive = false;
       clearInterval(timer);
     };
-  }, [context, operation.id, waiting]);
+  }, [agent, projectId, operation.id, waiting]);
   async function cancel() {
     try {
       setOperation(await nativeMcpApi.oauth(context, operation.id, 'cancel'));
@@ -130,19 +134,26 @@ export function McpOAuthCard({ context, initial }: { context: NativeManagementCo
     </div>
   );
 }
+export type McpCheck = { status?: NativeMcpStatus; setStatus(status: NativeMcpStatus): void };
+
 export default function NativeMcpRuntime({
   context,
   entry,
   instanceId,
+  onOperation,
+  check,
 }: {
   context: NativeManagementContext;
   entry: NativeMcpEntry;
   instanceId?: string;
+  onOperation?(operation: NativeMcpOperation): void;
+  check?: McpCheck;
 }) {
-  const [status, setStatus] = useState<NativeMcpStatus>(),
+  const [localStatus, setLocalStatus] = useState<NativeMcpStatus>(),
     [operation, setOperation] = useState<NativeMcpOperation>();
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const status = check ? check.status : localStatus;
   async function act(action: string, cursor?: string) {
     setBusy(true);
     setError('');
@@ -154,7 +165,8 @@ export default function NativeMcpRuntime({
         instanceId,
         cursor,
       });
-      if ('tools' in result) setStatus(result);
+      if ('tools' in result) (check?.setStatus ?? setLocalStatus)(result);
+      else if (onOperation) onOperation(result);
       else setOperation(result);
     } catch (reason) {
       setError(nativeSettingsError(reason));
@@ -167,21 +179,7 @@ export default function NativeMcpRuntime({
     <div className="space-y-2 border-t border-border pt-3 text-sm">
       <p>{runtimeLabel(status, instanceId)}</p>
       <RuntimeButtons context={context} entry={entry} instanceId={instanceId} status={status} busy={busy} act={act} />
-      {context.agent === 'claude' && (
-        <details className="text-xs leading-6 text-muted-foreground">
-          <summary className="w-fit cursor-pointer">如何登录 MCP 服务</summary>
-          <p>
-            在终端运行 <code>claude mcp login</code>。对话中收到授权链接时，按卡片提示操作。
-          </p>
-        </details>
-      )}
-      {status && (
-        <details className="break-words text-xs leading-6 text-muted-foreground">
-          <summary className="w-fit cursor-pointer">连接详情</summary>
-          <p>认证：{status.auth}</p>
-          <p>{status.tools.join('、') || '暂无工具列表'}</p>
-        </details>
-      )}
+      {status && <RuntimeDetails agent={context.agent} status={status} />}
       {operation && <McpOAuthCard key={operation.id} context={context} initial={operation} />}
       {error && (
         <p role="alert" className="text-destructive-foreground">
@@ -189,5 +187,20 @@ export default function NativeMcpRuntime({
         </p>
       )}
     </div>
+  );
+}
+
+function RuntimeDetails({ agent, status }: { agent: NativeManagementContext['agent']; status: NativeMcpStatus }) {
+  return (
+    <section aria-label="连接详情" className="break-words text-xs leading-6 text-muted-foreground">
+      <h4 className="font-medium text-foreground">连接详情</h4>
+      <p>认证：{status.auth}</p>
+      {agent === 'claude' && status.state === 'authenticationRequired' && (
+        <p>
+          在系统终端运行 <code>claude mcp login &lt;服务名&gt;</code>。
+        </p>
+      )}
+      {status.tools.length > 0 && <p>{status.tools.join('、')}</p>}
+    </section>
   );
 }

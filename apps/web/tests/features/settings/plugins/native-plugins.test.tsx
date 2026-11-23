@@ -71,15 +71,16 @@ it('切换插件详情先确认当前配置草稿，取消保留秘密而不发�
       <NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />
     </SettingsNavigationContext>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: '详情 · demo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), {
     target: { value: 'synthetic-private-draft' },
   });
-  fireEvent.click(screen.getByRole('button', { name: '详情 · other' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
   expect(screen.getByLabelText<HTMLInputElement>('令牌（必填） · 未配置').value).toBe('synthetic-private-draft');
   expect(fetch.mock.calls.filter(([url]) => (url as string).includes('/detail'))).toHaveLength(1);
   confirm.mockReturnValue(true);
-  fireEvent.click(screen.getByRole('button', { name: '详情 · other' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  fireEvent.click(screen.getByRole('button', { name: 'other' }));
   expect((await screen.findByLabelText<HTMLInputElement>('令牌（必填） · 未配置')).value).toBe('');
 });
 it('空白安装表单不覆盖插件密钥草稿保护，统一导航与关闭详情均确认放弃', async () => {
@@ -103,17 +104,17 @@ it('空白安装表单不覆盖插件密钥草稿保护，统一导航与关闭�
         onPrepare={vi.fn()}
         onClose={close}
       />
-      <NativePluginInstall catalog={catalog} busy={false} onPrepare={vi.fn()} />
+      <NativePluginInstall catalog={catalog} busy={false} onPrepare={vi.fn()} onBack={vi.fn()} />
     </SettingsNavigationContext>,
   );
   fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), { target: { value: 'synthetic-secret' } });
   act(() => guardSettingsNavigation(guards, navigate));
-  fireEvent.click(screen.getByRole('button', { name: '关闭详情' }));
+  fireEvent.click(screen.getAllByRole('button', { name: '返回列表' })[0]!);
   expect(navigate).not.toHaveBeenCalled();
   expect(close).not.toHaveBeenCalled();
   expect(confirm).toHaveBeenCalledTimes(2);
   confirm.mockReturnValue(true);
-  fireEvent.click(screen.getByRole('button', { name: '关闭详情' }));
+  fireEvent.click(screen.getAllByRole('button', { name: '返回列表' })[0]!);
   expect(close).toHaveBeenCalledOnce();
   fireEvent.change(screen.getByLabelText('安装来源'), { target: { value: 'demo@fixture' } });
   confirm.mockReset().mockReturnValueOnce(true).mockReturnValueOnce(false);
@@ -129,7 +130,7 @@ it('安装来源草稿拒绝放弃时保留，后台原生任务不会永久锁�
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   render(
     <SettingsNavigationContext value={guards}>
-      <NativePluginInstall catalog={catalog} busy={true} onPrepare={vi.fn()} />
+      <NativePluginInstall catalog={catalog} busy={true} onPrepare={vi.fn()} onBack={vi.fn()} />
     </SettingsNavigationContext>,
   );
   act(() => guardSettingsNavigation(guards, navigate));
@@ -162,11 +163,12 @@ it('配置预览后开始冲突保留原草稿和两个 revision，并同步失�
     return Response.json({ ...catalog, entries: [configuredEntry], operations: [] });
   });
   render(<NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: '详情 · demo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), { target: { value: 'synthetic-draft' } });
   fireEvent.click(screen.getByRole('button', { name: '预览配置' }));
   fireEvent.click(await screen.findByRole('button', { name: '开始操作' }));
   await screen.findByText('配置已被外部修改');
+  expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
   expect(screen.getByLabelText<HTMLInputElement>('令牌（必填） · 未配置').value).toBe('synthetic-draft');
   await screen.findByText('未开始');
   fireEvent.change(screen.getByLabelText('令牌（必填） · 未配置'), { target: { value: 'edited-draft' } });
@@ -202,7 +204,7 @@ it('配置草稿在成功终态清除，关闭重开也不恢复秘密', async (
     });
   });
   const view = render(<NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: '详情 · demo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(await screen.findByLabelText('令牌（必填） · 未配置'), { target: { value: 'synthetic-draft' } });
   fireEvent.click(screen.getByRole('button', { name: '预览配置' }));
   await screen.findByRole('button', { name: '开始操作' });
@@ -211,12 +213,12 @@ it('配置草稿在成功终态清除，关闭重开也不恢复秘密', async (
   fireEvent.click(screen.getByRole('button', { name: '开始操作' }));
   await screen.findByText('已完成');
   expect(screen.queryByLabelText('令牌（必填） · 未配置')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '详情 · demo' }));
+  fireEvent.click(screen.getByRole('button', { name: 'demo' }));
   expect((await screen.findByLabelText<HTMLInputElement>('令牌（必填） · 未配置')).value).toBe('');
   fireEvent.change(screen.getByLabelText('令牌（必填） · 未配置'), { target: { value: 'another-draft' } });
   view.unmount();
   render(<NativePluginsPanel context={{ agent: 'claude' }} reload={0} onChanged={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: '详情 · demo' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   expect((await screen.findByLabelText<HTMLInputElement>('令牌（必填） · 未配置')).value).toBe('');
 });
 it('重开恢复原生命令确认，页面卸载不取消任务，确认发送准确摘要', async () => {

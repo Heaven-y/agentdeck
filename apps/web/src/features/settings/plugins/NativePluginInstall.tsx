@@ -3,15 +3,18 @@ import type { NativePluginCatalog, NativePluginPrepareInput } from '@agentdeck/s
 import { buttonClass, inputClass } from '../../../ui/styles';
 import { confirmNativeDiscard, nativeScopeNames } from '../resources/native-resource-labels';
 import { useSettingsLeave } from '../navigation/settings-navigation';
+import { ResourceDetails } from '../resources/ResourceList';
 
 export function NativePluginInstall({
   catalog,
   busy,
   onPrepare,
+  onBack,
 }: {
   catalog: NativePluginCatalog;
   busy: boolean;
   onPrepare(input: NativePluginPrepareInput): void;
+  onBack(): void;
 }) {
   const [source, setSource] = useState('');
   const [selectedScope, setScope] = useState<NativePluginCatalog['installScopes'][number]>();
@@ -19,17 +22,15 @@ export function NativePluginInstall({
   const scope = catalog.installScopes.find((value) => value === selectedScope) ?? catalog.installScopes[0];
   const market = catalog.canAddMarketplace && (addMarketplace || !catalog.canInstall);
   const dirty = source !== '';
-  useSettingsLeave((action) => {
+  const leave = (action: () => void) => {
     if (confirmNativeDiscard(dirty)) action();
-  }, dirty);
+  };
+  useSettingsLeave(leave, dirty);
   if (!scope) return null;
   return (
-    <details>
-      <summary className="w-fit cursor-pointer text-sm font-medium">
-        {catalog.canInstall ? '添加插件' : '添加市场来源'}
-      </summary>
+    <ResourceDetails title={catalog.canInstall ? '添加插件' : '添加市场来源'} onBack={() => leave(onBack)}>
       <form
-        className="space-y-3 border-l border-border pl-3 pt-2"
+        className="max-w-xl space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (!source.trim() || busy) return;
@@ -65,7 +66,7 @@ export function NativePluginInstall({
           </button>
         </div>
       </form>
-    </details>
+    </ResourceDetails>
   );
 }
 

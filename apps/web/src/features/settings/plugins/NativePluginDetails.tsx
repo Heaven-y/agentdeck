@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type {
   NativeManagementContext,
   NativePluginEntry,
@@ -9,18 +9,22 @@ import { buttonClass, inputClass } from '../../../ui/styles';
 import { nativePluginsApi } from './native-plugins-api';
 import { confirmNativeDiscard, nativeSettingsError } from '../resources/native-resource-labels';
 import { useSettingsLeave } from '../navigation/settings-navigation';
+import { ResourceDetails } from '../resources/ResourceList';
+import { pluginScopeLabel } from './NativePluginOperation';
 export function NativePluginDetails({
   context,
   entry,
   busy,
   onPrepare,
   onClose,
+  children,
 }: {
   context: NativeManagementContext;
   entry: NativePluginEntry;
   busy: boolean;
   onPrepare(input: NativePluginPrepareInput): void;
   onClose(): void;
+  children?: ReactNode;
 }) {
   const { agent, projectId } = context;
   const [options, setOptions] = useState<NativePluginOption[]>();
@@ -51,23 +55,9 @@ export function NativePluginDetails({
     };
   }, [agent, projectId, entry]);
   return (
-    <section aria-label={`${entry.name} 插件详情`} className="space-y-3 rounded-xl border border-border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <strong className="break-all">{entry.selector}</strong>
-        <button type="button" className={buttonClass('ghost')} onClick={() => leave(onClose)}>
-          关闭详情
-        </button>
-      </div>
-      {entry.description && <p className="whitespace-pre-wrap break-words text-sm">{entry.description}</p>}
-      {entry.components.length > 0 && (
-        <ul className="space-y-1 text-xs text-muted-foreground">
-          {entry.components.map((item) => (
-            <li key={item} className="break-all">
-              {item}
-            </li>
-          ))}
-        </ul>
-      )}
+    <ResourceDetails title={entry.name} onBack={() => leave(onClose)}>
+      <PluginIdentity entry={entry} />
+      {children}
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
           {error}
@@ -128,6 +118,28 @@ export function NativePluginDetails({
           </button>
         </form>
       )}
-    </section>
+    </ResourceDetails>
+  );
+}
+
+function PluginIdentity({ entry }: { entry: NativePluginEntry }) {
+  const source = entry.selector !== entry.name ? entry.selector : entry.source;
+  const metadata = [source, pluginScopeLabel(entry.scope)];
+  if (entry.version) metadata.push(`版本 ${entry.version}`);
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{metadata.join(' · ')}</p>
+      {entry.description && <p className="whitespace-pre-wrap break-words text-sm">{entry.description}</p>}
+      {entry.reason && <p className="text-sm text-muted-foreground">{entry.reason}</p>}
+      {entry.components.length > 0 && (
+        <ul className="space-y-1 text-xs text-muted-foreground">
+          {entry.components.map((item) => (
+            <li key={item} className="[overflow-wrap:anywhere]">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

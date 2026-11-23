@@ -27,7 +27,7 @@ export function SettingsNavigation({
             type="button"
             aria-current={selected ? 'page' : undefined}
             onClick={() => select(target)}
-            className={`settings-navigation-item flex w-full shrink-0 items-center gap-2.5 px-3 py-2 text-left text-[13px] ${selected ? '' : 'text-muted-foreground hover:bg-control-hover/70 hover:text-foreground'}`}
+            className={`settings-navigation-item flex w-auto shrink-0 items-center gap-2.5 px-3 py-2 text-left text-[13px] sm:w-full ${selected ? '' : 'text-muted-foreground hover:bg-control-hover/70 hover:text-foreground'}`}
           >
             <Icon aria-hidden className="size-4 shrink-0" />
             <span className="whitespace-nowrap">{item.label}</span>
