@@ -17,6 +17,7 @@ const MAIN_EXTERNALS = [
   'ssh2',
   'ssh-config',
   'smol-toml',
+  'yaml',
   'csv-parse/sync',
   '@fastify/static',
   '@fastify/websocket',

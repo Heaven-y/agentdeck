@@ -9,6 +9,7 @@ import type { NativeConfigSource } from '../../../native-management/config';
 import { resolveLocalCommand } from '../../../platform/process/executable';
 import { runProcess } from '../../../platform/process/run';
 import { inspectDirectory, readConfigFile } from '../../../platform/files/safe-file';
+import { skillMetadata } from '../../../native-management/skills/skill-entries';
 import { claudePluginRecords } from './plugin-records';
 
 const claudeOverrides: NativeSkillState[] = ['on', 'name-only', 'user-invocable-only', 'off'];
@@ -60,8 +61,8 @@ async function pluginSkills(plugin: InstalledPlugin): Promise<NativeSkill[]> {
   const skills: NativeSkill[] = [];
   if (!(await inspectDirectory(plugin.installPath))) return skills;
   const rootSkill = path.join(plugin.installPath, 'SKILL.md');
-  if ((await readConfigFile(rootSkill)).revision !== 'missing')
-    skills.push(pluginSkill(plugin, rootSkill, plugin.id.split('@')[0]!));
+  const root = await readConfigFile(rootSkill);
+  if (root.revision !== 'missing') skills.push(pluginSkill(plugin, rootSkill, plugin.id.split('@')[0]!, root.content));
   const directory = path.join(plugin.installPath, 'skills');
   if (!(await inspectDirectory(directory))) return skills;
   const handle = await opendir(directory);
@@ -71,14 +72,16 @@ async function pluginSkills(plugin: InstalledPlugin): Promise<NativeSkill[]> {
     if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
     const file = path.join(directory, entry.name, 'SKILL.md');
     if (!(await inspectDirectory(path.dirname(file)))) continue;
-    if ((await readConfigFile(file)).revision === 'missing') continue;
-    skills.push(pluginSkill(plugin, file, `${plugin.id.split('@')[0]}:${entry.name}`));
+    const snapshot = await readConfigFile(file);
+    if (snapshot.revision === 'missing') continue;
+    skills.push(pluginSkill(plugin, file, `${plugin.id.split('@')[0]}:${entry.name}`, snapshot.content));
   }
   return skills;
 }
-function pluginSkill(plugin: InstalledPlugin, file: string, name: string): NativeSkill {
+function pluginSkill(plugin: InstalledPlugin, file: string, name: string, content: string): NativeSkill {
   return {
     name,
+    description: skillMetadata(content, name).description,
     path: file,
     nativeScope: plugin.scope,
     scope: plugin.scope === 'user' || plugin.scope === 'project' || plugin.scope === 'local' ? plugin.scope : 'unknown',

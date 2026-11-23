@@ -37,7 +37,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-it('新建或编辑另一技能时先保护同页导入与其他可见性草稿', async () => {
+it('独立详情不会堆叠，返回添加页和技能列表前保留草稿', async () => {
   const guards: SettingsNavigation = new Map();
   const edit = vi.fn(),
     create = vi.fn();
@@ -69,22 +69,27 @@ it('新建或编辑另一技能时先保护同页导入与其他可见性草稿'
       />
     </SettingsNavigationContext>,
   );
-  fireEvent.click(await screen.findByText('添加技能'));
-  fireEvent.click(screen.getByText('导入本地技能目录'));
-  fireEvent.click(screen.getByText('demo'));
-  fireEvent.click(screen.getByText('other'));
+  fireEvent.click(await screen.findByRole('button', { name: '添加技能' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入本地技能目录' }));
   fireEvent.change(screen.getByLabelText('导入技能名称'), { target: { value: 'draft-import' } });
-  fireEvent.click(screen.getByRole('button', { name: '新建技能' }));
-  fireEvent.click(screen.getAllByRole('button', { name: '编辑 SKILL.md' })[1]!);
-  expect(create).not.toHaveBeenCalled();
-  expect(edit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '返回添加' }));
   expect(screen.getByLabelText<HTMLInputElement>('导入技能名称').value).toBe('draft-import');
-  fireEvent.change(screen.getByLabelText('导入技能名称'), { target: { value: '' } });
+  expect(screen.queryByRole('button', { name: '新建技能' })).toBeNull();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '返回添加' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建技能' }));
+  expect(create).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  fireEvent.click(screen.getByRole('button', { name: 'demo' }));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'off' } });
-  fireEvent.click(screen.getAllByRole('button', { name: '编辑 SKILL.md' })[1]!);
-  expect(edit).not.toHaveBeenCalled();
+  confirm.mockReturnValue(false);
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  expect(screen.queryByRole('button', { name: 'other' })).toBeNull();
+  expect(screen.getByLabelText<HTMLInputElement>('demo 可见性').value).toBe('off');
   confirm.mockClear().mockReturnValue(true);
-  fireEvent.click(screen.getAllByRole('button', { name: '编辑 SKILL.md' })[1]!);
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  fireEvent.click(screen.getByRole('button', { name: 'other' }));
+  fireEvent.click(screen.getByRole('button', { name: '编辑 SKILL.md' }));
   expect(edit).toHaveBeenCalledWith('other', 'other', expect.stringMatching(/SKILL.md$/));
   expect(confirm).toHaveBeenCalledOnce();
 });
@@ -112,10 +117,10 @@ it('技能目录与名称草稿保护统一导航，目录编码期间无法离�
           },
         ]}
         onChanged={vi.fn()}
+        onBack={vi.fn()}
       />
     </SettingsNavigationContext>,
   );
-  fireEvent.click(screen.getByText('导入本地技能目录'));
   fireEvent.change(screen.getByLabelText('导入技能名称'), { target: { value: 'draft-name' } });
   act(() => guardSettingsNavigation(guards, navigate));
   expect(navigate).not.toHaveBeenCalled();
@@ -130,6 +135,43 @@ it('技能目录与名称草稿保护统一导航，目录编码期间无法离�
   await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('导入技能名称').value).toBe(''));
   act(() => guardSettingsNavigation(guards, navigate));
   expect(navigate).toHaveBeenCalledOnce();
+});
+it('默认目录不平铺套件子技能与其他来源，但可从详情、搜索或来源切换找到', async () => {
+  const entry = { ...catalog.entries[0]!, scope: 'user' as const };
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    Response.json({
+      ...catalog,
+      entries: [
+        entry,
+        { ...entry, id: 'child', name: 'child', parentSkillId: 'demo' },
+        { ...entry, id: 'plugin', name: 'plugin-skill', origin: 'plugin' },
+        { ...entry, id: 'builtin', name: 'builtin-skill', origin: 'builtin' },
+      ],
+    }),
+  );
+  render(
+    <NativeSkillsPanel
+      context={{ agent: 'claude' }}
+      reload={0}
+      onEdit={vi.fn()}
+      onCreate={vi.fn()}
+      onChanged={vi.fn()}
+    />,
+  );
+  const bundle = await screen.findByRole('button', { name: 'demo' });
+  expect(screen.queryByRole('button', { name: /child|plugin-skill|builtin-skill/ })).toBeNull();
+  fireEvent.click(bundle);
+  fireEvent.click(screen.getByRole('button', { name: 'child' }));
+  expect(screen.getByRole('heading', { name: 'child' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '返回技能包' }));
+  expect(screen.getByRole('heading', { name: 'demo' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索技能' }), { target: { value: 'child' } });
+  expect(screen.getByRole('button', { name: 'child' })).toBeTruthy();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索技能' }), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: /插件提供/ }));
+  expect(screen.getByRole('button', { name: 'plugin-skill' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'demo' })).toBeNull();
 });
 it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止离开，成功后解除', async () => {
   const guards: SettingsNavigation = new Map();
@@ -151,7 +193,7 @@ it('技能可见性草稿保护统一导航与原文跳转，应用期间阻止�
       />
     </SettingsNavigationContext>,
   );
-  fireEvent.click(await screen.findByText('demo'));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'off' } });
   act(() => guardSettingsNavigation(guards, navigate));
   fireEvent.click(screen.getByRole('button', { name: '编辑 SKILL.md' }));
@@ -188,7 +230,7 @@ it('四态与继承保持原生语义，失败后保留用户选择，删除必�
       onChanged={vi.fn()}
     />,
   );
-  fireEvent.click(await screen.findByText('demo'));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'user-invocable-only' } });
   fireEvent.click(screen.getByRole('button', { name: '应用 demo 设置' }));
   await screen.findByText('文件已被修改');
@@ -235,7 +277,7 @@ function changingCatalog() {
 }
 it('未编辑状态在刷新后同步最新值，不会以新revision重新提交旧选择', async () => {
   const { requests, refresh } = changingCatalog();
-  fireEvent.click(await screen.findByText('demo'));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   refresh();
   await screen.findByText('隐藏并停用');
   expect(screen.getByLabelText<HTMLSelectElement>('demo 可见性').value).toBe('off');
@@ -245,7 +287,7 @@ it('未编辑状态在刷新后同步最新值，不会以新revision重新提�
 });
 it('刷新保留真实草稿与原始revision，明确放弃后才采用最新设置', async () => {
   const { requests, refresh } = changingCatalog();
-  fireEvent.click(await screen.findByText('demo'));
+  fireEvent.click(await screen.findByRole('button', { name: 'demo' }));
   fireEvent.change(screen.getByLabelText('demo 可见性'), { target: { value: 'name-only' } });
   refresh();
   await screen.findByText('隐藏并停用');

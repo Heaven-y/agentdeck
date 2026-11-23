@@ -27,6 +27,7 @@ export function antigravityPlan(context: ResourceContext, output: Builder) {
   output.file(user, 'config/config.json', 'plugins', '插件启停设置。');
   output.scan(user, 'antigravity-cli/skills', 'skills');
   output.scan(user, 'skills', 'skills');
+  output.scan({ ...userBase(context, '.agents'), readOnly: true }, 'skills', 'skills');
   const project = projectBase(context);
   if (project) {
     for (const name of ['AGENTS.md', 'GEMINI.md']) output.file(project, name, 'rules');

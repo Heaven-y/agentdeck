@@ -1,8 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { NativeManagementContext, NativeResourceCatalog as Catalog } from '@agentdeck/shared/settings';
-import { buttonClass } from '../../../ui/styles';
 import { SettingsDetailDialog } from '../navigation/SettingsDetailDialog';
 import { NativeResourceCatalog, type NativeResourceSelection } from './NativeResourceCatalog';
 import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
@@ -10,6 +8,7 @@ import { nativeSettingsError } from './native-resource-labels';
 import { invalidateNativeCapabilities } from '../../../cli/shared/capability-cache';
 import { useGuardedSettingsNavigation } from '../navigation/settings-navigation';
 import { settingsApi } from '../api';
+import { ResourceFilter, ResourceFilters } from './ResourceList';
 
 const NativeResourceEditor = lazy(() => import('./NativeResourceEditor'));
 const NativeResourceCreate = lazy(() => import('./NativeResourceCreate'));
@@ -39,29 +38,21 @@ function ResourceScopeSwitch({
   choose(workspace: boolean): void;
 }) {
   return (
-    <nav aria-label="配置范围" className="flex flex-wrap items-center gap-2 border-b border-border pb-2">
-      <button
-        type="button"
-        className={buttonClass(!selected ? 'primary' : 'ghost')}
-        aria-pressed={!selected}
-        onClick={() => choose(false)}
-      >
-        全局
-      </button>
-      <button
-        type="button"
-        className={buttonClass(selected ? 'primary' : 'ghost')}
-        aria-pressed={selected}
-        onClick={() => choose(true)}
-      >
-        工作区
-      </button>
+    <div className="flex flex-wrap items-center gap-2.5">
+      <ResourceFilters label="配置范围">
+        <ResourceFilter selected={!selected} onClick={() => choose(false)}>
+          全局
+        </ResourceFilter>
+        <ResourceFilter selected={selected} onClick={() => choose(true)}>
+          工作区
+        </ResourceFilter>
+      </ResourceFilters>
       {selected && (
         <span className="min-w-0 truncate text-xs text-muted-foreground" title={workspace.name}>
           {workspace.name}
         </span>
       )}
-    </nav>
+    </div>
   );
 }
 
@@ -81,7 +72,7 @@ export default function NativeResourcesDialog({ workspace, ...props }: Resources
   ) : undefined;
   return (
     <NativeResourcesContent
-      key={JSON.stringify([props.agent, props.category, projectId])}
+      key={JSON.stringify([props.agent, props.category])}
       {...props}
       projectId={projectId}
       tabs={tabs}
@@ -99,16 +90,25 @@ function NativeResourcesContent({
   tabs,
 }: ResourcesProps & { projectId?: string; tabs?: React.ReactNode }) {
   const [reload, setReload] = useState(0);
-  const [target, select] = useState<NativeResourceSelection>();
+  const [selection, setSelection] = useState<{ projectId?: string; target: NativeResourceSelection }>();
+  const target = selection?.projectId === projectId ? selection?.target : undefined;
+  const select = (next: NativeResourceSelection) => setSelection({ projectId, target: next });
   const context = { agent, projectId };
   const refresh = () => setReload((value) => value + 1);
   const onChanged = () => {
     void invalidateNativeCapabilities(agent);
     refresh();
   };
-  const returnToCatalog = () => {
-    select(undefined);
-  };
+  const returnToCatalog = () => setSelection(undefined);
+  const embeddedCatalog = embedded && SCOPED_CATEGORIES.has(category);
+  const headingId = useId();
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (embeddedCatalog && !target) heading.current?.focus();
+  }, [embeddedCatalog, target]);
+  const title = { skills: 'Skills', mcp: 'MCP', plugins: '原生插件', all: '原生配置与扩展', custom: '原生文件' }[
+    category
+  ];
   if (target)
     return (
       <Suspense fallback={<p role="status">正在打开文件编辑器…</p>}>
@@ -131,51 +131,75 @@ function NativeResourcesContent({
         )}
       </Suspense>
     );
+  const content = (
+    <Suspense fallback={<p role="status">正在打开目录…</p>}>
+      <NativeCatalogPanel
+        key={projectId}
+        category={category}
+        context={context}
+        reload={reload}
+        onChanged={onChanged}
+        select={select}
+      />
+    </Suspense>
+  );
+  if (embeddedCatalog)
+    return (
+      <section aria-labelledby={headingId} className="min-w-0 space-y-4 pb-4">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+          <h2 id={headingId} ref={heading} tabIndex={-1} className="text-lg font-semibold tracking-tight outline-none">
+            {title}
+          </h2>
+          {tabs}
+        </header>
+        {content}
+      </section>
+    );
   return (
     <SettingsDetailDialog
-      title={`原生配置与扩展 · ${AGENT_FULL_NAMES[agent]}`}
+      title={`${title} · ${AGENT_FULL_NAMES[agent]}`}
       embedded={embedded}
       showBack={!embedded}
       onBack={onBack}
       onClose={onClose}
     >
-      {category !== 'all' && category !== 'custom' && (
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">{tabs}</div>
-          <details className="relative shrink-0">
-            <summary className="cursor-pointer text-sm text-muted-foreground">更多操作</summary>
-            <button
-              type="button"
-              className={buttonClass('outline')}
-              onClick={(event) => {
-                event.currentTarget.closest('details')?.removeAttribute('open');
-                refresh();
-              }}
-            >
-              重新读取目录
-            </button>
-          </details>
-        </div>
-      )}
-      <Suspense fallback={<p role="status">正在打开目录…</p>}>
-        {category === 'skills' ? (
-          <NativeSkillsPanel
-            context={context}
-            reload={reload}
-            onChanged={onChanged}
-            onEdit={(id, label, displayPath) => select({ resource: { id, label, displayPath } })}
-            onCreate={(root) => select({ root })}
-          />
-        ) : category === 'mcp' ? (
-          <NativeMcpPanel context={context} reload={reload} onChanged={onChanged} />
-        ) : category === 'plugins' ? (
-          <NativePluginsPanel context={context} reload={reload} onChanged={onChanged} />
-        ) : (
-          <NativeFiles agent={agent} category={category} select={select} />
-        )}
-      </Suspense>
+      {tabs}
+      {content}
     </SettingsDetailDialog>
   );
+}
+
+function NativeCatalogPanel({
+  category,
+  context,
+  reload,
+  onChanged,
+  select,
+}: {
+  category: NativeResourceCategory;
+  context: NativeManagementContext;
+  reload: number;
+  onChanged(): void;
+  select(target: NativeResourceSelection): void;
+}) {
+  switch (category) {
+    case 'skills':
+      return (
+        <NativeSkillsPanel
+          context={context}
+          reload={reload}
+          onChanged={onChanged}
+          onEdit={(id, label, displayPath) => select({ resource: { id, label, displayPath } })}
+          onCreate={(root) => select({ root })}
+        />
+      );
+    case 'mcp':
+      return <NativeMcpPanel context={context} reload={reload} onChanged={onChanged} />;
+    case 'plugins':
+      return <NativePluginsPanel context={context} reload={reload} onChanged={onChanged} />;
+    default:
+      return <NativeFiles agent={context.agent} category={category} select={select} />;
+  }
 }
 
 function NativeFiles({
@@ -206,18 +230,12 @@ function NativeFiles({
   }, [agent, reload]);
   return (
     <>
-      <button
-        type="button"
-        className={buttonClass('outline')}
-        disabled={!catalog && !error}
-        onClick={() => setReload((n) => n + 1)}
-      >
-        <RefreshCw aria-hidden className="size-4" />
-        刷新目录
-      </button>
       {error && (
         <p role="alert" className="text-sm text-destructive-foreground">
-          {error}
+          {error}{' '}
+          <button type="button" className="underline" onClick={() => setReload((n) => n + 1)}>
+            重试
+          </button>
         </p>
       )}
       {catalog ? (

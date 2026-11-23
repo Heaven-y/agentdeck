@@ -8,6 +8,7 @@ export function codexPlan(context: ResourceContext, output: Builder) {
   output.file(user, 'config.toml', 'agents', '代理角色声明位于 agents 表；config_file 路径相对声明它的配置文件解析。');
   output.scan(user, 'agents', 'agent-configs');
   output.scan(userBase(context, '.agents'), 'skills', 'skills', true);
+  output.scan({ ...user, readOnly: true }, 'skills', 'skills');
   const project = projectBase(context);
   if (project) {
     output.file(project, '.codex/config.toml', 'settings', '项目配置，在项目获 Codex 信任后加载。');

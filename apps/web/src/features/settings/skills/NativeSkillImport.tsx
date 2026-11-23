@@ -4,6 +4,7 @@ import { buttonClass, inputClass } from '../../../ui/styles';
 import { nativeManagementApi } from './native-management-api';
 import { confirmNativeDiscard, nativeSettingsError, nativeScopeNames } from '../resources/native-resource-labels';
 import { useSettingsLeave } from '../navigation/settings-navigation';
+import { ResourceDetails } from '../resources/ResourceList';
 
 async function encodeFiles(files: File[]): Promise<NativeSkillImportInput['files']> {
   if (
@@ -26,10 +27,12 @@ export function NativeSkillImport({
   context,
   roots,
   onChanged,
+  onBack,
 }: {
   context: NativeManagementContext;
   roots: NativeResourceRoot[];
   onChanged(): void;
+  onBack(): void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -38,9 +41,10 @@ export function NativeSkillImport({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const dirty = files.length > 0 || name !== '';
-  useSettingsLeave((action) => {
+  const leave = (action: () => void) => {
     if (!busy && confirmNativeDiscard(dirty)) action();
-  }, dirty || busy);
+  };
+  useSettingsLeave(leave, dirty || busy);
   async function save() {
     setBusy(true);
     setError('');
@@ -57,8 +61,7 @@ export function NativeSkillImport({
     }
   }
   return (
-    <details className="space-y-3">
-      <summary className="cursor-pointer text-sm font-medium">导入本地技能目录</summary>
+    <ResourceDetails title="导入本地技能目录" backLabel="返回添加" onBack={() => leave(onBack)}>
       <p className="text-sm text-muted-foreground">
         选择包含 SKILL.md 的技能文件夹。最多 128 个文件、6 层目录，共 8 MiB。
       </p>
@@ -124,7 +127,7 @@ export function NativeSkillImport({
       >
         {busy ? '正在导入…' : '导入技能'}
       </button>
-    </details>
+    </ResourceDetails>
   );
 }
 function initialRoot(roots: NativeResourceRoot[]) {

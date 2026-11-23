@@ -16,6 +16,8 @@ export type NativeSkillEntry = {
   revision: string;
   resourceId?: string;
   description: string;
+  /** CLI 单独识别的子技能归入包含它的技能包，不改变原生名称或来源。 */
+  parentSkillId?: string;
   /** 本地文件或插件资源，不据此判断 CLI 是否已经加载此技能。 */
   fileOnly?: boolean;
   actions: { edit: boolean; delete: boolean; states: NativeSkillState[]; stateScopes: NativeResourceScope[] };
