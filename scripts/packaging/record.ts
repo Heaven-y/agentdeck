@@ -68,6 +68,22 @@ async function sourceFingerprint() {
   return { sha256: digest(entries.map((entry) => `${entry.path}\0${entry.sha256}`).join('\n')), files: entries };
 }
 
+async function verifyDesktopModules(archive: string, entries: string[]) {
+  if (entries.some((file) => path.basename(file) === 'session-tools.mjs'))
+    throw new Error('安装包仍包含已移除的会话引用 MCP');
+  const mainDirectory = path.join(root, 'apps/desktop/out/main');
+  const modules = (await readdir(mainDirectory, { recursive: true })).filter((file) => /\.[cm]?js$/.test(file));
+  if (!modules.includes('read-agy-history.mjs')) throw new Error('桌面构建缺少 AGY 原生历史读取入口');
+  const moduleHashes: Record<string, string> = {};
+  for (const file of modules) {
+    const hash = await hashFile(path.join(mainDirectory, file));
+    if (digest(extractFile(archive, path.join('out', 'main', file))) !== hash)
+      throw new Error(`包内桌面模块与当前构建不一致：${file}`);
+    moduleHashes[file.replaceAll(path.sep, '/')] = hash;
+  }
+  return moduleHashes;
+}
+
 async function verifyRuntime(version: string) {
   const archive = path.join(release, 'win-unpacked/resources/app.asar');
   const packagedVersion = PackageVersion.parse(JSON.parse(extractFile(archive, 'package.json').toString())).version;
@@ -80,6 +96,7 @@ async function verifyRuntime(version: string) {
   )
     throw new Error('打包的主进程或 preload 与当前构建不一致');
   const entries = listPackage(archive, { isPack: false });
+  const moduleHashes = await verifyDesktopModules(archive, entries);
   if (entries.some((file) => /claude-agent-sdk-(win32|linux|darwin)|cpu-features|sshcrypto\.node/.test(file)))
     throw new Error('安装包包含不应分发的 CLI 或可选原生绑定');
   const webIndex = await hashFile(path.join(root, 'apps/web/dist/index.html'));
@@ -89,7 +106,14 @@ async function verifyRuntime(version: string) {
   if (icon !== (await hashFile(path.join(release, 'win-unpacked/resources/icon.png'))))
     throw new Error('桌面窗口图标与当前应用素材不一致');
   await verifyExecutableIcon(path.join(release, 'win-unpacked/AgentDeck.exe'));
-  return { main: mainHash, preload: preloadHash, webIndex, icon, archive: await hashFile(archive) };
+  return {
+    main: mainHash,
+    preload: preloadHash,
+    modules: moduleHashes,
+    webIndex,
+    icon,
+    archive: await hashFile(archive),
+  };
 }
 
 const version = PackageVersion.parse(

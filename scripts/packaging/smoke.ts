@@ -84,7 +84,7 @@ function assertRenderer(report: RendererReport) {
     report.platform !== 'win32' ||
     report.nodeExposed ||
     report.projects.length !== 0 ||
-    report.plugins.length !== 1
+    report.plugins.length !== 0
   )
     throw new Error('桌面首屏、预加载或隔离数据验证失败');
 }
