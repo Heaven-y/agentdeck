@@ -38,7 +38,7 @@ public static class NodeArguments {
   }
 }
 "@
-$rows = @(Get-CimInstance Win32_Process -Property ProcessId,Name,ExecutablePath,CommandLine | ForEach-Object {
+$rows = @(Get-CimInstance Win32_Process -Filter $processFilter -Property ProcessId,Name,ExecutablePath,CommandLine | ForEach-Object {
   $argsForNode = $null
   if ($_.Name -in 'node.exe','nodejs.exe' -and $_.CommandLine) { $argsForNode = [NodeArguments]::Read($_.CommandLine) }
   @{ pid = [int]$_.ProcessId; name = $_.Name; image = $_.ExecutablePath; argv = $argsForNode }
@@ -86,14 +86,14 @@ rows = list.lines.map do |line|
 end
 puts JSON.generate(rows)`;
 
-async function systemRows(context: BackendContext, signal: AbortSignal): Promise<Row[]> {
+async function systemRows(context: BackendContext, signal: AbortSignal, targets: Targets): Promise<Row[]> {
   const windows = context.platform === 'win32';
   if (!windows && context.platform !== 'darwin') throw unknown();
   const command = windows
     ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe')
     : '/usr/bin/ruby';
   const args = windows
-    ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', windowsProbe]
+    ? ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', windowsQuery(targets)]
     : ['--disable-gems', '-e', darwinProbe];
   const result = await context.run(command, args, {
     signal,
@@ -107,6 +107,18 @@ async function systemRows(context: BackendContext, signal: AbortSignal): Promise
     .array()
     .min(1)
     .parse(JSON.parse(result.stdout.toString('utf8')));
+}
+
+function windowsQuery(targets: Targets) {
+  const names = new Set([...targets.names, ...(targets.scripts ? ['node.exe', 'nodejs.exe'] : [])]);
+  // 在 CIM 端筛选候选，避免为无关系统进程读取完整命令行。编码后传入，文件名不会成为脚本。
+  const filter = [
+    ...[...names].map((name) => `Name = '${name.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`),
+    // 自身记录区分「候选为空」和「系统查询无结果」。
+    `ProcessId = ${process.pid}`,
+  ].join(' OR ');
+  const encoded = Buffer.from(filter, 'utf8').toString('base64');
+  return `$processFilter = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))\n${windowsProbe}`;
 }
 
 function missing(error: unknown): boolean {
@@ -129,9 +141,9 @@ async function linuxRow(pid: string): Promise<Row | undefined> {
   const argv = data?.at(-1) === 0 ? data.subarray(0, -1).toString('utf8').split('\0') : null;
   return { name, image, argv };
 }
-async function* processRows(context: BackendContext, signal: AbortSignal): AsyncGenerator<Row> {
+async function* processRows(context: BackendContext, signal: AbortSignal, targets: Targets): AsyncGenerator<Row> {
   if (context.platform !== 'linux') {
-    yield* await systemRows(context, signal);
+    yield* await systemRows(context, signal, targets);
     return;
   }
   // hidepid 可以直接从目录清单隐藏进程，不能把这样的清单当成完整快照。
@@ -286,7 +298,7 @@ export async function assertInstallationIdle(
     const approved = await approvedTargets(targets, signal);
     if (!approved.names.size) return;
     let incomplete = false;
-    for await (const row of processRows(context, signal)) {
+    for await (const row of processRows(context, signal, approved)) {
       signal.throwIfAborted();
       const match = await occupied(row, approved, context.platform).catch(() => {
         if (!alreadyExited(row.pid)) incomplete = true;

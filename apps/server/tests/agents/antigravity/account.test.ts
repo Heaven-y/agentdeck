@@ -5,6 +5,10 @@ import { readAntigravityConnection } from '../../../src/agents/antigravity/model
 
 vi.mock('../../../src/agents/antigravity/management/management-process', () => ({ startManagementBackend: vi.fn() }));
 vi.mock('../../../src/agents/antigravity/models/model-catalog', () => ({ readAntigravityConnection: vi.fn() }));
+// 后端已由夹具接管，命令解析也隔离，避免测试依赖开发机安装 AGY。
+vi.mock('../../../src/platform/process/executable', () => ({
+  resolveLocalCommand: () => ({ command: process.execPath, args: [] }),
+}));
 
 it('仅保留原生官方账号邮箱，空状态、系统用户名和 ADC 不能冒充 Google 账号', () => {
   const email = 'developer@example.invalid';
@@ -24,7 +28,7 @@ it.each([true, false])('等原生会话列表就绪后只读取一次邮箱（�
   const close = vi.fn(async () => undefined);
   vi.mocked(readAntigravityConnection).mockResolvedValue('account');
   vi.mocked(startManagementBackend).mockResolvedValue({ request, close });
-  await expect(readAntigravityAccount()).resolves.toEqual(signedIn ? { email } : {});
+  await expect(readAntigravityAccount({ env: {} })).resolves.toEqual(signedIn ? { email } : {});
   expect(startManagementBackend).toHaveBeenCalledOnce();
   expect(vi.mocked(startManagementBackend).mock.calls[0]?.[0].waitForSessionList).toBe(true);
   expect(request.mock.calls).toEqual([['GetUserStatus', {}, 'page']]);

@@ -41,7 +41,7 @@ function isNativeAliasGroup(entries: AgentModel[], native: AgentModel[]) {
   return (
     primary !== undefined &&
     native.some((model) => model.id === model.label) &&
-    entries.every((model) => !model.modelId || model.modelId === primary.id)
+    entries.every((model) => !model.modelId || [primary.id, primary.label].includes(model.modelId))
   );
 }
 

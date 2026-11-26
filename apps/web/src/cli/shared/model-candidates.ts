@@ -151,20 +151,22 @@ export function modelCandidates(
   const candidates = fromCatalog && selected ? [selected, ...unique.values()] : [...unique.values()];
   // 只合并真实目录项，补出的当前值不能充当原生身份依据。
   const choices =
-    agent === 'antigravity' ? combinedCandidates(candidates, ambiguous ? current : undefined) : candidates;
+    agent === 'antigravity'
+      ? combinedCandidates(candidates, ambiguous ? current : undefined, selected?.id)
+      : candidates;
   return !fromCatalog && selected ? [selected, ...choices] : choices;
 }
 
-function combinedCandidates(models: AgentModel[], separateLabel?: string): ModelCandidate[] {
+function combinedCandidates(models: AgentModel[], separateLabel?: string, current?: string): ModelCandidate[] {
   return antigravityModelGroups(models).flatMap((entries) =>
     entries[0]!.label === separateLabel
       ? entries.map((model) => combinedCandidate([model]))
-      : [combinedCandidate(entries)],
+      : [combinedCandidate(entries, current)],
   );
 }
 
-function combinedCandidate(entries: AgentModel[]): ModelCandidate {
-  const selected = entries[0]!;
+function combinedCandidate(entries: AgentModel[], current?: string): ModelCandidate {
+  const selected = entries.find((model) => model.id === current) ?? entries[0]!;
   if (entries.length === 1) return selected;
   const native = entries.every((model) => !model.modelId)
     ? entries.find((model) => model.id !== model.label)
