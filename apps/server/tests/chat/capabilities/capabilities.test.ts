@@ -10,6 +10,18 @@ const ws: Workspace = {
   name: 'demo',
   dir: path.join(tmpdir(), 'capabilities-fixture'),
 };
+it('已启用扩展声明的原生命令原样送达，未声明命令继续核对原生目录', async () => {
+  const service = createCapabilitiesService(
+    {},
+    { pluginNativeCommand: async (agent, name) => agent === 'antigravity' && name === 'delegate' },
+  );
+  await expect(service.prepare(ws, 'antigravity', { text: '/delegate 明确任务' })).resolves.toEqual({
+    text: '/delegate 明确任务',
+  });
+  await expect(service.prepare(ws, 'codex', { text: '/delegate 明确任务' })).rejects.toMatchObject({
+    code: 'capabilities_not_refreshed',
+  });
+});
 function setup() {
   const catalog: NativeCapabilityCatalog = {
     models: [{ id: 'native-model', label: '原生候选' }],

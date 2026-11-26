@@ -100,6 +100,8 @@ export async function startServer(config: ServerConfig, options: StartServerOpti
     installationBackend: options.cliInstallationBackend,
     probeRunner: options.probeRunner,
     agyHistoryScript: options.agyHistoryScript,
+    beforeSessionDelete: plugins.beforeSessionDelete,
+    pluginNativeCommand: plugins.nativeCommand,
   });
   const pluginHost = createPluginHostServices(store, cli.sessions);
   const { turns } = cli;

@@ -90,6 +90,8 @@ export function createCliServices({
   installationBackend,
   probeRunner,
   agyHistoryScript,
+  beforeSessionDelete,
+  pluginNativeCommand,
 }: {
   configDir: string;
   store: WorkspaceStore;
@@ -97,6 +99,8 @@ export function createCliServices({
   installationBackend?: CliInstallationBackend;
   probeRunner?: ProcessRunner;
   agyHistoryScript?: string;
+  beforeSessionDelete?: (session: { agent: string; sessionId: string; cwd: string }) => Promise<void>;
+  pluginNativeCommand?: (agent: string, name: string) => Promise<boolean>;
 }) {
   const acquireWorkspace = (id: string) => activity.acquire(id);
   const attachments = new AttachmentStore(path.join(configDir, 'attachments'));
@@ -135,7 +139,7 @@ export function createCliServices({
       ),
     },
     // AGY 的启动变量不覆盖 home；只读身份不需要解密环境或等待环境保存队列。
-    { configDir, antigravityConnection: readAntigravityConnection },
+    { configDir, antigravityConnection: readAntigravityConnection, pluginNativeCommand },
   );
   const managementAccess = createNativeManagementAccess({
     withIdleAgent: (agent, operation) => turns.withIdleAgent(agent, operation),
@@ -208,6 +212,7 @@ export function createCliServices({
       // 归属裁决要比较全部项目目录，不能只看当前项目。
       projects: () => store.list(),
       preferences: createSessionPreferences({ configDir: configDir }),
+      beforeDelete: beforeSessionDelete,
     },
   );
   const runners = {

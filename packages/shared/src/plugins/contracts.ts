@@ -16,6 +16,7 @@ export const WorkbenchPluginPermissionSchema = z.enum([
   'session-history',
   'session-context',
   'composer',
+  'session-control',
 ]);
 export const WorkbenchPluginCommandSchema = z
   .object({
@@ -37,7 +38,7 @@ const Manifest = z
     entry: z.string().min(1).max(240).endsWith('.html'),
     description: z.string().max(1000).optional(),
     icon: z.enum(['terminal', 'puzzle']).optional(),
-    permissions: z.array(WorkbenchPluginPermissionSchema).max(8).default([]),
+    permissions: z.array(WorkbenchPluginPermissionSchema).max(9).default([]),
     /** 命令交付给插件自己的文档，不直接执行系统命令。 */
     commands: z.array(WorkbenchPluginCommandSchema).max(32).default([]),
   })
@@ -59,6 +60,10 @@ const Contributions = z
       .array(z.strictObject({ command: WorkbenchPluginIdSchema, location: z.enum(['composer', 'session']) }))
       .max(32)
       .default([]),
+    nativeCommands: z
+      .array(z.strictObject({ agent: AgentKindSchema, name: WorkbenchPluginIdSchema }))
+      .max(16)
+      .optional(),
   })
   .refine((value) => new Set(value.pages.map((page) => page.id)).size === value.pages.length)
   .refine(
@@ -75,10 +80,13 @@ export const WorkbenchPluginManifestSchema = z
     Manifest.extend({
       apiVersion: z.literal(2),
       backend: z.string().min(1).max(240).endsWith('.cjs').optional(),
+      sessionLifecycle: z.boolean().optional(),
       contributes: Contributions.optional(),
       events: z.array(WorkbenchPluginEventNameSchema).max(3).optional(),
     })
       .refine((value) => !!value.backend === value.permissions.includes('backend'))
+      .refine((value) => !value.sessionLifecycle || (!!value.backend && value.permissions.includes('session-control')))
+      .refine((value) => !value.contributes?.nativeCommands?.length || value.permissions.includes('session-control'))
       .refine(
         (value) =>
           value.contributes?.actions.every((action) =>
@@ -137,6 +145,8 @@ export const WorkbenchPluginHostRequestSchema = z.discriminatedUnion('method', [
 export type WorkbenchPluginHostRequest = z.infer<typeof WorkbenchPluginHostRequestSchema>;
 export type WorkbenchPluginSessionContext = {
   conversationId: string;
+  /** session.list 中标识这一次打开；关闭重开会变化。 */
+  openId?: string;
   workspaceId?: string;
   agent: AgentKind;
   sessionId?: string;

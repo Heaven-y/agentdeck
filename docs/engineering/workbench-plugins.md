@@ -31,6 +31,8 @@ AgentDeck 从用户安装的插件包加载扩展。插件源码、依赖和业�
 
 v1 页面关闭后卸载 iframe，持久设置保留。v2 首次打开页面或调用命令时装载文档，之后随工作台保留；声明事件订阅的插件随工作台加载文档。后台命令不切换页面。隐藏页面收到可见性通知，可暂停前端刷新；本机后端仍只在首次后端请求时启动。停用、卸载与应用退出撤销页面、命令、事件和进程通道。
 
+v2 后端可声明 `sessionLifecycle: true`，同时申请 `session-control`。宿主在停用、替换、卸载及原生会话删除前调用 `POST /_agentdeck/lifecycle`，body 为 `{event, session?}`。event 分别为 `disable`、`update`、`uninstall`、`session.deleting`；session 包含已核验的 agent、sessionId、cwd。删除通知也交给已停用插件，供其收束先前任务；失败则阻止本次原生删除。应用正常退出只释放宿主进程通道，不代表用户停用插件。
+
 卸载清理安装副本，v1 同时清理页面设置。v2 保留页面设置，后端数据独立保存在 `workbench-plugins/data/<id>`，卸载程序时保留，重新安装同一插件后接续。
 
 ## 页面与宿主接口
@@ -40,6 +42,8 @@ v1 页面关闭后卸载 iframe，持久设置保留。v2 首次打开页面或�
 v2 使用 `contributes.pages` 声明 `{id, title, location}`，location 为 `sidebar` 或 `settings`。两处入口均打开插件自己的页面，并通过上下文 `page` 告知入口身份；设置页入口返回设置。多个入口复用一个文档和运行状态。未提供 contributes 的旧插件保留一个侧栏主页面，显式空 pages 可提供纯后台操作。
 
 `commands` 的每项为 `{id, title, execution?, page?}`。execution 默认 `page`，可用 page 指定贡献页面；`background` 交付命令但保留当前页面。`contributes.actions` 用 `{command, location}` 把已有命令放入输入区的“扩展操作”，location 为 `composer` 或 `session`；插件管理中的“操作”菜单提供该插件全部已声明命令。宿主校验贡献 id、命令引用与页面引用。新增插件无需修改主应用的页面分支或命令表。
+
+声明 `session-control` 的插件可用 `contributes.nativeCommands: [{agent, name}]` 登记由原生接入层处理的斜杠命令。发送时核对唯一已启用的声明和安装包摘要，将原文送到指定 CLI；宿主不展开正文，不改写会话来源。未登记的命令继续按原生能力目录校验。
 
 命令在文档就绪后仅交付一次，SDK 按顺序执行处理器。停用或更新清除未交付命令。命令携带触发时的工作台会话身份，草稿调用据此拒绝切换后的目标；读取草稿返回 revision，写入还核对会话和读取内容，避免覆盖用户新输入。插件编辑草稿后由用户发送。
 
@@ -55,6 +59,8 @@ v2 使用 `contributes.pages` 声明 `{id, title, location}`，location 为 `sid
 | `onCommand(callback)` | 无 | 页面打开命令的 ID；返回取消订阅函数 |
 | `host.request({method, params?}, {signal})` | projects 或 session-history，v2 | 已登记项目及原生会话的分页读取 |
 | `session.get()` | session-context，v2 | 当前工作台会话身份及运行状态 |
+| `session.list()` | session-context，v2 | 已打开标签的会话身份，包含后台标签；openId 标识本次打开，关闭重开后变化，普通切换不变 |
+| `session.resume({conversationId, requestId, text})` | session-control，v2 | 向指定已打开会话发送续接输入，requestId 为 UUID；服务端受理后 accepted 才为 true，待确认重试同一 ID 不重发；关闭、运行或已有待发消息时不发送，不切换页面、不修改草稿 |
 | `composer.get()` / `composer.set({text, revision})` | composer，v2 | 读取草稿及其 revision，再按 revision 编辑草稿 |
 | `onEvent(name, callback)` | session-context，v2 | 声明的工作台事件；返回取消订阅函数 |
 
@@ -76,13 +82,13 @@ v2 清单的 events 可声明 context.changed、turn.started、turn.completed；
 
 ## v2 后端通信
 
-后端由当前 Node 或 Electron 的 Node 模式启动，不监听网络端口。宿主不传递模型服务凭据。具有 `backend` 权限的进程可访问本机文件和网络，启用前界面展示这一权限。
+后端由当前 Node 或 Electron 的 Node 模式启动，不监听网络端口。宿主不传递模型服务凭据，保留 CODEX_HOME 以定位原生配置。具有 `backend` 权限的进程可访问本机文件和网络，启用前界面展示这一权限。
 
 使用 Node IPC 接收 `{id, type, input}`，成功返回 `{id, ok: true, value}`，失败返回 `{id, ok: false}`。请求 ID 由宿主生成。
 
 | type | input | 后端行为 |
 | --- | --- | --- |
-| initialize | `{dataDir, hostDataDir}` | 准备插件数据并返回；dataDir 是插件专有目录，hostDataDir 是宿主配置根 |
+| initialize | `{dataDir, hostDataDir, enabled}` | 准备插件数据并返回；dataDir 是插件专有目录，hostDataDir 是宿主配置根，enabled 表示当前是否启用 |
 | request | `{method, url, body?}` | 处理本插件请求，返回 `{status, body}` |
 | cancel | null | 以相同 id 取消对应请求 |
 | dispose | null | 关闭连接等资源，答复后退出 |
