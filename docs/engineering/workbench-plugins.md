@@ -99,8 +99,8 @@ v2 清单的 events 可声明 context.changed、turn.started、turn.completed；
 
 ## 开发入口
 
-[插件 SDK](https://github.com/Heaven-y/agentdeck-plugins/tree/main/sdk)提供浏览器类型和 definePlugin 后端接口；SSH Console 使用同一 SDK。[项目助手示例](https://github.com/Heaven-y/agentdeck-plugins/tree/main/examples/project-helper)演示四类贡献、草稿、会话服务、设置与事件，无需本机后端或构建步骤。
+[插件 SDK](https://github.com/Heaven-y/agentdeck-plugins/tree/main/sdk)提供浏览器类型和 definePlugin 后端接口；SSH 控制台 使用同一 SDK。[项目助手示例](https://github.com/Heaven-y/agentdeck-plugins/tree/main/examples/project-helper)演示四类贡献、草稿、会话服务、设置与事件，无需本机后端或构建步骤。
 
 ## 扩展验收
 
-宿主回归覆盖空安装、静态包、贡献与引用、权限、原生分页、草稿冲突、后台事件、命令交付、访问控制、包摘要、独立进程、取消、升级、数据保留和卸载。SSH Console 的连接、凭据、SFTP、PTY 与监控测试随实现迁至插件仓库。此前内置版本的实现与验收可追溯 `27279c2:docs/engineering/workbench-plugins.md`。
+宿主回归覆盖空安装、静态包、贡献与引用、权限、原生分页、草稿冲突、后台事件、命令交付、访问控制、包摘要、独立进程、取消、升级、数据保留和卸载。SSH 控制台 的连接、凭据、SFTP、PTY 与监控测试随实现迁至插件仓库。此前内置版本的实现与验收可追溯 `27279c2:docs/engineering/workbench-plugins.md`。

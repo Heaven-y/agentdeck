@@ -30,6 +30,8 @@ import {
 } from '../../features/sessions/list/workspace-sessions';
 import { useProductSettings } from '../../features/settings/general/use-product-settings';
 import { matchesSessionSearch as matchesSession } from '../../features/sessions/list/session-search';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { settingsApi, settingsKeys } from '../../features/settings/api';
 
 export type SidebarProps = {
   pages?: ReactNode;
@@ -326,6 +328,12 @@ function WorkspaceListNotice({
 }
 
 function useSidebarSelection(projects: Workspace[], currentProjectId?: string) {
+  const settings = useProductSettings();
+  const client = useQueryClient();
+  const saveExpansion = useMutation({
+    mutationFn: ({ id, expanded }: { id: string; expanded: boolean }) => settingsApi.setWorkspaceExpanded(id, expanded),
+    onSuccess: (document) => client.setQueryData(settingsKeys.productSettings, document),
+  });
   const chatProjectId = useChat((state) => state.workspaceId);
   const conversationId = useChat((state) => state.conversationId);
   const [focused, setFocused] = useState<{ projectId: string; conversationId: string }>();
@@ -333,8 +341,12 @@ function useSidebarSelection(projects: Workspace[], currentProjectId?: string) {
     focused?.conversationId === conversationId ? focused.projectId : (currentProjectId ?? chatProjectId);
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const defaultExpanded = currentProjectId ?? chatProjectId ?? projects[0]?.id;
-  if (defaultExpanded && toggled[defaultExpanded] === undefined) setToggled({ ...toggled, [defaultExpanded]: true });
-  const isExpanded = (projectId: string) => toggled[projectId] ?? projectId === defaultExpanded;
+  const isExpanded = (projectId: string) =>
+    toggled[projectId] ?? settings.data?.settings.workspaceExpansion?.[projectId] ?? projectId === defaultExpanded;
+  const setExpanded = (id: string, expanded: boolean) => {
+    setToggled((previous) => ({ ...previous, [id]: expanded }));
+    saveExpansion.mutate({ id, expanded });
+  };
   const activeKey = useChat((state) => {
     if (!state.workspaceId) return '';
     return sessionActionKey(state.workspaceId, {
@@ -344,15 +356,16 @@ function useSidebarSelection(projects: Workspace[], currentProjectId?: string) {
   });
   return {
     selectedProject,
+    saveError: saveExpansion.isError,
     activeKey,
     isExpanded,
     expand(projectId: string) {
-      setToggled((previous) => ({ ...previous, [projectId]: true }));
+      setExpanded(projectId, true);
     },
-    toggle(projectId: string) {
+    toggle(projectId: string, searching = false) {
       const collapse = isExpanded(projectId);
       setFocused({ projectId, conversationId });
-      setToggled((previous) => ({ ...previous, [projectId]: !collapse }));
+      if (!searching) setExpanded(projectId, !collapse);
     },
   };
 }
@@ -362,6 +375,14 @@ function useSidebarSearch(controlled?: string, change?: (value: string) => void)
 }
 function MoreSessions({ page }: { page?: SidebarProps['sessionPages'] }) {
   return page ? <LoadMoreSessions {...page} loading={page.loadingMore} /> : null;
+}
+function ExpansionSaveError({ visible, failed }: { visible: boolean; failed: boolean }) {
+  if (!visible || !failed) return null;
+  return (
+    <p role="alert" className="px-3 py-1 text-xs text-destructive-foreground">
+      展开状态未能保存，重开后可能恢复旧状态。请重新展开或收起一次。
+    </p>
+  );
 }
 
 /** 左栏只读取摘要与导航；原生会话写操作始终使用被点击行的完整身份。 */
@@ -457,6 +478,7 @@ export function Sidebar({
         changeQuery={setSearch}
         addProject={() => onAddProject()}
       />
+      <ExpansionSaveError visible={!collapsed} failed={selection.saveError} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!collapsed && (
           <>
@@ -483,7 +505,7 @@ export function Sidebar({
                   activeKey={selection.activeKey}
                   toggle={() => {
                     onSelectProject?.(project.id);
-                    selection.toggle(project.id);
+                    selection.toggle(project.id, Boolean(query));
                   }}
                   newSession={(id, agent) => {
                     selection.expand(id);

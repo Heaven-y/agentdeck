@@ -98,6 +98,12 @@ export const settingsApi = {
     request<ProductSettingsDocument>('/api/settings/product', { signal, cache: 'no-store' }),
   saveProductSettings: (input: ProductSettingsInput, signal?: AbortSignal) =>
     request<ProductSettingsDocument>('/api/settings/product', { method: 'PUT', body: JSON.stringify(input), signal }),
+  setWorkspaceExpanded: (workspaceId: string, expanded: boolean) =>
+    request<ProductSettingsDocument>('/api/settings/product/workspace-expansion', {
+      method: 'PUT',
+      body: JSON.stringify({ workspaceId, expanded }),
+      keepalive: true,
+    }),
   readEnvironment: (signal?: AbortSignal) =>
     request<EnvironmentReport>('/api/settings/environment', { signal, cache: 'no-store' }),
   detectEnvironment: (signal?: AbortSignal) =>

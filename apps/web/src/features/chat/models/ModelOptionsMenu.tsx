@@ -1,4 +1,4 @@
-import { AGENT_LABELS } from '../../../cli/shared/labels';
+import { AGENT_LABELS, effortLabel } from '../../../cli/shared/labels';
 import { MenuChoice as Choice, modelMenuItemClass as itemClass } from '../../../ui/fields/MenuChoice';
 import { ClaudeContextChoices } from '../../../cli/claude/ContextChoices';
 import { ApiError } from '../../../lib/http';
@@ -107,9 +107,6 @@ function useModelPresentation(model: string, catalog: AgentCapabilities | undefi
     loading: !id && (reading || fetching),
     defaultEffort: inheritsSession ? undefined : configuredModelEffort(id, catalog),
   };
-}
-function effortLabel(effort?: string) {
-  return effort === 'auto' ? '自动' : effort || '';
 }
 function ExtendedContextLabel({ label }: { label: string }) {
   if (!/\[1m\]$/i.test(label)) return null;

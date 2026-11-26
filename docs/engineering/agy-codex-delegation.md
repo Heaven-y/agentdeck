@@ -6,6 +6,8 @@
 
 目标是用户与 AGY 交流，在明确允许后由 AGY 把任务交给 Codex，接收问题与结果，并在同一个 Codex 会话中返修。产品交付为 AgentDeck 的独立可选工作台扩展，源码归入 agentdeck-plugins 仓库。
 
+委派插件不占用侧栏顶部导航；设置中的「Codex 委派」和对话的「扩展操作 → 查看 Codex 委派」打开同一页面，包含执行设置及任务列表。输入框的授权操作仍用于插入 `/with-codex`。
+
 AGY 官方插件支持 Skill、本机工具和 Hooks，可用作原生 CLI 的接入层；本机 `agy plugin --help` 列出 install、enable、disable、validate。它与 AgentDeck 工作台插件使用不同接口和清单，不能把两种插件包混用。[插件格式](https://antigravity.google/docs/build-plugins/)
 
 Codex app-server 提供原生 thread/turn、续接、追加输入、中断与提问协议；本仓库已有对应运行器和交互适配。本机导出的协议同时确认 threadId、turnId、model、effort 和终态字段，可沿用当前 Codex 连接与认证。[App Server](https://learn.chatgpt.com/docs/app-server)

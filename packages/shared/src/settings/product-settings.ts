@@ -48,6 +48,8 @@ export const KeyboardShortcutsSchema = z.partialRecord(
 );
 
 export const ProductSettingsSchema = z.strictObject({
+  /** 工作区展开状态保存在工作台配置中，不随桌面页面端口变化。 */
+  workspaceExpansion: z.record(z.string().min(1).max(200), z.boolean()).optional(),
   /** 全局工作台快捷键；缺省项沿用默认，null 表示停用。 */
   shortcuts: KeyboardShortcutsSchema.optional(),
   defaultAgent: AgentKindSchema.default('claude'),
@@ -83,6 +85,11 @@ export const ProductSettingsInputSchema = z.strictObject({
   revision: z.string().regex(/^(missing|[a-f0-9]{64})$/),
 });
 export type ProductSettingsInput = z.infer<typeof ProductSettingsInputSchema>;
+export const WorkspaceExpansionInputSchema = z.strictObject({
+  workspaceId: z.string().min(1).max(200),
+  expanded: z.boolean(),
+});
+export type WorkspaceExpansionInput = z.infer<typeof WorkspaceExpansionInputSchema>;
 /** 环境面板只显示三个 Agent 的第一层探测结果；同步与本地 git 域删除后不再检测 git/rclone。 */
 export type EnvironmentTool = {
   name: 'Claude Code' | 'Codex' | 'Antigravity';

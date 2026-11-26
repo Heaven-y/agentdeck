@@ -3,7 +3,7 @@ import { ArrowUpRight, ChevronRight, FileCode2, RefreshCw } from 'lucide-react';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { ModelSettingField } from '@agentdeck/shared/settings';
 import { buttonClass } from '../../../ui/styles';
-import { AGENT_FULL_NAMES } from '../../../cli/shared/labels';
+import { AGENT_FULL_NAMES, effortLabel } from '../../../cli/shared/labels';
 import { ModelSettingsField } from './ModelSettingsField';
 import { modelSettingValue, modelSettingsFields, useModelSettings } from './use-model-settings';
 import type { SettingsLeave } from '../navigation/settings-navigation';
@@ -42,7 +42,7 @@ function suggestionsFor(field: ModelSettingField, state: State) {
   const selected = state.document?.fields.find((entry) => entry.key === 'model');
   const modelId = selected && modelSettingValue(selected, state.draft);
   return state.document && modelId
-    ? modelEfforts(state.document.agent, modelId, models).map((value) => ({ value, label: value }))
+    ? modelEfforts(state.document.agent, modelId, models).map((value) => ({ value, label: effortLabel(value) }))
     : undefined;
 }
 function FetchModels({ state }: { state: State }) {

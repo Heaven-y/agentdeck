@@ -29,12 +29,56 @@ export function applicationMenuTemplate(platform = process.platform): MenuItemCo
     ...(platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     {
       id: 'file',
-      label: 'File',
-      submenu: [{ role: 'close', accelerator: platform === 'darwin' ? 'Command+Shift+W' : 'Alt+F4' }],
+      label: '文件',
+      submenu: [
+        { role: 'close', label: '关闭窗口', accelerator: platform === 'darwin' ? 'Command+Shift+W' : 'Alt+F4' },
+      ],
     },
-    { id: 'edit', role: 'editMenu', label: 'Edit' },
-    { id: 'view', role: 'viewMenu', label: 'View' },
-    { id: 'window', role: 'windowMenu', label: 'Window' },
+    {
+      id: 'edit',
+      role: 'editMenu',
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'pasteAndMatchStyle', label: '粘贴并匹配样式' },
+        { role: 'delete', label: '删除' },
+        { type: 'separator' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      id: 'view',
+      role: 'viewMenu',
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { role: 'toggleDevTools', label: '开发者工具' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '切换全屏' },
+      ],
+    },
+    {
+      id: 'window',
+      role: 'windowMenu',
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '最大化或还原' },
+        ...(platform === 'darwin'
+          ? [{ role: 'front' as const, label: '全部置于前面' }]
+          : [{ role: 'close' as const, label: '关闭窗口', accelerator: 'Alt+F4' }]),
+      ],
+    },
   ];
 }
 
