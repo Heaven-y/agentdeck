@@ -110,6 +110,10 @@ export async function discoverAntigravityCommands(dir: string, options: Options 
 
 export class AntigravityInvocationError extends Error {}
 
+export function isAntigravityCompact(invocation?: NativeInvocation): boolean {
+  return invocation?.kind === 'acp-command' && invocation.name === 'compact';
+}
+
 function matchesSkill(entry: Entries[number] | undefined, invocation: Extract<NativeInvocation, { kind: 'skill' }>) {
   return entry?.available && entry.invocation?.kind === 'skill' && entry.invocation.path === invocation.path;
 }
@@ -118,6 +122,10 @@ function matchesSkill(entry: Entries[number] | undefined, invocation: Extract<Na
 export async function antigravityInvocationText(input: AgentTurnInput, options: Options = {}): Promise<string> {
   const invocation = input.invocation;
   if (!invocation) return input.text;
+  if (isAntigravityCompact(invocation)) {
+    if (!input.sessionId) throw new AntigravityInvocationError('请先打开要压缩的会话。');
+    return `/compact${input.text.trim() ? ` ${input.text.trim()}` : ''}`;
+  }
   if (invocation.kind !== 'skill') throw new AntigravityInvocationError('此命令尚未接入 Antigravity 对话。');
   const entries = await discoverAntigravityCommands(input.workspace.dir, options);
   const matching = entries.filter((entry) => entry.kind === 'skill' && entry.name === invocation.name);

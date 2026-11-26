@@ -6,6 +6,7 @@ import {
   readAntigravityModelCatalogSettings,
 } from './models/model-catalog';
 import { discoverAntigravityModels } from './models/model-discovery';
+import { OrchestratorCatalogError } from './models/orchestrator';
 import { discoverAntigravityCommands } from './commands/commands';
 
 function mergeModels(discovered: AgentModel[], configured: AgentModel[]): AgentModel[] {
@@ -74,8 +75,10 @@ async function discoverModels(options: {
       models,
       defaultModel: defaultSelection(models, catalog.defaultModel),
     };
-  } catch {
+  } catch (error) {
     options.signal?.throwIfAborted();
+    if (error instanceof OrchestratorCatalogError)
+      return { ...catalog, models: mergeModels(error.models, configured), modelWarning: error.message };
     return { ...catalog, modelWarning: '暂时无法读取模型，已保留配置中的模型。' };
   }
 }

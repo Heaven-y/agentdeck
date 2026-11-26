@@ -84,14 +84,18 @@ it('AGY 缺少实时用量的回合结束后只读补齐上下文，不替换正
 });
 
 it('本轮已有实时上下文时保留实时报告，下一轮缺少用量仍会刷新', async () => {
-  const read = vi.spyOn(sessionsApi, 'sessionEvents').mockResolvedValue(history());
   const live = { ...usage, usedTokens: 1600 };
+  const lastRequest = { inputTokens: 1000, cachedInputTokens: 2000, inputBudgetTokens: 256000 };
+  const read = vi
+    .spyOn(sessionsApi, 'sessionEvents')
+    .mockResolvedValueOnce(history({ ...usage, lastRequest }))
+    .mockResolvedValue(history());
   start();
   receive({ type: 'agent.event', turnId: 'turn-one', event: { type: 'context', usage: live } });
   finish();
   await settle();
-  expect(useChat.getState().contextUsage).toEqual(live);
-  expect(read).not.toHaveBeenCalled();
+  expect(useChat.getState().contextUsage).toEqual({ ...live, lastRequest });
+  expect(read).toHaveBeenCalledOnce();
   start('turn-two');
   finish('turn-two');
   await settle();
@@ -144,12 +148,13 @@ it.each(['session', 'agent', 'missing', 'failure'] as const)(
     const read = vi.spyOn(sessionsApi, 'sessionEvents');
     if (scenario === 'failure') read.mockRejectedValue(new Error('原生历史不可用'));
     else read.mockResolvedValue(result);
-    useChat.setState({ contextUsage: { ...usage, usedTokens: 100 } });
+    useChat.setState({ contextUsage: { ...usage, usedTokens: 100, lastRequest: { inputTokens: 50 } } });
     start();
     finish();
     const items = useChat.getState().items;
     await settle();
     expect(useChat.getState().contextUsage?.usedTokens).toBe(100);
+    if (scenario === 'missing') expect(useChat.getState().contextUsage?.lastRequest).toBeUndefined();
     expect(useChat.getState().items).toBe(items);
     expect(useChat.getState().banner).toBeUndefined();
     expect(useChat.getState().historyError).toBeUndefined();

@@ -96,7 +96,7 @@ it('目录缺失等待有界，取消立即关闭等待且不能借外会话目�
       update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact' }] },
     });
     await commands.ready('native');
-    expect(() => commands.input('native', 'compact', 'unsupported args')).toThrow('参数');
+    expect(commands.input('native', 'compact', '继续整理')).toBe('/compact 继续整理');
   } finally {
     vi.useRealTimers();
   }

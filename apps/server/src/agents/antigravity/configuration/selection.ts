@@ -3,6 +3,9 @@ import type { NativeModelSettingsInput } from '@agentdeck/shared/settings';
 import { object, string, type ConfigObject } from '../../common/configuration/fields';
 import { discoverAntigravityModels } from '../models/model-discovery';
 import { assertAntigravitySelection, selectedAntigravityModel } from './identity';
+import { ModelSettingsError } from '../../common/configuration/patch';
+import { antigravityAccountReadEnvironment } from '../run/process-environment';
+import { OrchestratorCatalogError } from '../models/orchestrator';
 
 type Changes = NativeModelSettingsInput['changes'];
 export type AntigravityModelCatalog = () => Promise<AgentModel[]>;
@@ -22,6 +25,38 @@ export const nativeAntigravityModels: AntigravityModelCatalog = () =>
       NO_PROXY: '127.0.0.1,localhost',
     },
   );
+
+export async function antigravityOrchestratorChanges(
+  config: ConfigObject,
+  changes: Changes,
+  env: NodeJS.ProcessEnv,
+  discover?: AntigravityModelCatalog,
+): Promise<Changes> {
+  const fields = [
+    ['orchestratorPlanner', 'planner'],
+    ['orchestratorExecutor', 'executor'],
+  ] as const;
+  const edited = fields.filter(([key]) => changes[key]?.trim());
+  if (!edited.length) return changes;
+  if (string(Object.hasOwn(changes, 'modelProvider') ? changes.modelProvider : config.modelProvider).trim())
+    throw new ModelSettingsError('编排器使用 Antigravity 账号登录。');
+  const models = await (
+    discover ?? (() => discoverAntigravityModels({}, antigravityAccountReadEnvironment(env)))
+  )().catch((error: unknown) => {
+    throw new ModelSettingsError(
+      error instanceof OrchestratorCatalogError ? error.message : '编排器模型读取失败，请重新获取模型。',
+    );
+  });
+  const result = { ...changes };
+  for (const [key, role] of edited) {
+    const matches = models.filter(
+      (model) => model.orchestratorRoles?.includes(role) && [model.id, model.label].includes(changes[key]!.trim()),
+    );
+    if (matches.length !== 1) throw new ModelSettingsError('请选择对应角色的可用模型，可先重新获取模型。');
+    result[key] = matches[0]!.label;
+  }
+  return result;
+}
 
 function requestedModel(config: ConfigObject, changes: Changes): { model: string; requested?: string } {
   if (Object.hasOwn(changes, 'model'))

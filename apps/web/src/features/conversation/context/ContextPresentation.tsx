@@ -55,29 +55,45 @@ export function usageSummary(usage: DisplayContextUsage): string {
   const window = usage.windowTokens === undefined ? undefined : tokens(usage.windowTokens);
   return `${used ?? '—'} / ${window ?? '—'}`;
 }
-/**
- * 窗口是原生为「当时那个模型」报的值，不是设置页里给别的模型填的窗口；
- * 用量自带模型时以原生报告为准，否则说明当前会话实际在跑的型号。
- */
-export function UsageDetails({ usage, model }: { usage: DisplayContextUsage; model?: string }) {
+/** 所选模型总容量与历史生成的输入预算分别呈现，不将二者当作压缩倒计时。 */
+function ContextAmount({ usage }: { usage: DisplayContextUsage }) {
   const percentage = contextPercentage(usage);
+  const estimated = usage.source === 'antigravity_estimate';
+  return (
+    <>
+      <p>
+        {estimated ? '估计占用' : '用量'} {usage.usedTokens === undefined ? '—' : `${tokens(usage.usedTokens)} tokens`}
+        {!estimated && usage.windowTokens !== undefined && ` / 窗口 ${tokens(usage.windowTokens)} tokens`}
+        {percentage !== undefined && ` · ${estimated ? '约 ' : ''}${Math.round(percentage * 10) / 10}%`}
+      </p>
+      {estimated && usage.windowTokens !== undefined && <p>模型总窗口 {tokens(usage.windowTokens)} tokens</p>}
+    </>
+  );
+}
+
+function LastRequestDetails({ lastRequest }: { lastRequest: NonNullable<DisplayContextUsage['lastRequest']> }) {
+  return (
+    <div className="border-t border-border pt-2">
+      <p className="font-medium">最近一次生成</p>
+      <p>
+        输入 {lastRequest.inputTokens === undefined ? '—' : tokens(lastRequest.inputTokens)} · 缓存读取{' '}
+        {lastRequest.cachedInputTokens === undefined ? '—' : tokens(lastRequest.cachedInputTokens)} tokens
+      </p>
+      {lastRequest.inputBudgetTokens !== undefined && (
+        <p>当次输入预算 {tokens(lastRequest.inputBudgetTokens)} tokens</p>
+      )}
+    </div>
+  );
+}
+
+export function UsageDetails({ usage, model }: { usage: DisplayContextUsage; model?: string }) {
   const reported = usage.model || model;
   return (
     <>
       <p>{usageSource(usage)}</p>
-      <p>
-        用量 {usage.usedTokens === undefined ? '—' : `${tokens(usage.usedTokens)} tokens`}
-        {usage.windowTokens !== undefined && ` / 窗口 ${tokens(usage.windowTokens)} tokens`}
-        {percentage !== undefined && ` · ${Math.round(percentage * 10) / 10}%`}
-      </p>
-      {reported && (
-        <p className="break-all">
-          模型：{reported}
-          {usage.windowTokens !== undefined && (
-            <span className="text-muted-foreground">（窗口按该模型的原生配置）</span>
-          )}
-        </p>
-      )}
+      <ContextAmount usage={usage} />
+      {reported && <p className="break-all">模型：{reported}</p>}
+      {usage.lastRequest && <LastRequestDetails lastRequest={usage.lastRequest} />}
     </>
   );
 }

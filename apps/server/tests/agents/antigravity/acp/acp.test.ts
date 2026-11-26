@@ -203,43 +203,58 @@ describe('AGY ACP 对话与兼容路径', () => {
     await handle.done;
   });
 
-  it('已有会话专用命令等待迟到的真实目录，压缩完成有状态，不重放历史或转入headless', async () => {
+  it('手动压缩先确认 checkpoint，再按原有 ACP 路径继续，失败不继续', async () => {
     const f = setup({
-      input: { sessionId: 'native-1', text: '', invocation: { kind: 'acp-command', name: 'compact' } },
+      input: { sessionId: 'native-1', text: '继续整理', invocation: { kind: 'acp-command', name: 'compact' } },
+    });
+    vi.mocked(f.headless).mockImplementation((input) => {
+      input.emit({ type: 'compaction', state: { status: 'completed', trigger: 'manual' } });
+      input.emit({ type: 'turn_end', isError: false });
+      return { done: Promise.resolve(), interrupt: async () => {} };
     });
     const handle = f.run();
-    await vi.waitFor(() =>
-      expect(f.client.request).toHaveBeenCalledWith('session/resume', expect.anything(), expect.anything()),
-    );
-    expect(vi.mocked(f.client.request).mock.calls.some(([method]) => method === 'session/prompt')).toBe(false);
-    f.update({ sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact' }] });
     await started(f.client);
+    expect(f.headless).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'native-1',
+        text: '',
+        invocation: { kind: 'acp-command', name: 'compact' },
+      }),
+    );
     expect(f.client.request).toHaveBeenCalledWith(
       'session/prompt',
-      { sessionId: 'native-1', prompt: [{ type: 'text', text: '/compact' }] },
+      { sessionId: 'native-1', prompt: [{ type: 'text', text: '继续整理' }] },
       expect.anything(),
     );
-    expect(handle.canSteer?.()).toBe(false);
+    expect(f.events.some((event) => event.type === 'turn_end')).toBe(false);
+    expect(handle.canSteer?.()).toBe(true);
     f.finish();
     await handle.done;
-    expect(f.events.filter((event) => event.type === 'compaction')).toEqual([
-      { type: 'compaction', state: { status: 'running', trigger: 'manual' } },
-      { type: 'compaction', state: { status: 'completed', trigger: 'manual' } },
-    ]);
-    expect(f.headless).not.toHaveBeenCalled();
+    expect(f.events.filter((event) => event.type === 'turn_end')).toHaveLength(1);
+    expect(handle.canSteer?.()).toBe(false);
+    const failed = setup({
+      input: { sessionId: 'native-1', text: '不能继续', invocation: { kind: 'acp-command', name: 'compact' } },
+    });
+    vi.mocked(failed.headless).mockImplementation((input) => {
+      input.emit({ type: 'turn_end', isError: true });
+      return { done: Promise.resolve(), interrupt: async () => {} };
+    });
+    await failed.run().done;
+    expect(failed.createClient).not.toHaveBeenCalled();
+    expect(failed.events.at(-1)).toMatchObject({ isError: true });
   });
   it('ACP专用命令不能降级为兼容模式提示词，等待目录时取消不发送', async () => {
     const f = setup({
       input: {
         text: '',
         permission: { agent: 'antigravity', mode: 'auto' },
-        invocation: { kind: 'acp-command', name: 'compact' },
+        invocation: { kind: 'acp-command', name: 'plan' },
       },
     });
     await f.run().done;
     expect(f.headless).not.toHaveBeenCalled();
     expect(f.events.at(-1)).toMatchObject({ isError: true });
-    const pending = setup({ input: { text: '', invocation: { kind: 'acp-command', name: 'compact' } } });
+    const pending = setup({ input: { text: '', invocation: { kind: 'acp-command', name: 'plan' } } });
     const handle = pending.run();
     await vi.waitFor(() =>
       expect(pending.client.request).toHaveBeenCalledWith('session/new', expect.anything(), expect.anything()),

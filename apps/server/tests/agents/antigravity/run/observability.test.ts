@@ -5,6 +5,27 @@ import { expect, it } from 'vitest';
 import { AntigravityMapper } from '../../../../src/agents/antigravity/run/mapper';
 import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
 
+it('上下文保留最近同次生成的输入计量和预算，不用实际输入覆盖估计占用', () => {
+  const generator = (used: number, usage?: unknown) => ({
+    chatModel: {
+      usage,
+      chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: used, maxContextTokens: 512000 } },
+    },
+  });
+  const previous = generator(300000, { inputTokens: '100', cacheReadTokens: '200000' });
+  const latest = generator(335679, { inputTokens: '2993', cacheReadTokens: '506338' });
+  expect(antigravityHistory({ generatorMetadata: [previous, latest] }).at(-1)).toMatchObject({
+    type: 'context',
+    usage: {
+      usedTokens: 335679,
+      lastRequest: { inputTokens: 2993, cachedInputTokens: 506338, inputBudgetTokens: 512000 },
+    },
+  });
+  const after = antigravityHistory({ generatorMetadata: [latest, generator(19209)] }).at(-1);
+  expect(after).toMatchObject({ type: 'context', usage: { usedTokens: 19209 } });
+  expect(after).not.toHaveProperty('usage.lastRequest');
+});
+
 it('历史额度错误显示具体原因，旧倒计时不当作当前剩余时间且不污染下一轮', () => {
   const step = (type: string, extra = {}) => ({
     type: `CORTEX_STEP_TYPE_${type}`,

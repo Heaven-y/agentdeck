@@ -66,7 +66,7 @@ function Fields({ fields, state }: { fields: ModelSettingField[]; state: State }
   return fields.map((field) => (
     <ModelSettingsField
       key={field.key}
-      field={field}
+      field={orchestratorField(field, state)}
       value={modelSettingValue(field, state.draft)}
       cleared={state.draft[field.key] === null}
       disabled={state.saving || state.modelsLoading}
@@ -92,6 +92,29 @@ function Fields({ fields, state }: { fields: ModelSettingField[]; state: State }
       }
     />
   ));
+}
+
+function orchestratorField(field: ModelSettingField, state: State): ModelSettingField {
+  const role =
+    field.key === 'orchestratorPlanner' ? 'planner' : field.key === 'orchestratorExecutor' ? 'executor' : undefined;
+  if (!role) return field;
+  const models = (state.modelCatalog?.models ?? []).filter((model) => model.orchestratorRoles?.includes(role));
+  const current = modelSettingValue(field, state.draft);
+  const options = [
+    { value: '', label: '原生默认' },
+    ...models.map((model) => ({ value: model.label, label: model.label })),
+  ];
+  if (current && !options.some((option) => option.value === current)) options.push({ value: current, label: current });
+  return {
+    ...field,
+    options: options.map((option) => ({
+      ...option,
+      label: option.label.replace(
+        / \((low|medium|high|xhigh|max)\)$/i,
+        (_all, effort: string) => `（${effortLabel(effort.toLowerCase())}）`,
+      ),
+    })),
+  };
 }
 function ConnectionFields({ fields, state }: { fields: ModelSettingField[]; state: State }) {
   const paired = fields.some((field) => field.key === 'provider')
@@ -122,6 +145,9 @@ function ModelSettingsForm({
   const parameters = models.filter((field) =>
     ['reasoningEffort', 'contextWindow', 'autoCompactTokenLimit'].includes(field.key),
   );
+  const orchestrator = models.filter(
+    (field) => field.key === 'orchestratorPlanner' || field.key === 'orchestratorExecutor',
+  );
   return (
     <div className="space-y-6">
       {connections.length > 0 && (
@@ -132,7 +158,10 @@ function ModelSettingsForm({
         </section>
       )}
       <section aria-label="模型选择" className="space-y-3.5 border-t border-border pt-5">
-        <Fields fields={models.filter((field) => !parameters.includes(field))} state={state} />
+        <Fields
+          fields={models.filter((field) => !parameters.includes(field) && !orchestrator.includes(field))}
+          state={state}
+        />
         {state.modelsError && (
           <p role="alert" className="text-xs leading-5 text-destructive-foreground">
             {state.modelsError}
@@ -149,6 +178,14 @@ function ModelSettingsForm({
           </div>
         )}
       </section>
+      {orchestrator.length > 0 && (
+        <section aria-label="编排器" className="space-y-3.5 border-t border-border pt-5">
+          <h4 className="text-xs font-medium text-muted-foreground">编排器</h4>
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <Fields fields={orchestrator} state={state} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

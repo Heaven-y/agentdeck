@@ -9,6 +9,7 @@ import { createModelSettingsService } from '../../../src/settings/model-settings
 import { createNativeResourcesService } from '../../../src/settings/resources/native-resources';
 import { createLaunchEnvironment } from '../../../src/settings/launch-environment';
 import type { AgentModel } from '@agentdeck/shared/conversation';
+import { OrchestratorCatalogError } from '../../../src/agents/antigravity/models/orchestrator';
 
 const roots: string[] = [];
 async function fixture(nativeModels: () => Promise<AgentModel[]> = async () => []) {
@@ -44,6 +45,42 @@ async function removeFixture(root: string): Promise<void> {
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) await removeFixture(root);
+});
+
+it('AGY 编排器按角色保存完整原生标签，清空恢复默认并保留其他配置', async () => {
+  const models: AgentModel[] = [
+    { id: 'planner-high', label: 'Planner (High)', orchestratorRoles: ['planner'] },
+    { id: 'executor-low', label: 'Executor (Low)', orchestratorRoles: ['executor'] },
+  ];
+  const catalog = vi.fn(async () => models);
+  const { service, write } = await fixture(catalog);
+  const file = await write(
+    '.gemini/antigravity-cli/settings.json',
+    JSON.stringify({ model: 'Orchestrator', orchestrator: { executor: 'Existing', keep: 'yes' }, unrelated: true }),
+  );
+  const first = await service.read('antigravity');
+  const saved = await service.save('antigravity', {
+    revision: first.revision,
+    changes: { orchestratorPlanner: 'planner-high', orchestratorExecutor: 'Executor (Low)' },
+  });
+  expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual({
+    model: 'Orchestrator',
+    orchestrator: { planner: 'Planner (High)', executor: 'Executor (Low)', keep: 'yes' },
+    unrelated: true,
+  });
+  expect(saved.fields.find((field) => field.key === 'orchestratorPlanner')?.value).toBe('Planner (High)');
+  await expect(
+    service.save('antigravity', { revision: saved.revision, changes: { orchestratorExecutor: 'Planner (High)' } }),
+  ).rejects.toThrow('对应角色');
+  catalog.mockRejectedValueOnce(new OrchestratorCatalogError(models));
+  await expect(
+    service.save('antigravity', { revision: saved.revision, changes: { orchestratorPlanner: 'planner-high' } }),
+  ).rejects.toMatchObject({ code: 'model_settings_invalid', message: '编排器模型读取失败，请重新获取模型。' });
+  await service.save('antigravity', {
+    revision: saved.revision,
+    changes: { orchestratorPlanner: null, orchestratorExecutor: '' },
+  });
+  expect(JSON.parse(await fs.readFile(file, 'utf8')).orchestrator).toEqual({ keep: 'yes' });
 });
 
 it.each(['claude', 'codex', 'antigravity'] as const)(

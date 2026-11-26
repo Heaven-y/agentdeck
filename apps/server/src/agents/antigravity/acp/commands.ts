@@ -26,7 +26,8 @@ export function acpCommandEntries(values: unknown[]): NativeCapabilityCatalog['e
         available: !!description,
         unavailableReason: description ? undefined : '定时任务需要持续运行的原生调度器，请在原生CLI中管理。',
         requiresSession: name === 'compact',
-        supportsArguments: name !== 'compact',
+        supportsArguments: true,
+        ...(name === 'compact' ? { argumentHint: '留空仅压缩；填写消息则压缩后继续' } : {}),
         ...(description ? { invocation: { kind: 'acp-command' as const, name } } : {}),
       },
     ];

@@ -7,7 +7,12 @@ import {
   type Changes,
 } from '../../common/configuration/patch';
 import { patchAntigravityModel } from './custom-model';
-const paths = { model: ['model'], modelProvider: ['modelProvider'] };
+const paths = {
+  model: ['model'],
+  modelProvider: ['modelProvider'],
+  orchestratorPlanner: ['orchestrator', 'planner'],
+  orchestratorExecutor: ['orchestrator', 'executor'],
+};
 export function patch(content: string, config: ConfigObject, changes: Changes): string {
   // nativeModelId 由 prepare 依原生目录解析，不落到文件里；这里只放行并供自定义条目取用。
   validateKeys(changes, [...Object.keys(paths), 'displayName', 'baseUrl', 'contextWindow', 'nativeModelId']);

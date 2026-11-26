@@ -2,7 +2,7 @@ import type { AgentEvent, SessionHistory } from '@agentdeck/shared/conversation'
 import type { ChatState, ConversationView } from '../state/chat-state';
 import { sessionsApi } from '../../sessions/api';
 import { conversationBusy, conversationById, updateConversation } from '../state/conversations';
-import { hasMissingResponseModels, refreshResponseModels } from './response-model-refresh';
+import { refreshResponseModels } from './response-model-refresh';
 
 function unchanged(view: ConversationView | undefined, snapshot: ConversationView): view is ConversationView {
   return !!view && !conversationBusy(view) && !view.loadingHistory && sameRound(view, snapshot);
@@ -19,10 +19,14 @@ function sameRound(view: ConversationView, snapshot: ConversationView): boolean 
   );
 }
 
-function refreshedContext(events: AgentEvent[], preserve: boolean): Partial<ConversationView> | undefined {
-  if (preserve) return;
+function refreshedContext(
+  events: AgentEvent[],
+  current: ConversationView['contextUsage'],
+  preserve: boolean,
+): Partial<ConversationView> | undefined {
   const event = events.findLast((entry) => entry.type === 'context');
-  return event?.type === 'context' ? { contextUsage: event.usage } : undefined;
+  if (!event) return current?.lastRequest ? { contextUsage: { ...current, lastRequest: undefined } } : undefined;
+  return { contextUsage: preserve && current ? { ...current, lastRequest: event.usage?.lastRequest } : event.usage };
 }
 
 /** 有界补齐缺失上下文和已核实的回复模型；不替换实时正文、会话参数与终态。 */
@@ -40,7 +44,7 @@ export function createContextRefresh(get: () => ChatState, set: (patch: Partial<
     const state = get();
     const view = conversationById(state, snapshot.conversationId);
     if (!unchanged(view, snapshot)) return;
-    const context = refreshedContext(history.events, preserveContext);
+    const context = refreshedContext(history.events, view.contextUsage, preserveContext);
     const items = refreshResponseModels(view.items, history.events);
     if (items !== view.items || context) set(updateConversation(state, view, { items, ...context }));
   }
@@ -48,7 +52,6 @@ export function createContextRefresh(get: () => ChatState, set: (patch: Partial<
     const hasLiveContext = reported.get(snapshot.conversationId) === snapshot.turnId;
     reported.delete(snapshot.conversationId);
     if (snapshot.agent !== 'antigravity' || !snapshot.workspaceId || !snapshot.sessionId) return;
-    if (hasLiveContext && !hasMissingResponseModels(snapshot.items)) return;
     requests.get(snapshot.conversationId)?.abort();
     const controller = new AbortController();
     requests.set(snapshot.conversationId, controller);

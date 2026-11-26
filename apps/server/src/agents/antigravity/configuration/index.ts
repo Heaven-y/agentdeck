@@ -14,7 +14,7 @@ import { antigravitySelectionWarning } from './identity';
 import { launchVariables, validAntigravityProxy } from './launch';
 import { patch } from './patch';
 import { antigravityPlan } from './resources';
-import { antigravitySelectionChanges, nativeAntigravityModels } from './selection';
+import { antigravityOrchestratorChanges, antigravitySelectionChanges, nativeAntigravityModels } from './selection';
 export const configuration: CliConfiguration = {
   format: 'json',
   patch,
@@ -41,7 +41,13 @@ export const configuration: CliConfiguration = {
       nativeModelChanges(connection, snapshot),
       services.modelCatalog ?? nativeAntigravityModels,
     );
-    return { changes: native, connection: prepareModelConnection(connection, services.environment, snapshot) };
+    const prepared = await antigravityOrchestratorChanges(
+      config,
+      native,
+      snapshot?.resolved ?? process.env,
+      services.modelCatalog,
+    );
+    return { changes: prepared, connection: prepareModelConnection(connection, services.environment, snapshot) };
   },
   launchNote:
     'Gemini API 密钥须配合原生 settings.json 的 modelProvider="gemini"；ADC 使用 AGY_ADC_AUTH=true。保存用于新启动的 CLI。',

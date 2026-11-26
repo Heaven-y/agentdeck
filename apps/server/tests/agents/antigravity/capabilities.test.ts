@@ -11,6 +11,7 @@ import {
   antigravityModelSelector,
 } from '../../../src/agents/antigravity/models/model-catalog';
 import { antigravityLaunchSelection } from '../../../src/agents/antigravity/models/model-launch';
+import { withOrchestratorRoles } from '../../../src/agents/antigravity/models/orchestrator';
 import { runProcess } from '../../../src/platform/process/run';
 import { discoverAntigravityCommands } from '../../../src/agents/antigravity/commands/commands';
 vi.mock('../../../src/platform/process/executable', () => ({
@@ -22,6 +23,45 @@ vi.mock('../../../src/agents/antigravity/commands/commands', () => ({
 }));
 
 const roots: string[] = [];
+it('编排器按原生角色名单和具体型号匹配，保留强度变体，排除同名与自定义候选', () => {
+  const models = [
+    { id: 'planner-high-effort', label: 'Planner (High)' },
+    { id: 'executor-low', label: 'Executor (Low)' },
+    { id: 'executor-tiered', label: 'Executor (Low)' },
+    { id: 'planner-medium', label: 'Custom (Medium)' },
+    { id: 'planner-effort', label: 'Planner' },
+  ];
+  const catalog = {
+    response: {
+      models: Object.fromEntries(
+        models.map((model) => [
+          model.id,
+          {
+            displayName: model.label,
+            model: model.id === 'planner-medium' ? 'MODEL_GOOGLE_GEMINI_INTERNAL_BYOM' : 'MODEL_PLACEHOLDER_M1',
+          },
+        ]),
+      ),
+    },
+  };
+  const enabled = { keyString: 'enable-orchestrator-model-selection' };
+  const roles = {
+    keyString: 'orchestrator-model-roles',
+    string: JSON.stringify({ orchestrators: ['planner'], executors: ['executor'] }),
+  };
+  expect(withOrchestratorRoles(models, { experimentConfig: { experiments: [enabled, roles] } }, catalog)).toEqual([
+    { ...models[0], orchestratorRoles: ['planner'] },
+    { ...models[1], orchestratorRoles: ['executor'] },
+    ...models.slice(2),
+  ]);
+  expect(
+    withOrchestratorRoles(
+      models,
+      { experimentConfig: { experiments: [{ ...enabled, disabled: true }, roles] } },
+      catalog,
+    ),
+  ).toEqual(models);
+});
 afterEach(async () => {
   vi.resetAllMocks();
   for (const root of roots.splice(0)) {

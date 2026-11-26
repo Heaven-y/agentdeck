@@ -12,6 +12,10 @@ const Model = z.object({
   reasoningEfforts: z.array(z.string().max(100)).max(16).optional(),
   defaultReasoningEffort: z.string().min(1).max(100).optional(),
   inputModalities: z.array(z.string().min(1).max(64)).max(32).optional(),
+  orchestratorRoles: z
+    .array(z.enum(['planner', 'executor']))
+    .max(2)
+    .optional(),
 });
 const Models = z.array(Model);
 const ModelCatalog = z.object({

@@ -2,9 +2,10 @@ import type { AgentTurnInput, TurnHandle, TurnRunner, NativeSteerInput, NativeIn
 import { readAntigravityModelConfig, type AntigravityModelSettings } from '../models/model-catalog';
 import { antigravityContextWindowSnapshot } from '../models/context-window';
 import type { NativeContextWindow } from '@agentdeck/shared/settings';
+import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { assertAntigravitySelection } from '../configuration/identity';
 import { ModelSettingsError } from '../../common/configuration/patch';
-import { antigravityInvocationText } from '../commands/commands';
+import { antigravityInvocationText, isAntigravityCompact } from '../commands/commands';
 import { AntigravityAcpClient, type AcpLaunchOptions } from './client';
 import { AcpPermissions } from './permissions';
 import { AcpInteractions } from './interactions';
@@ -51,8 +52,10 @@ class AcpTurn {
   private fallback?: TurnHandle;
   private prompts?: AcpPrompts;
   private readonly commands = new AcpCommands();
-  private compacting = false;
   canSteer(): boolean {
+    return this.fallback ? (this.fallback.canSteer?.() ?? false) : this.canSteerAcp();
+  }
+  private canSteerAcp(): boolean {
     return (
       !this.accountImage &&
       this.input.invocation?.kind !== 'acp-command' &&
@@ -65,6 +68,7 @@ class AcpTurn {
   }
   async steer(input: NativeSteerInput): Promise<NativeInputResult> {
     if (!this.canSteer()) return { status: 'rejected', message: '本轮已结束或当前通道不支持引导，输入已保留。' };
+    if (this.fallback?.steer) return this.fallback.steer(input);
     try {
       this.validateAttachments(input.attachments);
       return await this.prompts!.send(input).receipt;
@@ -160,7 +164,7 @@ class AcpTurn {
   }
 
   private async useHeadless(): Promise<void> {
-    if (this.input.invocation?.kind === 'acp-command')
+    if (this.input.invocation?.kind === 'acp-command' && !isAntigravityCompact(this.input.invocation))
       throw new AcpError('selection', '当前模型或权限下无法使用此命令。');
     if (this.input.attachments?.some((file) => file.kind === 'image'))
       throw new AcpError('selection', '当前 AGY 会话不能直接发图，可移除图片后继续。');
@@ -176,14 +180,13 @@ class AcpTurn {
 
   private async run(): Promise<void> {
     try {
+      if (isAntigravityCompact(this.input.invocation)) {
+        await this.compact();
+        return;
+      }
       const model = await this.selectRuntime();
       if (model !== undefined) await this.prompt(model);
     } catch (error) {
-      if (this.compacting)
-        this.input.emit({
-          type: 'compaction',
-          state: { status: this.controller.signal.aborted ? 'cancelled' : 'failed', trigger: 'manual' },
-        });
       this.failTurn(error);
     } finally {
       this.ended = true;
@@ -192,6 +195,39 @@ class AcpTurn {
       this.permissions?.cancel();
       await this.closeSession();
     }
+  }
+
+  /** 先取得真实压缩结果，再用正常选路继续消息，保留原有审批与附件能力。 */
+  private async compact(): Promise<void> {
+    let result: Extract<AgentEvent, { type: 'turn_end' }> | undefined;
+    this.fallback = this.options.headless({
+      ...this.input,
+      text: '',
+      attachments: undefined,
+      emit: (event) => {
+        if (event.type === 'turn_end') result = event;
+        else this.input.emit(event);
+      },
+    });
+    await this.fallback.done;
+    this.controller.signal.throwIfAborted();
+    if (
+      !result ||
+      result.isError ||
+      result.outcome === 'unconfirmed' ||
+      (!this.input.text.trim() && !this.input.attachments?.length)
+    ) {
+      this.input.emit(result ?? { type: 'turn_end', isError: true });
+      return;
+    }
+    const continuation = new AcpTurn({ ...this.input, invocation: undefined }, this.options);
+    this.fallback = {
+      done: continuation.done,
+      interrupt: () => continuation.interrupt(),
+      canSteer: () => continuation.canSteer(),
+      steer: (input) => continuation.steer(input),
+    };
+    await continuation.done;
   }
 
   private async closeSession(): Promise<void> {
@@ -287,8 +323,6 @@ class AcpTurn {
       contextWindow: this.contextWindow,
     });
     this.sent = true;
-    this.compacting = this.input.invocation?.kind === 'acp-command' && this.input.invocation.name === 'compact';
-    if (this.compacting) this.input.emit({ type: 'compaction', state: { status: 'running', trigger: 'manual' } });
     const started = performance.now();
     this.prompts = new AcpPrompts(this.client!, this.nativeId!);
     this.prompts.send(firstAcpInput(this.input, inputText));
@@ -300,9 +334,6 @@ class AcpTurn {
     if (this.controller.signal.aborted || result.stopReason === 'cancelled') throw cancelled();
     const isError = result.stopReason !== 'end_turn';
     if (!isError) await this.prompts!.stored();
-    if (this.compacting)
-      this.input.emit({ type: 'compaction', state: { status: isError ? 'failed' : 'completed', trigger: 'manual' } });
-    this.compacting = false;
     if (isError) this.input.emit({ type: 'error', message: 'AGY 没有完成本轮。' });
     this.input.emit({
       type: 'turn_end',

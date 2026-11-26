@@ -27,6 +27,8 @@ export type AgentModel = {
   defaultReasoningEffort?: string;
   /** 仅保留原生明确报告的输入类型；缺省表示未知，不能从名称推断。 */
   inputModalities?: string[];
+  /** AGY 原生角色目录确认的候选；未提供时不推断编排器角色。 */
+  orchestratorRoles?: Array<'planner' | 'executor'>;
 };
 export const AntigravityConnectionSchema = z.enum(['account', 'gemini']);
 export type AntigravityConnection = z.infer<typeof AntigravityConnectionSchema>;
@@ -74,6 +76,12 @@ export type ContextUsage = {
   percentage?: number;
   model?: string;
   source: 'claude_estimate' | 'codex_native' | 'antigravity_estimate';
+  /** 最近同次生成的原生输入分项与预算；不代表当前实时占用，也不与总窗口混算。 */
+  lastRequest?: {
+    inputTokens?: number;
+    cachedInputTokens?: number;
+    inputBudgetTokens?: number;
+  };
 };
 export type TokenUsage = {
   inputTokens?: number;

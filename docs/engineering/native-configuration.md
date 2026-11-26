@@ -56,13 +56,15 @@ Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取
 
 ## 模型与服务连接
 
+Antigravity 官方登录的模型页提供“编排器”规划模型和执行模型，各选项包含原生强度变体。获取模型时，从本机 `GetMendelFlags` 的 `orchestrator-model-roles` 读取两组候选，与原生型号及目录交集匹配；不把整个模型目录当作角色候选。保存前重新核对角色，将完整原生标签写入用户 `settings.json` 的 `orchestrator.planner` / `orchestrator.executor`，清空恢复原生默认，其他字段保留。下一轮选择编排器时由 CLI 加载这些设置。原生目录读取继承工作台的 AGY 网络环境，不发送模型请求。依据为 [CLI 1.5.14 发布记录](https://antigravity.google/docs/changelog/#rel-cli-1.5.14)及本机角色设置、动态名单；App 偏好同步和其他账号类型另按原生支持处理。
+
 模型与连接页顶部选择 CLI，表单按服务连接、模型和运行参数排列。常用字段使用同一套输入控件，认证变量和原始文件收进高级设置；只有表单内容滚动，保存按钮固定。表单仍修改原生配置，不另存模型默认，也不读取 CC Switch 数据库。
 
 | CLI | 表单写入 | 认证与地址 |
 |---|---|---|
 | Claude | model、modelPicker.options 中选中模型的 label、effortLevel；别名映射收进高级设置 | 原生 env 中的 ANTHROPIC_BASE_URL 与 API Key/Auth Token；账号登录由 CLI 管理 |
 | Codex | model、model_provider、服务商 name、model_reasoning_effort、整数 model_context_window、model_auto_compact_token_limit | 自定义 provider 的 base_url 与 Responses 协议；直接填写 Key 使用 experimental_bearer_token，原生高级认证保留 |
-| Antigravity | model、modelProvider、自定义模型的 label/modelName/maxTokens | 同页配置 Gemini API URL 与 Key，分别映射 GOOGLE_GEMINI_BASE_URL、GEMINI_API_KEY，经加密启动环境交给新进程 |
+| Antigravity | model、modelProvider、自定义模型的 label/modelName/maxTokens、orchestrator 的 planner/executor | 同页配置 Gemini API URL 与 Key，分别映射 GOOGLE_GEMINI_BASE_URL、GEMINI_API_KEY，经加密启动环境交给新进程 |
 
 三者共用模型输入、缓存候选和“获取模型”操作。工作台分开保留 CLI 选择值、显示名称和底层真实型号；模型入口显示具体型号，名称用于搜索，发送前由适配器解析原生选择值。Claude 的 `[1m]` 后缀在匹配模型能力时单独处理，不会从发送值中删除。只使用当前型号的原生档位，不参照文档补菜单。Claude、Codex 与 Antigravity 的档位不能互相套用，见[模型身份与推理强度](model-capabilities.md)。Claude 的名称仍是 picker label，Codex 的名称仍是服务商名称；Claude 持久默认可写 low/medium/high/xhigh，max 仅用于会话。Antigravity 默认强度仍通过模型变体表示，不写不存在的顶层 effort 字段。
 

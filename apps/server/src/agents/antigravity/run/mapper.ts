@@ -178,6 +178,14 @@ export class AntigravityMapper {
     return this.replied;
   }
 
+  get hasCurrentCompaction(): boolean {
+    return (
+      !this.uncertainBoundary &&
+      this.inputIndex !== undefined &&
+      [...this.checkpoints].some((index) => index > this.inputIndex!)
+    );
+  }
+
   get canRecoverCompletion(): boolean {
     return this.resultReviewable && this.latestIndex !== undefined && !this.terminalFailure;
   }

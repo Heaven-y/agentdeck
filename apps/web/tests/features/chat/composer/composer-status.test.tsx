@@ -285,7 +285,7 @@ it('Antigravity 的窗口标明属于哪个模型，不让人误以为是设置�
   render(<ComposerStatus />);
   fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
   expect(await screen.findByText(/模型：Gemini 4 Carbon \(High\)/)).toBeTruthy();
-  expect(screen.getByText(/窗口按该模型的原生配置/)).toBeTruthy();
+  expect(screen.getByText('模型总窗口 256,000 tokens')).toBeTruthy();
 });
 
 it('打开旧会话使用原生当前窗口，模型改变后刷新，运行中保留启动窗口', async () => {
@@ -296,11 +296,23 @@ it('打开旧会话使用原生当前窗口，模型改变后刷新，运行中�
     workspaceId: 'project',
     sessionId: 'old-session',
     agent: 'antigravity',
-    contextUsage: { source: 'antigravity_estimate', usedTokens: 74994, windowTokens: 256000, percentage: 29.3 },
+    contextUsage: {
+      source: 'antigravity_estimate',
+      usedTokens: 74994,
+      windowTokens: 256000,
+      percentage: 29.3,
+      lastRequest: { inputTokens: 2993, cachedInputTokens: 506338, inputBudgetTokens: 512000 },
+    },
   });
   render(<ComposerStatus />);
   expect(await screen.findByText('上下文 74,994 / 1,000,000')).toBeTruthy();
   expect(screen.getByLabelText('上下文占用 7.5%')).toBeTruthy();
+  expect(screen.getByText('约 7.5%')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '上下文用量' }));
+  expect(await screen.findByText('最近一次生成')).toBeTruthy();
+  expect(screen.getByText('输入 2,993 · 缓存读取 506,338 tokens')).toBeTruthy();
+  expect(screen.getByText('当次输入预算 512,000 tokens')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('dialog', { name: '上下文用量详情' }), { key: 'Escape' });
   act(() => useChat.setState({ running: true, contextWindow: { model: 'Current', windowTokens: 1000000 } }));
   read.mockResolvedValue({ model: 'Current', windowTokens: 200000 });
   await act(() => queryClient.invalidateQueries({ queryKey: ['model-context-window'] }));

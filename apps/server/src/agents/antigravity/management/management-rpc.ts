@@ -4,6 +4,7 @@ import { SessionError } from '../../errors';
 export type ManagementRecord = Record<string, unknown>;
 export type ManagementMethod =
   | 'GetAvailableModels'
+  | 'GetMendelFlags'
   | 'GetUserStatus'
   | 'GetAllSkills'
   | 'GetCascadeTrajectory'

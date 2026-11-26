@@ -399,8 +399,9 @@ export function projectAntigravityHistory(trajectory: ManagementRecord, options:
   if (started) finish(!!options.partialEnd);
   if (options.includeContext !== false) {
     const last = object(list(trajectory.generatorMetadata).at(-1));
-    const context = object(object(last.chatModel).chatStartMetadata).contextWindowMetadata;
-    events.push(...contextEvent(context));
+    const chatModel = object(last.chatModel);
+    const context = object(chatModel.chatStartMetadata).contextWindowMetadata;
+    events.push(...contextEvent(context, chatModel.usage));
   }
   return { events, fragments };
 }

@@ -221,6 +221,8 @@ Antigravity 的公开 ACP 初始化目前没有 fork/delete 能力，已验版�
 
 Claude 仅显式 bypass 时设置 SDK 的 allowDangerouslySkipPermissions。auto 使用 Claude 原生分类器；Codex 自动审查也由原生执行，不在网页静默回答权限请求。Antigravity headless 仍没有交互批准通道，不把软拒伪装成已允许。
 
+AGY 手动压缩先通过 headless 取得本轮 checkpoint，附带的继续消息再按原模型、权限及附件的正常路径启动同一会话。原本可用 ACP 的继续消息仍可交互审批；压缩失败或中断时不发送继续消息。工作台保持一个操作的结束状态，原生记录中保留压缩与继续输入。
+
 Codex 的 MCP 工具确认也进入现有批准/拒绝流程：仅接收带 `codex_approval_kind: mcp_tool_call` 的原生空对象表单，按 `accept`、`decline` 或 `cancel` 返回本次决定。具有输入字段、组合约束或 URL 登录流程的请求不能当作简单工具确认；取消后迟到的批准无效，不增加持久授权。工具说明与参数由原生请求提供，不能因为菜单允许某种模式就自动批准。
 
 AGY 实时工具以 `DONE` 或 `ERROR` 结束；失败及时回填工具结果，保留原生错误和耗时，不再等到回合结束后仅显示“未完成”。无结构 stderr 只判断诊断类别，不从句子中猜工具名。其通用 `call_mcp_tool` 在 1.5.1 对 Arguments 缺少对象类型约束，模型返回 JSON 字符串时会直接传给 MCP，标准服务会拒绝。原生按工具 `eager` 加载可避开这一包装，设置方式见[原生配置](native-configuration.md#antigravity-mcp-工具加载)；不由工作台私自更改用户 MCP 规则或修写模型返回参数。

@@ -1,11 +1,12 @@
 # 路线图
 
-更新于 2026-11-26。三 CLI 原生能力补齐已完成实现与范围验收，具体支持程度见[能力矩阵](engineering/native-capability-matrix.md)。早期逐阶段记录见 `b053fe1:docs/roadmap.md`。
+更新于 2026-11-26。三 CLI 已接入能力及验证范围见[能力矩阵](engineering/native-capability-matrix.md)，AGY 新增本地能力继续按原生版本补齐。早期逐阶段记录见 `b053fe1:docs/roadmap.md`。
 
 ## 当前交付
 
 | 范围 | 已实现 | 适用边界 |
 |---|---|---|
+| AGY 本地设置与上下文 | 编排器的规划/执行模型选择；手动压缩可附消息继续；上下文估计与最近生成输入计量分别显示 | 1.5.14 当前账号角色目录、配置事务、p2 只读历史及本机固定响应压缩链路已核对；编排器实际双角色请求未新增验收，安装包未更新 |
 | 原生对话与历史 | 三 CLI 新建、续聊、流式输出、中断及历史；Codex 和 AGY 主会话按需加载更早历史；各自核实父子身份的独立子代理历史与媒体 | 按本机 CLI 实际接口适配；不同版本、服务及账号模式分别验证 |
 | 会话管理与导航 | 项目归属、分页与缓存、标签、拖动排序、用户消息定位、`/resume` 搜索续聊、重命名/分支/删除、统一归档；各工作区默认前 5 条（设置可调）及独立展开/收起 | Codex 原生归档；Claude/AGY 归档只保存工作台标记，不复制正文 |
 | 参数与配置 | 原生模型、连接、推理强度、规则、Skills、MCP、原生插件及市场管理；Claude Auto Memory 用户开关、会话权限记忆和模型显示筛选 | 按 CLI 的作用域与默认值管理；AGY 官方登录与 Gemini API 的模型目录及工作台偏好分开 |
@@ -26,6 +27,8 @@
 行为、界面和协议分别见[需求](product/requirements.md)、[界面约定](product/ui-layout.md)和[原生接入](engineering/native-dialogue.md)。扩展的交付和验收见[工作台插件的验收记录](engineering/workbench-plugins.md#扩展验收)。
 
 ## 当前待办与暂缓项
+
+- AGY 本地后续：自定义主代理选择及切换分叉、Swarm/Boost/Teamwork、工作流与旁支提问的专用状态和控制。已有代理定义、Skills、MCP、Hooks 管理继续复用。通用自动压缩阈值入口需先核对 CLI 1.5.15 及以上版本。
 
 先前的实施过程见[历史追溯](engineering/decisions.md#历史追溯)。
 

@@ -71,6 +71,7 @@ async function fixture() {
         modelId: 'resolved-model',
         reasoningEfforts: ['low', 'high'],
         defaultReasoningEffort: 'high',
+        orchestratorRoles: ['planner'],
       },
     ],
     defaultModel: 'native-model',

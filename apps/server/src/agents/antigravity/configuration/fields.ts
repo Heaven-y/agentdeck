@@ -1,5 +1,5 @@
 import type { ModelSettingField } from '@agentdeck/shared/settings';
-import { field, string, type ConfigObject } from '../../common/configuration/fields';
+import { field, object, string, type ConfigObject } from '../../common/configuration/fields';
 import { antigravityModelId, selectedAntigravityModel } from './identity';
 export function antigravityFields(config: ConfigObject): ModelSettingField[] {
   const invalidProvider = config.modelProvider !== undefined && typeof config.modelProvider !== 'string';
@@ -15,6 +15,18 @@ export function antigravityFields(config: ConfigObject): ModelSettingField[] {
       group: 'model',
       placeholder: '由模型决定，如 128K / 1M',
       hint: 'K = 1,000，M = 1,000,000 tokens；总窗口不等于自动压缩触发点。',
+    }),
+    ...(['planner', 'executor'] as const).map((role) => {
+      const value = string(object(config.orchestrator)[role]);
+      return field(
+        `orchestrator${role === 'planner' ? 'Planner' : 'Executor'}`,
+        role === 'planner' ? '规划模型' : '执行模型',
+        value,
+        {
+          group: 'model',
+          options: [{ value: '', label: '原生默认' }, ...(value ? [{ value, label: value }] : [])],
+        },
+      );
     }),
     field('modelProvider', '连接方式', provider, {
       options: [

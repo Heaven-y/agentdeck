@@ -14,7 +14,7 @@ import {
   type DisplayContextUsage as ContextUsage,
 } from '../../conversation/context/ContextPresentation';
 
-function ContextMeter({ percentage }: { percentage: number }) {
+function ContextMeter({ percentage, estimated }: { percentage: number; estimated: boolean }) {
   const display = Math.round(percentage * 10) / 10;
   return (
     <span className="inline-flex items-center gap-1.5" aria-label={`上下文占用 ${display}%`}>
@@ -32,7 +32,10 @@ function ContextMeter({ percentage }: { percentage: number }) {
           className={percentage >= 90 ? 'text-warning' : 'text-muted-foreground'}
         />
       </svg>
-      <span className="text-xs tabular-nums">{display}%</span>
+      <span className="text-xs tabular-nums">
+        {estimated ? '约 ' : ''}
+        {display}%
+      </span>
     </span>
   );
 }
@@ -57,7 +60,9 @@ function ContextLabel({
   return (
     <>
       <span className="whitespace-nowrap">上下文 {summary ?? '—'}</span>
-      {percentage !== undefined && <ContextMeter percentage={percentage} />}
+      {percentage !== undefined && (
+        <ContextMeter percentage={percentage} estimated={usage?.source === 'antigravity_estimate'} />
+      )}
       {compaction?.status === 'running' && !incomplete && <span>正在压缩</span>}
       <ChevronDown aria-hidden className="size-3.5 shrink-0" />
     </>

@@ -67,6 +67,10 @@ Antigravity 接入证据基线为 CLI 1.5.1。公开 headless result.usage 有 i
 
 历史上下文估计仅由最新页读取最后一条 `generatorMetadata` 的 `chatModel.chatStartMetadata.contextWindowMetadata`，无法核实时隐藏。本轮未收到实时上下文时，结束后以五秒预算只读补取上下文，不替换正文；身份、轮次或视图代次已变则丢弃迟到结果。`StreamAgentStateUpdates` 仅用于读取已保存历史的首帧，不订阅后续实时变更；TUI statusLine 尚未接入。
 
+上下文占比标为估计。详情另列同一生成记录 `chatModel.usage` 的输入与缓存读取，以及 `maxContextTokens` 输入预算；缺失分项保留未知，不借前一条生成补齐，不将这些生成前的计量当成当前实时占用。原生估计与模型报告用量可能明显不同：本机历史只读核对发现，同一执行在估计约 336K 时，模型报告输入与缓存读取合计约 509K，已接近 512K 输入预算；对应 checkpoint 配置采用模型报告用量。该证据解释了估计占比尚低时发生压缩，不代表精确触发瞬间，也不能用现在的窗口配置回推旧执行。
+
+手动 `/compact` 先通过原生 headless 压缩：留空在压缩后停止，附消息则确认成功后按正常对话选路继续，保留原有审批与附件能力。只有当前输入边界之后的 DONE checkpoint 才报告手动压缩完成；普通回复或 SUCCESS 本身不足以确认。CLI 1.5.14 对接本机固定响应服务及生产适配器均已验证同一会话的普通回复、裸压缩、压缩并继续三轮；请求数分别为 1、1、2。此验证未调用远端模型。ACP 的 `end_turn` 不再用于推定压缩完成。
+
 上下文面板只显示所选模型当前生效的一个窗口：自定义模型采用原生 `maxTokens`，内置型号从本机 `GetAvailableModels` 读取总容量；自定义条目未填窗口则与原生尚未生成时一致，保持未知。旧轨迹的 `maxContextTokens` 是当次生成输入预算，可能扣除输出预留，不再用它代替当前总窗口。新建和历史续聊共用模型选择器，运行中采用本轮快照；API Key 模式下已明确的内置型号也在 headless/ACP 启动时补齐快照，最多等待目录一秒，超时或不可读保持未知，不能借当前默认配置冒充本轮。压缩完成记录保留在轨迹，不常驻当前上下文详情。
 
 总窗口不等于自动 checkpoint 的触发点。[原生 `/context` 说明](https://antigravity.google/docs/cli/commands/context/)确认 AGY 会自动汇总旧轮次，摘要所占的 checkpoint buffer 单独列出，没有公布固定触发值。内嵌 profile 中的 `token_threshold` 与 `max_token_limit` 是不同字段，静态数字不能直接当作当前自定义模型的生效值。后续验收通过同轮生成与执行元数据核对 checkpoint 配置上限；1M 窗口、输入预算和 checkpoint 上限仍不代表精确的压缩触发时刻，界面不推算该时刻。

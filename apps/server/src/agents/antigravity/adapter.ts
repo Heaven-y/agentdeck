@@ -10,7 +10,7 @@ import {
   AntigravityModelSelectionError,
   type AntigravityLaunchSelection,
 } from './models/model-launch';
-import { AntigravityInvocationError, antigravityInvocationText } from './commands/commands';
+import { AntigravityInvocationError, antigravityInvocationText, isAntigravityCompact } from './commands/commands';
 import {
   ANTIGRAVITY_EMPTY_REPLY,
   ANTIGRAVITY_TURN_FAILED,
@@ -150,6 +150,8 @@ class AntigravityTurn {
       });
       this.listen(this.child);
       this.timer = setTimeout(() => this.fail('Antigravity 启动超时，请检查本机登录与配置。'), 30_000);
+      if (isAntigravityCompact(this.input.invocation))
+        this.input.emit({ type: 'compaction', state: { status: 'running', trigger: 'manual' } });
       this.child.stdin.end(`${JSON.stringify({ event: 'user', message: { content: text } })}\n`);
     } catch (error) {
       this.fail(startFailure(error));
@@ -216,7 +218,16 @@ class AntigravityTurn {
   }
 
   private emit(event: AgentEvent): void {
-    if (event.type === 'session' && this.selection) {
+    if (event.type === 'compaction' && isAntigravityCompact(this.input.invocation)) {
+      if (this.mapper.hasCurrentCompaction) this.input.emit({ ...event, state: { ...event.state, trigger: 'manual' } });
+      return;
+    }
+    if (event.type === 'session') this.emitSession(event);
+    else this.input.emit(event);
+  }
+
+  private emitSession(event: Extract<AgentEvent, { type: 'session' }>): void {
+    if (this.selection) {
       const alias = this.selection.sessionModel !== undefined;
       const matchesAlias = alias && event.model === this.selection.model;
       const model = matchesAlias ? this.selection.sessionModel! : event.model;
@@ -330,12 +341,23 @@ class AntigravityTurn {
     const result: Extract<AgentEvent, { type: 'turn_end' }> = nativeResult ?? { type: 'turn_end', isError: true };
     const failed = this.failed || result.isError || this.abnormalExit(code, signal);
     const emptyReply = !failed && this.hasEmptyReply();
-    const isError = failed || emptyReply;
+    const missingCompaction = this.finishCompaction(failed);
+    const isError = failed || emptyReply || missingCompaction;
     if (result.outcome !== 'unconfirmed') {
       if (isError) this.reportFailure(nativeResult, emptyReply);
       else if (this.observedFailure) this.showFailure(this.observedFailure);
     }
     this.input.emit({ ...result, isError });
+  }
+
+  private finishCompaction(failed: boolean): boolean {
+    if (!isAntigravityCompact(this.input.invocation) || this.mapper.hasCurrentCompaction) return false;
+    this.input.emit({
+      type: 'compaction',
+      state: { status: this.preparation.signal.aborted ? 'cancelled' : 'failed', trigger: 'manual' },
+    });
+    if (!failed) this.showFailure({ type: 'error', message: 'AGY 未报告本次压缩完成，请重新读取会话查看。' });
+    return true;
   }
 
   private hasEmptyReply(): boolean {

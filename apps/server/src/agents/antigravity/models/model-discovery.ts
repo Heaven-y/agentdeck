@@ -2,6 +2,7 @@ import { resolveLocalCommand } from '../../../platform/process/executable';
 import { runProcess } from '../../../platform/process/run';
 import { parseAntigravityModelList, type AntigravityModelSettings } from './model-catalog';
 import { withAntigravityDiscoveryProfile } from './discovery-profile';
+import { discoverOrchestratorRoles } from './orchestrator';
 
 /** agy models 会加载原生 MCP；模型发现必须使用只含模型设置的独立目录。 */
 export async function discoverAntigravityModels(
@@ -20,6 +21,10 @@ export async function discoverAntigravityModels(
       signal,
     });
     if (result.exitCode !== 0) throw new Error('暂时无法读取 Antigravity 模型。');
-    return parseAntigravityModelList(result.stdout.toString('utf8'));
+    const models = parseAntigravityModelList(result.stdout.toString('utf8'));
+    return !settings.modelProvider?.trim() &&
+      models.some((model) => /^gemini-pro-(orchestrator|coordinator)(?:-|$)/.test(model.id))
+      ? discoverOrchestratorRoles(models, root, env, signal)
+      : models;
   });
 }

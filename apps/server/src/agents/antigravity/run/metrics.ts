@@ -90,11 +90,18 @@ export function historyResponseTiming(value: unknown): { durationMs?: number; ti
   return { durationMs: end - start, timingSource: 'native' };
 }
 
-export function contextEvent(value: unknown): AgentEvent[] {
+export function contextEvent(value: unknown, reportedUsage?: unknown): AgentEvent[] {
   const context = object(value);
   const used = tokenCount(context.estimatedTokensUsed);
   if (used === undefined) return [];
   const window = tokenCount(context.maxContextTokens);
+  const reported = object(reportedUsage);
+  const inputTokens = tokenCount(reported.inputTokens);
+  const cachedInputTokens = tokenCount(reported.cacheReadTokens);
+  const lastRequest =
+    inputTokens === undefined && cachedInputTokens === undefined
+      ? undefined
+      : { inputTokens, cachedInputTokens, ...(window ? { inputBudgetTokens: window } : {}) };
   return [
     {
       type: 'context',
@@ -102,6 +109,7 @@ export function contextEvent(value: unknown): AgentEvent[] {
         usedTokens: used,
         source: 'antigravity_estimate',
         ...(window ? { windowTokens: window, percentage: (used / window) * 100 } : {}),
+        ...(lastRequest ? { lastRequest } : {}),
       },
     },
   ];

@@ -62,6 +62,55 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+it('AGY 编排器分别列出规划和执行候选，中文显示强度，保存原生完整标签', async () => {
+  const native: NativeModelSettingsDocument = {
+    ...document,
+    agent: 'antigravity',
+    fields: [
+      { key: 'modelProvider', label: '连接方式', value: '', group: 'connection' },
+      { key: 'model', label: '默认模型', value: 'Orchestrator', group: 'model' },
+      ...(['Planner', 'Executor'] as const).map((role) => ({
+        key: `orchestrator${role}`,
+        label: role === 'Planner' ? '规划模型' : '执行模型',
+        value: '',
+        group: 'model' as const,
+        options: [{ value: '', label: '原生默认' }],
+      })),
+    ],
+  };
+  vi.mocked(modelSettingsApi.read).mockResolvedValue(native);
+  vi.mocked(modelSettingsApi.refreshCatalog).mockResolvedValue({
+    agent: 'antigravity',
+    antigravityConnection: 'account',
+    entries: [],
+    warnings: [],
+    discovered: true,
+    models: [
+      { id: 'planner-high', label: 'Planner (High)', orchestratorRoles: ['planner'] },
+      { id: 'executor-low', label: 'Executor (Low)', orchestratorRoles: ['executor'] },
+    ],
+  });
+  render(<ProductSettingsDialog initialPage="antigravity" onClose={() => {}} />);
+  fireEvent.click(await screen.findByRole('button', { name: '获取模型' }));
+  fireEvent.click(await screen.findByRole('combobox', { name: '规划模型' }));
+  const planner = within(await screen.findByRole('listbox', { name: '规划模型选项' }));
+  expect(planner.queryByRole('option', { name: 'Executor（低）' })).toBeNull();
+  fireEvent.click(planner.getByRole('option', { name: 'Planner（高）' }));
+  fireEvent.click(screen.getByRole('combobox', { name: '执行模型' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Executor（低）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() =>
+    expect(modelSettingsApi.save).toHaveBeenCalledWith(
+      'antigravity',
+      {
+        revision: native.revision,
+        changes: { orchestratorPlanner: 'Planner (High)', orchestratorExecutor: 'Executor (Low)' },
+      },
+      expect.anything(),
+    ),
+  );
+});
+
 it('AGY 显示当前账号，原生登录返回后刷新，API Key 不展示官方账号', async () => {
   const originalBridge = window.agentDeck;
   const terminal = deferred<boolean>();

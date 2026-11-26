@@ -4,9 +4,10 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { PermissionSelection, AgentEvent } from '@agentdeck/shared/conversation';
+import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { createAntigravityRunner, type AntigravityProcess } from '../../../../src/agents/antigravity/adapter';
 import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
+import type { AgentTurnInput } from '../../../../src/agents/contracts';
 
 const cwd = path.join(tmpdir(), 'agentdeck-agy-fixture');
 
@@ -154,7 +155,7 @@ async function setup(
   sessionId?: string,
   defaultModel: (requested?: string) => Promise<string | undefined> = async () => undefined,
   model?: string,
-  permission?: PermissionSelection,
+  input: Partial<AgentTurnInput> = {},
 ) {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
@@ -171,10 +172,10 @@ async function setup(
     workspace: { id: 'p', name: '项目', dir: cwd },
     sessionId,
     model,
-    permission,
     text: '只作为测试输入',
     emit: (event) => events.push(event),
     requestPermission: async () => ({ allow: false }),
+    ...input,
   });
   const output = (value: unknown) => child.stdout.write(`${JSON.stringify(value)}\n`);
   const init = (id = sessionId ?? 'native-1') => output({ event: 'init', conversation_id: id, init: { cwd } });
@@ -187,6 +188,38 @@ async function setup(
 }
 
 describe('Antigravity 原生对话运行器', () => {
+  it.each([
+    { text: '', checkpoint: true, expected: false },
+    { text: '继续整理', checkpoint: true, expected: false },
+    { text: '', checkpoint: false, expected: true },
+  ])(
+    '手动压缩以本轮 checkpoint 确认完成，保留继续消息（$text/$checkpoint）',
+    async ({ text, checkpoint, expected }) => {
+      const f = await setup('native-1', undefined, undefined, {
+        text,
+        invocation: { kind: 'acp-command', name: 'compact' },
+      });
+      await vi.waitFor(() => expect(f.launch).toHaveBeenCalledOnce());
+      expect(JSON.parse(f.child.stdin.read().toString()).message.content).toBe(`/compact${text ? ` ${text}` : ''}`);
+      f.init();
+      f.output({
+        event: 'step_update',
+        step_update: { conversation_id: 'native-1', step_type: 'user_input', step_index: 2, state: 'DONE' },
+      });
+      if (checkpoint)
+        f.output({
+          event: 'step_update',
+          step_update: { conversation_id: 'native-1', step_type: 'checkpoint', step_index: 3, state: 'DONE' },
+        });
+      f.finish('native-1', text ? '已继续' : '');
+      await f.handle.done;
+      expect(f.events.at(-1)).toMatchObject({ type: 'turn_end', isError: expected });
+      expect(f.events.filter((event) => event.type === 'compaction')).toEqual([
+        { type: 'compaction', state: { status: 'running', trigger: 'manual' } },
+        { type: 'compaction', state: { status: checkpoint ? 'completed' : 'failed', trigger: 'manual' } },
+      ]);
+    },
+  );
   it.runIf(process.platform === 'win32')('后台启动关闭原生自动更新且不改调用者的环境快照', async () => {
     const f = await setup();
     f.init();
@@ -263,7 +296,9 @@ describe('Antigravity 原生对话运行器', () => {
   });
 
   it('auto 的原生回退提示只显示一次且不改参数或成功结果', async () => {
-    const f = await setup(undefined, async () => undefined, undefined, { agent: 'antigravity', mode: 'auto' });
+    const f = await setup(undefined, async () => undefined, undefined, {
+      permission: { agent: 'antigravity', mode: 'auto' },
+    });
     const warning =
       'warning: --mode auto is not available because the terminal sandbox is not available on this host; continuing in the default mode.\n';
     f.child.stderr.write(warning + warning);
@@ -697,7 +732,7 @@ describe('Antigravity 原生对话运行器', () => {
 it.each(['accept-edits', 'auto', 'plan', 'bypass'] as const)(
   'Antigravity %s 交给原生模式，不伪造审批',
   async (mode) => {
-    const f = await setup(undefined, async () => undefined, undefined, { agent: 'antigravity', mode });
+    const f = await setup(undefined, async () => undefined, undefined, { permission: { agent: 'antigravity', mode } });
     const args = f.launch.mock.calls[0]![0].args;
     if (mode === 'bypass') expect(args).toContain('--dangerously-skip-permissions');
     else expect(args.slice(-2)).toEqual(['--mode', mode]);

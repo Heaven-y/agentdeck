@@ -13,12 +13,20 @@ function antigravityUsage(
   workspaceId?: string,
 ): DisplayContextUsage | null | undefined {
   // 已登记工作区必须取得所选模型窗口；不能把旧历史的输入预算当当前总容量。
-  if (!current) return workspaceId ? { usedTokens: usage?.usedTokens, source: 'antigravity_estimate' } : usage;
+  if (!current)
+    return workspaceId
+      ? {
+          usedTokens: usage?.usedTokens,
+          lastRequest: usage?.lastRequest,
+          source: 'antigravity_estimate',
+        }
+      : usage;
   return {
     source: 'antigravity_estimate',
     usedTokens: usage?.usedTokens,
     windowTokens: current.windowTokens,
     model: current.model,
+    lastRequest: usage?.lastRequest,
   };
 }
 
