@@ -137,3 +137,24 @@ it('分叉完成时当前会话另有管理操作，只刷新来源，不抢占�
   expect(useChat.getState().sessionOperations[key]).toEqual(operation);
   expect(sessionsApi.sessionEvents).not.toHaveBeenCalled();
 });
+
+it('切换 AGY 主代理分叉保留输入草稿，失败保留源会话与草稿', async () => {
+  const agy = { ...source, agent: 'antigravity' as const };
+  const branch = { ...created, agent: 'antigravity' as const };
+  const file = new File(['example'], 'example.txt');
+  useChat.setState({
+    agent: 'antigravity',
+    draft: '待发送内容',
+    draftAttachments: [{ id: 'old-upload', name: file.name, file }],
+  });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ message: '代理读取失败' }), { status: 503 }));
+  expect(await forkSession('workspace', agy, { mainAgent: 'reviewer' })).toBe(false);
+  expect(useChat.getState()).toMatchObject({ sessionId: 'source', draft: '待发送内容' });
+  vi.mocked(fetch).mockResolvedValueOnce(response(branch));
+  vi.mocked(sessionsApi.sessionEvents).mockResolvedValueOnce({ session: branch, events: [] });
+  expect(await forkSession('workspace', agy, { mainAgent: 'reviewer' })).toBe(true);
+  expect(useChat.getState()).toMatchObject({ sessionId: 'forked', draft: '待发送内容' });
+  expect(useChat.getState().draftAttachments).toEqual([expect.objectContaining({ file, name: file.name })]);
+  expect(useChat.getState().draftAttachments[0]?.id).not.toBe('old-upload');
+  expect(vi.mocked(fetch).mock.calls[1]![1]?.body).toBe(JSON.stringify({ mainAgent: 'reviewer' }));
+});

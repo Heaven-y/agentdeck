@@ -34,6 +34,7 @@ export type AgentTurnInput = {
   projectDir?: string;
   sessionId?: string;
   model?: string;
+  mainAgent?: string;
   reasoningEffort?: string;
   collaborationMode?: 'default' | 'plan';
   permission?: PermissionSelection;

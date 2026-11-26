@@ -4,8 +4,11 @@ import { z } from 'zod';
 import type { WorkspaceInput } from '@agentdeck/shared/projects';
 import { WorkspaceStorageError, WorkspaceValidationError, type WorkspaceStore } from '../workspaces/store';
 import { WorkspaceBusyError, type WorkspaceActivity } from '../workspaces/activity';
+import { FilePreviewError, readWorkspaceFile } from '../workspaces/file-preview';
+import { requestSignal } from './request-signal';
 
 const Params = z.object({ id: z.string().min(1) });
+const FileQuery = z.object({ path: z.string().min(1).max(4096), view: z.enum(['content', 'diff']).default('content') });
 // 名称和目录按需提交；省略的字段保持原值。
 const PatchBody = z.object({
   name: z.string().optional(),
@@ -61,6 +64,27 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectRoutesD
     deps.activity ? deps.activity.withIdle(id, operation) : operation();
 
   app.get('/api/projects', (_req, reply) => respond(reply, listProjects));
+
+  app.get('/api/projects/:id/file', async (req, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    const params = Params.safeParse(req.params),
+      query = FileQuery.safeParse(req.query);
+    if (!params.success || !query.success) return invalid(reply, '文件请求格式不正确。');
+    const workspace = await deps.store.get(params.data.id);
+    if (!workspace) return missing(reply);
+    try {
+      return await readWorkspaceFile(
+        workspace.dir,
+        query.data.path,
+        query.data.view === 'diff',
+        requestSignal(req, reply),
+      );
+    } catch (error) {
+      if (error instanceof FilePreviewError)
+        return reply.code(error.status).send({ code: 'file_preview_failed', message: error.message });
+      throw error;
+    }
+  });
 
   app.post('/api/projects', (req, reply) => {
     if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body))

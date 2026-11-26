@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { defaultComponents, defaultUrlTransform, type Components, type UrlTransform } from 'streamdown';
 import { parseSessionReference, sessionReferenceHash } from '@agentdeck/shared/conversation';
 import { findSessionReferences, navigateToSessionReference } from '../../sessions/links/session-links';
+import { localFileLink, fileLocationHash } from '../files/file-links';
+import { useConversationSurface } from '../ConversationSurface';
 
 export function SessionReferenceText({ text }: { text: string }) {
   const parts: ReactNode[] = [];
@@ -29,6 +31,8 @@ export function SessionReferenceText({ text }: { text: string }) {
 
 export const sessionMarkdownUrl: UrlTransform = (url, key, node) => {
   if (key === 'href') {
+    const file = localFileLink(url);
+    if (file) return fileLocationHash(file);
     try {
       return sessionReferenceHash(parseSessionReference(url));
     } catch {
@@ -41,6 +45,22 @@ export const sessionMarkdownUrl: UrlTransform = (url, key, node) => {
 };
 
 const SessionMarkdownAnchor: NonNullable<Components['a']> = (props) => {
+  const { openFile } = useConversationSurface();
+  const file = localFileLink(props.href ?? '');
+  if (file)
+    return openFile ? (
+      <a
+        href={fileLocationHash(file)}
+        onClick={(event) => {
+          event.preventDefault();
+          openFile(file);
+        }}
+      >
+        {props.children}
+      </a>
+    ) : (
+      <span>{props.children}</span>
+    );
   let reference: string | undefined;
   try {
     reference = sessionReferenceHash(parseSessionReference(props.href ?? ''));

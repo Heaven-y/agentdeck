@@ -29,7 +29,13 @@ const METHODS = new Set([
   'session/prompt',
 ]);
 type Pending = { resolve(value: AcpRecord): void; reject(error: Error): void; timer?: NodeJS.Timeout; cleanup(): void };
-export type AcpLaunchOptions = { cwd: string; env?: NodeJS.ProcessEnv; bypass?: boolean; command?: ResolvedCommand };
+export type AcpLaunchOptions = {
+  cwd: string;
+  env?: NodeJS.ProcessEnv;
+  bypass?: boolean;
+  command?: ResolvedCommand;
+  mainAgent?: string;
+};
 
 function nativeFailure(value: unknown): AcpError {
   const error = object(value);
@@ -54,6 +60,7 @@ export class AntigravityAcpClient implements AcpConnection {
     const env = antigravityBackgroundEnvironment(options.env ?? process.env);
     const executable = options.command ?? resolveLocalCommand('agy', env);
     const args = [...executable.args, 'acp', ...(options.bypass ? ['--dangerously-skip-permissions'] : [])];
+    if (options.mainAgent) args.push('--agent', options.mainAgent);
     this.child = spawn(executable.command, args, {
       cwd: options.cwd,
       env,

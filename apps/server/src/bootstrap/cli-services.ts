@@ -48,6 +48,7 @@ import { createCapabilitiesService } from '../chat/capabilities/capabilities';
 import { TurnManager } from '../chat/turn-manager';
 import { registerAgentConfigRoutes } from '../http/settings/agent-config.routes';
 import { registerCapabilityRoutes } from '../http/conversation/capabilities.routes';
+import { readAntigravityMainAgents } from '../agents/antigravity/models/main-agents';
 import { registerLaunchEnvironmentRoutes } from '../http/settings/launch-environment.routes';
 import { registerModelCatalogRoutes } from '../http/settings/model-catalog.routes';
 import {
@@ -338,6 +339,10 @@ export function createCliServices({
       registerCapabilityRoutes(a, {
         store,
         capabilities,
+        mainAgents: (dir, sessionId, signal) =>
+          nativeActivity.run('antigravity', async () =>
+            readAntigravityMainAgents(dir, { sessionId, signal, env: await launchEnvironment.resolve('antigravity') }),
+          ),
         sessions,
         runtimeWorkspace: (workspace, session) => turns.capabilityWorkspace(workspace, session),
       });

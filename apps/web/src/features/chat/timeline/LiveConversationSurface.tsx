@@ -12,6 +12,8 @@ import { InteractionCard } from '../interactions/InteractionCard';
 import { PermissionCard } from '../interactions/PermissionCard';
 import { SessionForkPoint } from '../references/SessionForkPoint';
 import { attachmentApi } from '../composer/attachment-api';
+import { useFilePreview } from '../files/file-preview-store';
+import type { FileLocation } from '../../conversation/files/file-links';
 
 function LiveControl({ item }: { item: ConversationControl }) {
   switch (item.kind) {
@@ -55,9 +57,15 @@ export function LiveConversationSurface({ children }: { children: ReactNode }) {
     () => ({
       Control: LiveControl,
       readImage,
+      openFile: workspaceId
+        ? (location: FileLocation) => {
+            useChat.getState().inspectItem();
+            useFilePreview.getState().open({ ...location, workspaceId, conversationId });
+          }
+        : undefined,
       dismissError: (item: ConversationError) => useChat.getState().dismissNotice(item.id, conversationId),
     }),
-    [readImage, conversationId],
+    [readImage, conversationId, workspaceId],
   );
   return <ConversationSurface.Provider value={surface}>{children}</ConversationSurface.Provider>;
 }

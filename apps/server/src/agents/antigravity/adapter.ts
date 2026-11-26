@@ -75,6 +75,7 @@ function argumentsFor(input: AgentTurnInput, selection: AntigravityLaunchSelecti
   const effort = selection.modelSetsEffort ? undefined : (input.reasoningEffort ?? selection.defaultReasoningEffort);
   const args = ['--input-format', 'stream-json', '--output-format', 'stream-json'];
   if (input.sessionId) args.push('--conversation', input.sessionId);
+  else if (input.mainAgent) args.push('--agent', input.mainAgent);
   if (model) args.push('--model', model);
   if (settings) args.push('--settings', settings);
   if (effort) args.push('--effort', effort);

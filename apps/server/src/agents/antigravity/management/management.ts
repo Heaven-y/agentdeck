@@ -14,6 +14,8 @@ import { readAntigravityForkStep, readAntigravityHistoryStep, readAntigravityHis
 import { NativeHistoryPagingUnavailable } from './history-stream';
 import { assertDirectory, missing } from './trajectory-scope';
 import { completeTrajectory } from '../history/trajectory-read';
+import { nativeMainAgentOverride } from '../models/main-agents';
+import { workflowSourceMatches } from '../history/workflow-agents';
 import {
   managementFailure,
   NativeTrajectoryMissing,
@@ -45,12 +47,7 @@ type RunOptions = {
 };
 function assertReadIdentity(metadata: ManagementRecord, rootId: string, child?: SubagentTrajectoryIdentity) {
   if (child) {
-    if (
-      metadata.parentConversationId !== child.parentId ||
-      metadata.rootConversationId !== rootId ||
-      metadata.nestingDepth !== child.depth
-    )
-      throw missing();
+    assertChildMetadata(metadata, child);
     return;
   }
   if (
@@ -59,6 +56,14 @@ function assertReadIdentity(metadata: ManagementRecord, rootId: string, child?: 
     (metadata.rootConversationId && metadata.rootConversationId !== rootId)
   )
     throw missing();
+}
+function assertChildMetadata(metadata: ManagementRecord, child: SubagentTrajectoryIdentity) {
+  const matches = child.workflow
+    ? workflowSourceMatches(metadata, child)
+    : metadata.parentConversationId === child.parentId &&
+      metadata.rootConversationId === child.rootId &&
+      metadata.nestingDepth === child.depth;
+  if (!matches) throw missing();
 }
 function assertReadChild(rootId: string, child?: SubagentTrajectoryIdentity) {
   if (
@@ -358,16 +363,21 @@ export function createAntigravitySessionManagement(
     fork: (id, dir, input) =>
       withBackend({ id, dir }, async (backend) => {
         const point = await forkPoint(backend, id, dir, input.pointId);
+        const agentScriptOverride =
+          input.mainAgent === undefined ? undefined : await nativeMainAgentOverride(backend, dir, input.mainAgent);
         const response = await backend.request('ForkConversation', {
           sourceCascadeId: id,
           forkAtStepIndex: point,
           targetForkWorkspace: 'FORK_TARGET_CURRENT_WORKSPACE',
           sourceWorkspaceUris: [pathToFileURL(dir).href],
+          ...(agentScriptOverride ? { agentScriptOverride } : {}),
         });
         const created = response.newCascadeId;
         assertId(created);
         if (created === id) throw managementFailure();
         const copy = await checked(backend, created, dir);
+        if (input.mainAgent !== undefined && text(object(object(copy.metadata).agentScript).name) !== input.mainAgent)
+          throw managementFailure();
         const references = Array.isArray(copy.parentReferences) ? copy.parentReferences : [];
         if (
           !references.some(

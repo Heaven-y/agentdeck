@@ -40,6 +40,10 @@ Codex 历史按已核实的本机 ID 与目录读取。续发时，原生可能�
 
 打开 Codex 或 AGY 主会话先读取最近内容，对话与轨迹共用已加载范围；聊天页空闲时有限补读最近提问，后续可向上滚动、点击列表顶端或右侧导航入口加载更早记录。首屏失败时提示重读，不在未知上下文上继续发送；更早页失败时保留已显示的记录，可以在原位置重试，不改变已核实的续发状态。旧版原生明确不支持分页时，首屏才回退到有界全读。CLI 返回的会话身份须与当前项目和预期原生 id 一致。
 
+### 工作区文件预览
+
+`GET /api/projects/:id/file?path=...&view=content|diff` 只在点击时读取当前工作区的文件。文本通过已有安全文件模块有界读取，最大 256 KiB，拒绝越界、符号链接、Git 内部文件和非 UTF-8 内容。Git 改动以 HEAD 文件为基线，在独立临时目录比较读取到的正文，不执行项目过滤器或外部 diff；无 Git 基线与读取失败返回具体错误，不伪装成新增文件。浏览器查询按工作区、会话、路径与视图隔离，离开即取消并释放正文缓存。
+
 ### 图片、文件与媒体回放
 
 附件在独立二进制 HTTP 接口上传，发送消息只带资产 ID 和 revision。上传及上传资产的预览同时校验本机认证、WebSocket 恢复身份、工作区和会话；恢复令牌只在 header，不出现在图片 URL。发送前再次核对真实版本、原生能力和当前模型，不能沿用旧缓存开启图片。AGY 账号选图只读取通道声明，不认证、不创建会话；Gemini API Key 的检查可在空会话内核对参数。两者都不发送对话输入。headless 仍仅开放文件引用。
@@ -154,7 +158,7 @@ Claude 继续使用 SDK `listSubagents` 与 `getSubagentMessages`；先读取首
 
 Codex 从父历史 `subAgentActivity.agentThreadId` 发现子线程，同时要求 `parentThreadId` 与 `source.subAgent.thread_spawn.parent_thread_id` 匹配已验证父节点，depth 逐层递增；普通 thread/list 不能作为子线程目录。先核验元数据，再用原生 thread/turns/list 的 full/升序分页读取，内部 review、compact 与未知 source 别名不作为可浏览子代理。父 app-server 退出后的独立读取已通过隔离验证。
 
-AGY 从原生 `invokeSubagent.subagents` 与 `results[].conversationId` 取得描述和身份，再交叉核实唯一 workspaceUris、parentConversationId、rootConversationId、nestingDepth；读取通过独立只读轨迹接口承接活动快照，分页仍有步骤、字节和时间限制。删除、分叉等管理操作继续要求空闲且非子代理，不放宽现有保护。
+AGY 普通子代理从 `invokeSubagent.subagents` 与 `results[].conversationId` 发现，核对唯一 workspaceUris、parentConversationId、rootConversationId、nestingDepth。1.5.14 的 Swarm 与工作流从对应工具步骤的结构化 `stepRenderInfo.contentBlocks[].agent` 发现，不扫描工具输出正文；Swarm 仍核验 parent/root/depth，工作流另核验 `sourceMetadata.tool` 中的父会话、步骤索引与工具调用 ID。读取通过独立只读轨迹接口承接活动快照，原有分页预算保留。Swarm 的 IDLE 不表示完成；父步骤明确报告 Killed 时显示已取消；工作流子代理须有已完成的 FINISH 步骤才标完成。管理操作仍只针对空闲主会话。
 
 独立视图保留自身正文、工具和已保存的用量，移除父会话分叉位置；媒体定位保持根会话与子代理 ID，并在读取时重新核实父子链。正式 reader 明确判定不存在或归属不匹配的兄弟节点只从目录淘汰，不阻断已核实的其他节点；根和被选节点仍须通过校验，超时、取消和运行失败继续使读取失败。正文、用量与详情选择不并入父会话。关闭视图释放查询缓存，打开或刷新重新读取原生快照。历史视图只读，活动任务的查看和停止使用[原生后台任务](#原生后台任务)入口。
 

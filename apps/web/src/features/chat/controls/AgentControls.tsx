@@ -6,6 +6,7 @@ import { CapabilityPicker } from './CapabilityPicker';
 import { CollaborationModeMenu } from './CollaborationModeMenu';
 import { NativeActionsButton } from '../actions/NativeActionsDialog';
 import { PluginActions } from '../../plugins/PluginActions';
+import { MainAgentMenu } from './MainAgentMenu';
 
 export function AgentControls({ disabled = false, children }: { disabled?: boolean; children: ReactNode }) {
   const scope = useChat((state) => state.conversationVersion);
@@ -15,6 +16,7 @@ export function AgentControls({ disabled = false, children }: { disabled?: boole
         <CapabilityPicker disabled={disabled} />
         <PermissionOptionsMenu disabled={disabled} />
         <CollaborationModeMenu disabled={disabled} />
+        <MainAgentMenu disabled={disabled} />
         <NativeActionsButton disabled={disabled} />
         <PluginActions disabled={disabled} />
       </div>

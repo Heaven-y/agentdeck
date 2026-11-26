@@ -1,4 +1,4 @@
-import type { AgentEvent, TokenUsage } from '@agentdeck/shared/conversation';
+import type { AgentEvent, TokenUsage, SubagentSummary } from '@agentdeck/shared/conversation';
 import { managementObject as object } from '../management/management-rpc';
 
 export const nonnegative = (value: unknown): number | undefined =>
@@ -113,4 +113,17 @@ export function contextEvent(value: unknown, reportedUsage?: unknown): AgentEven
       },
     },
   ];
+}
+
+/** 仅累计完整取得的生成目录，分项缺失时不补零，不把子代理计入主会话。 */
+export function recordedGenerationUsage(trajectory: Record<string, unknown>): SubagentSummary['usage'] {
+  if (!Array.isArray(trajectory.generatorMetadata) || !trajectory.generatorMetadata.length) return;
+  const counts = trajectory.generatorMetadata.map((value) => stepUsage(object(object(value).chatModel).usage));
+  const usage: NonNullable<SubagentSummary['usage']> = { generations: counts.length };
+  for (const key of ['inputTokens', 'cachedInputTokens', 'outputTokens'] as const) {
+    const values = counts.map((value) => value?.[key]);
+    if (values.every((value): value is number => value !== undefined))
+      usage[key] = values.reduce((total, value) => total + value, 0);
+  }
+  return Object.keys(usage).length > 1 ? usage : undefined;
 }

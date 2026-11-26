@@ -263,6 +263,8 @@ export function createSessionsService(
       );
     },
     fork(ws: Workspace, agent: AgentKind, id: string, input: SessionForkInput): Promise<SessionHistory['session']> {
+      if (input.mainAgent !== undefined && agent !== 'antigravity')
+        throw new SessionError(400, 'unsupported_action', '此 CLI 不支持通过分支切换主代理。');
       return safeOperation(
         agent,
         () =>

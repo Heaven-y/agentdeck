@@ -600,6 +600,7 @@ export class TurnManager {
       projectDir,
       sessionId: msg.sessionId,
       model: msg.model,
+      mainAgent: msg.mainAgent,
       reasoningEffort: msg.reasoningEffort,
       collaborationMode: msg.collaborationMode,
       permission,

@@ -37,6 +37,25 @@ function canSelect(current: Current, workspaceId: string, version: number): bool
   );
 }
 
+async function openFork(session: SessionRef, preserveDraft: boolean) {
+  const current = useChat.getState();
+  const opening = current.openSession(session);
+  if (preserveDraft) {
+    useChat.setState({
+      draft: current.draft,
+      selectedCapability: current.selectedCapability,
+      // 上传资产绑定原会话；新分支保留本地文件，重新上传后才能发送。
+      draftAttachments: current.draftAttachments.map(({ name, file }) => ({
+        id: crypto.randomUUID(),
+        name,
+        file,
+        error: '会话归属已变化，请重试上传。',
+      })),
+    });
+  }
+  await opening;
+}
+
 /** 原生请求发出后不随弹窗关闭撤销；全局跟踪源身份，迟到成功不能覆盖新选择。 */
 export async function forkSession(workspaceId: string, session: SessionRef, input: SessionForkInput): Promise<boolean> {
   const key = sessionActionKey(workspaceId, session);
@@ -52,7 +71,7 @@ export async function forkSession(workspaceId: string, session: SessionRef, inpu
     checkResult(session, result.session);
     setOperation(key);
     if (canSelect(useChat.getState(), workspaceId, current.conversationVersion))
-      await useChat.getState().openSession(result.session);
+      await openFork(result.session, input.mainAgent !== undefined);
     return true;
   } catch (error) {
     setOperation(key, {

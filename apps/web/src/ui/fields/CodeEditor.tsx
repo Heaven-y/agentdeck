@@ -1,4 +1,4 @@
-import CodeMirror, { EditorView, Prec } from '@uiw/react-codemirror';
+import CodeMirror, { EditorView, EditorState, Prec } from '@uiw/react-codemirror';
 import { useCallback, useMemo } from 'react';
 import { json } from '@codemirror/lang-json';
 import { StreamLanguage } from '@codemirror/language';
@@ -7,6 +7,7 @@ import { python } from '@codemirror/legacy-modes/mode/python';
 import { javascript, typescript } from '@codemirror/legacy-modes/mode/javascript';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { yaml } from '@codemirror/legacy-modes/mode/yaml';
+import { diff } from '@codemirror/legacy-modes/mode/diff';
 import { markdown } from '@codemirror/lang-markdown';
 import { useUiPreferences } from '../appearance/ui-preferences';
 
@@ -30,6 +31,7 @@ const extensions = {
   shell: [StreamLanguage.define(shell)],
   yaml: [StreamLanguage.define(yaml)],
   markdown: [markdown()],
+  diff: [StreamLanguage.define(diff)],
   text: [],
 };
 export type CodeFormat = keyof typeof extensions;
@@ -43,6 +45,7 @@ export function CodeEditor({
   lineSeparator = '\n',
   label = '配置文件内容',
   height = 'min(42vh, 440px)',
+  initialLine,
   onChange,
 }: {
   value: string;
@@ -51,19 +54,46 @@ export function CodeEditor({
   lineSeparator?: '\n' | '\r\n';
   label?: string;
   height?: string;
-  onChange(value: string): void;
+  initialLine?: number;
+  onChange?(value: string): void;
 }) {
   const theme = useUiPreferences((state) => state.theme);
   const configured = useMemo(
     () => [
       ...extensions[format],
+      EditorState.phrases.of({
+        Find: '查找',
+        Replace: '替换',
+        next: '下一个',
+        previous: '上一个',
+        all: '全部',
+        'match case': '区分大小写',
+        regexp: '正则表达式',
+        'by word': '全词匹配',
+        replace: '替换',
+        'replace all': '全部替换',
+        close: '关闭',
+        'Go to line': '跳转到行',
+        go: '跳转',
+        'current match': '当前匹配',
+        'on line': '所在行',
+        'replaced match on line $': '已替换第 $ 行的匹配',
+        'replaced $ matches': '已替换 $ 处匹配',
+        'Fold line': '折叠此行',
+        'Unfold line': '展开此行',
+      }),
       Prec.high(editorThemes[theme]),
-      EditorView.contentAttributes.of({ 'aria-label': label, spellcheck: 'false', 'data-gramm': 'false' }),
+      EditorView.contentAttributes.of({
+        'aria-label': label,
+        tabindex: '0',
+        spellcheck: 'false',
+        'data-gramm': 'false',
+      }),
     ],
     [format, label, theme],
   );
   const changed = useCallback(
-    (text: string) => onChange(lineSeparator === '\r\n' ? text.replace(/\n/g, '\r\n') : text),
+    (text: string) => onChange?.(lineSeparator === '\r\n' ? text.replace(/\n/g, '\r\n') : text),
     [lineSeparator, onChange],
   );
   return (
@@ -78,6 +108,11 @@ export function CodeEditor({
       editable={!disabled}
       indentWithTab={false}
       basicSetup={basicSetup}
+      onCreateEditor={(view) => {
+        if (!initialLine) return;
+        const from = view.state.doc.line(Math.min(initialLine, view.state.doc.lines)).from;
+        view.dispatch({ selection: { anchor: from }, effects: EditorView.scrollIntoView(from, { y: 'center' }) });
+      }}
       // 编辑器内部保持 LF，写回沿用原行尾；避免 wrapper 反复替换整份内容和光标。
       onChange={changed}
     />

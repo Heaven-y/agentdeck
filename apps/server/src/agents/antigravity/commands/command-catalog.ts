@@ -10,6 +10,10 @@ import { parseAntigravityModelList } from '../models/model-catalog';
 type Entry = NativeCapabilityCatalog['entries'][number];
 export type NativeSkill = ManagementRecord & { name: string; path: string };
 const MAX_ENTRIES = 10_000;
+const builtinDescriptions: Record<string, string> = {
+  swarm: '拆分任务并协调多个代理协作',
+  'run-workflow': '运行原生代理工作流',
+};
 const safeName = (name: string) =>
   name.length > 0 &&
   name.length <= 200 &&
@@ -97,7 +101,7 @@ export function antigravitySkillEntries(builtinOutput: string, skills: NativeSki
   const entries = new Map<string, Entry>();
   for (const builtin of parseAntigravityModelList(builtinOutput)) {
     if (!safeName(builtin.id)) throw new Error('原生技能目录格式发生变化');
-    entries.set(builtin.id, skillEntry(builtin.id, builtin.label));
+    entries.set(builtin.id, skillEntry(builtin.id, builtinDescriptions[builtin.id] ?? builtin.label));
   }
   for (const skill of skills) entries.set(skill.name, skillEntry(skill.name, text(skill.description), skill));
   if (entries.size > MAX_ENTRIES) throw new Error('原生技能目录超过读取上限');

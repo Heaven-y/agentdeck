@@ -84,6 +84,7 @@ export type ChatState = {
   permissionError?: string;
   setPermission(permission?: PermissionSelection): void;
   actualModel?: string;
+  mainAgent?: string;
   /** 仅保存本页已读取/运行的原生模型元数据，不从默认或显式选择推导。 */
   sessionModels: Record<string, { actualModel?: string; nativeModel?: string }>;
   selectedCapability?: AgentCapability;
@@ -151,6 +152,7 @@ export type ConversationView = Pick<
   | 'permissionSaving'
   | 'permissionError'
   | 'actualModel'
+  | 'mainAgent'
   | 'selectedCapability'
   | 'contextUsage'
   | 'contextWindow'

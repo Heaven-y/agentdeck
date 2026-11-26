@@ -18,6 +18,9 @@ import { sessionRemarkPlugins } from '../references/session-reference-markdown';
 import { isConversationControl, useConversationSurface, type ConversationError } from '../ConversationSurface';
 import { ConversationControlView } from './ConversationControlView';
 import { DetailDialog } from '../../../ui/DetailDialog';
+import { ConversationCode } from './CodeBlock';
+
+const markdownComponents = { ...sessionMarkdownComponents, code: ConversationCode };
 
 function UserMessage({ item }: { item: Extract<ChatItem, { kind: 'user' }> }) {
   const [details, setDetails] = useState(false);
@@ -125,7 +128,7 @@ function AssistantMessage({ item }: { item: Extract<ChatItem, { kind: 'assistant
         mode={item.streaming ? 'streaming' : 'static'}
         isAnimating={item.streaming}
         urlTransform={sessionMarkdownUrl}
-        components={sessionMarkdownComponents}
+        components={markdownComponents}
         remarkPlugins={sessionRemarkPlugins}
       >
         {item.text}

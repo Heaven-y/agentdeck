@@ -174,6 +174,15 @@ function AgentSelection({
           查看其子代理
         </button>
       </div>
+      {summary?.usage && (
+        <p className="text-xs text-muted-foreground">
+          {summary.usage.generations} 次生成
+          {summary.usage.inputTokens !== undefined && ` · 输入 ${summary.usage.inputTokens.toLocaleString()}`}
+          {summary.usage.cachedInputTokens !== undefined &&
+            ` · 缓存 ${summary.usage.cachedInputTokens.toLocaleString()}`}
+          {summary.usage.outputTokens !== undefined && ` · 输出 ${summary.usage.outputTokens.toLocaleString()}`} tokens
+        </p>
+      )}
     </>
   );
 }

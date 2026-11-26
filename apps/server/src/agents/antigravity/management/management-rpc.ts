@@ -7,6 +7,7 @@ export type ManagementMethod =
   | 'GetMendelFlags'
   | 'GetUserStatus'
   | 'GetAllSkills'
+  | 'GetAgentScripts'
   | 'GetCascadeTrajectory'
   | 'GetCascadeTrajectorySteps'
   | 'GetConversationMetadata'

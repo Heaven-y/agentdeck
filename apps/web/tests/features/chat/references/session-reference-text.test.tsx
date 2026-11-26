@@ -7,11 +7,36 @@ import {
 } from '../../../../src/features/conversation/references/SessionReferenceText';
 import { MessageItem } from '../../../../src/features/conversation/timeline/MessageItem';
 import { appendSessionReferenceContext } from '@agentdeck/shared/conversation';
+import { ConversationSurface } from '../../../../src/features/conversation/ConversationSurface';
 
 afterEach(() => {
   cleanup();
   window.history.replaceState(null, '', '/');
   vi.unstubAllGlobals();
+});
+
+it('聊天文件链接打开所属工作区预览并保留行号，长代码手动折叠不丢复制文本', async () => {
+  const openFile = vi.fn();
+  const code = Array.from({ length: 42 }, (_, i) => `const value${i} = ${i};`).join('\n');
+  render(
+    <ConversationSurface.Provider value={{ openFile }}>
+      <MessageItem
+        item={{
+          kind: 'assistant',
+          id: 'answer',
+          streaming: false,
+          text: `[查看文件](./src/example.ts#L12)\n\n\`\`\`typescript\n${code}\n\`\`\``,
+        }}
+      />
+    </ConversationSurface.Provider>,
+  );
+  fireEvent.click(screen.getByRole('link', { name: '查看文件' }));
+  expect(openFile).toHaveBeenCalledWith({ path: './src/example.ts', line: 12 });
+  fireEvent.click(await screen.findByRole('button', { name: '收起代码' }));
+  expect(document.querySelector('.conversation-code')?.getAttribute('data-collapsed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '展开代码' }));
+  expect(document.querySelector('.conversation-code')?.getAttribute('data-collapsed')).toBeNull();
+  expect(document.body.textContent).toContain('const value41 = 41;');
 });
 
 it('重读原生输入将引用说明收在详情，普通复制只取用户正文，完整输入仍可查看复制', () => {

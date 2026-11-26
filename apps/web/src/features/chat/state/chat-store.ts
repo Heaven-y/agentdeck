@@ -95,6 +95,7 @@ function sendMessagePayload(current: ChatState & { workspaceId: string }, text: 
     ...attachmentRefs(current),
     ...(current.selectedCapability ? { selection: { id: current.selectedCapability.id } } : {}),
     model: current.modelOverrides[current.agent].trim() || undefined,
+    mainAgent: current.agent === 'antigravity' && !current.sessionId ? current.mainAgent : undefined,
     reasoningEffort: current.reasoningEfforts[current.agent].trim() || undefined,
     collaborationMode: current.agent === 'codex' ? current.collaborationMode : undefined,
     ...(current.permission ? { permission: current.permission } : {}),

@@ -54,6 +54,14 @@ Claude 已安装插件技能由有界 `plugin list --json` 加安全目录读取
 
 技能目录接口为 `GET /api/native-management/:agent/skills`，写操作使用 `POST .../change` 与 `POST .../import`，均继承本机会话鉴权、Origin 检查与 no-store；请求只接受服务器返回的资源 ID、revision、限定动作与实际作用域。
 
+## AGY 主代理与工作流
+
+主代理目录通过 `GetAgentScripts` 按当前工作区读取，沿用原生用户/项目来源与同名覆盖，排除 `mainAgent: false` 的定义；定义编辑仍在原生文件页。新会话将所选名称传给 `--agent`，ACP 和 headless 均支持。续接不重传此参数，当前代理从 `GetConversationMetadata.metadata.agentScript.name` 读取。
+
+已有会话切换主代理必须创建分支：`ForkConversation.agentScriptOverride` 传完整原生代理对象，切回默认传空对象，普通分叉省略该字段并继承。新分支核对代理名、父引用和目录后打开，保留未发送草稿，源会话不修改。
+
+`swarm` 与 `run-workflow` 由原生 Skill 目录发现并调用，复用输入区技能选择和子代理历史，不额外创建工作流执行器。1.5.14 的 ACP 未返回完整子工具结果时，可从原生历史读取结构化关联。该版本的 `/btw` 未提供可接入的旁支会话语义，当前登录账号的 Skill 目录也未发现 Boost/Teamwork；这些入口不按桌面 App 的能力补造。
+
 ## 模型与服务连接
 
 Antigravity 官方登录的模型页提供“编排器”规划模型和执行模型，各选项包含原生强度变体。获取模型时，从本机 `GetMendelFlags` 的 `orchestrator-model-roles` 读取两组候选，与原生型号及目录交集匹配；不把整个模型目录当作角色候选。保存前重新核对角色，将完整原生标签写入用户 `settings.json` 的 `orchestrator.planner` / `orchestrator.executor`，清空恢复原生默认，其他字段保留。下一轮选择编排器时由 CLI 加载这些设置。原生目录读取继承工作台的 AGY 网络环境，不发送模型请求。依据为 [CLI 1.5.14 发布记录](https://antigravity.google/docs/changelog/#rel-cli-1.5.14)及本机角色设置、动态名单；App 偏好同步和其他账号类型另按原生支持处理。

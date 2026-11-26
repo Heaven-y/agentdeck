@@ -1,6 +1,12 @@
 import type { SessionForkInput } from '@agentdeck/shared/conversation';
 import type { HistoryWindow } from '../management/history-window';
-export type SubagentTrajectoryIdentity = { id: string; parentId: string; rootId: string; depth: number };
+export type SubagentTrajectoryIdentity = {
+  id: string;
+  parentId: string;
+  rootId: string;
+  depth: number;
+  workflow?: { stepIndex: number; toolCallId: string };
+};
 
 /** 通过 Antigravity 自身服务管理会话，提供方仍负责归属和返回身份复核。 */
 export type AntigravitySessionManagement = {

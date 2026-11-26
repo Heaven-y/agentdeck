@@ -1,6 +1,7 @@
 import { defaultRemarkPlugins } from 'streamdown';
 import { parseSessionReference, sessionReferenceHash } from '@agentdeck/shared/conversation';
 import { findSessionReferences } from '../../sessions/links/session-links';
+import { localFileLink, fileLocationHash } from '../files/file-links';
 
 type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
 
@@ -33,18 +34,25 @@ const linkable = (url: string): boolean => /^(?:#|[/.]|(?:https?|mailto|tel|irc|
 const textOnly = (node: MarkdownNode): MarkdownNode[] =>
   node.children?.length ? node.children : [{ type: 'text', value: node.url ?? '' }];
 
+function rewriteLink(node: MarkdownNode): MarkdownNode[] {
+  const file = localFileLink(node.url ?? '');
+  if (file) {
+    node.url = fileLocationHash(file);
+    return [node];
+  }
+  try {
+    node.url = sessionReferenceHash(parseSessionReference(node.url ?? ''));
+  } catch {
+    /* 普通链接继续按下面的形态判定处理。 */
+  }
+  if (linkable(node.url ?? '')) return [node];
+  // 定义不可用时对应的引用会退化成普通文本，不能留下指向被删定义的链接。
+  return node.type === 'link' ? textOnly(node) : [];
+}
+
 function rewrite(node: MarkdownNode): MarkdownNode[] {
   if (node.type === 'linkReference') return [node];
-  if (node.type === 'link' || node.type === 'definition') {
-    try {
-      node.url = sessionReferenceHash(parseSessionReference(node.url ?? ''));
-    } catch {
-      /* 普通链接继续按下面的形态判定处理。 */
-    }
-    if (linkable(node.url ?? '')) return [node];
-    // 定义不可用时对应的引用会退化成普通文本，不能留下指向被删定义的链接。
-    return node.type === 'link' ? textOnly(node) : [];
-  }
+  if (node.type === 'link' || node.type === 'definition') return rewriteLink(node);
   if (!node.children) return [node];
   node.children = node.children.flatMap((child) => (child.type === 'text' ? textLinks(child) : rewrite(child)));
   return [node];

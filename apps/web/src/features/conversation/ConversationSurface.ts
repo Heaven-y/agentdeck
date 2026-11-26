@@ -1,6 +1,7 @@
 import { createContext, useContext, type ComponentType } from 'react';
 import type { MessageAttachment } from '@agentdeck/shared/conversation';
 import type { ChatItem } from './model/conversation-events';
+import type { FileLocation } from './files/file-links';
 
 export type ConversationError = Extract<ChatItem, { kind: 'error' }>;
 export type ConversationControl = Extract<
@@ -23,6 +24,7 @@ type Surface = {
   readImage?: ImageReader;
   dismissError?(item: ConversationError): void;
   isErrorDismissed?(item: ConversationError): boolean;
+  openFile?(location: FileLocation): void;
 };
 
 /** 共享展示不推断当前会话，也不读取实时对话状态；由宿主明确提供权限与来源。 */

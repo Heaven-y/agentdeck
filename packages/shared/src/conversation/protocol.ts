@@ -78,6 +78,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       selection: CapabilitySelectionSchema.optional(),
       /** 不传表示跟随本地配置 */
       model: z.string().min(1).optional(),
+      /** 仅 AGY 新会话选择自定义主代理；续接继承原生记录。 */
+      mainAgent: z.string().min(1).max(200).optional(),
       /** 下轮推理强度；Claude 映射 SDK effort，实际支持由原生运行时决定；不传沿用原生配置。 */
       reasoningEffort: z.string().min(1).max(40).optional(),
       permission: PermissionSelectionSchema.optional(),
@@ -94,6 +96,9 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       message: '权限模式不属于当前 CLI',
     })
     .refine((message) => !message.collaborationMode || message.agent === 'codex', { message: '协作模式仅用于Codex' })
+    .refine((message) => !message.mainAgent || message.agent === 'antigravity', {
+      message: '主代理选择仅用于 Antigravity',
+    })
     .refine(
       (message) =>
         message.agent !== 'claude' ||

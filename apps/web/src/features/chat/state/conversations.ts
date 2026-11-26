@@ -19,6 +19,7 @@ const fields = [
   'permissionSaving',
   'permissionError',
   'actualModel',
+  'mainAgent',
   'selectedCapability',
   'contextUsage',
   'contextWindow',

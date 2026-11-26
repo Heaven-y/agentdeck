@@ -86,3 +86,17 @@ export function toolPrimaryArgument(input: unknown): string | undefined {
     })
     .join(', ');
 }
+
+export function toolFilePaths(input: unknown): string[] {
+  if (!input || typeof input !== 'object') return [];
+  const values = input as Record<string, unknown>;
+  const paths = ['file_path', 'filePath', 'TargetFile', 'AbsolutePath', 'path'].flatMap((key) =>
+    typeof values[key] === 'string' ? [values[key]] : [],
+  );
+  if (Array.isArray(values.changes))
+    for (const change of values.changes as unknown[]) {
+      if (change && typeof change === 'object' && 'path' in change && typeof change.path === 'string')
+        paths.push(change.path);
+    }
+  return [...new Set(paths)].slice(0, 20);
+}

@@ -8,6 +8,8 @@
 |---|---|---|
 | 聊天输入、附件和斜杠补全 | [聊天输入区](../../apps/web/src/features/chat/composer/Composer.tsx) | 输入能力在聊天的 `controls`，发送后的会话状态在 `state` |
 | 实时对话和历史里的消息样式 | [时间线公共入口](../../apps/web/src/features/conversation/timeline/index.ts) | 同目录的 `TimelineRowView` 管消息行，`ToolGroup` 管工具分组；[事件投影](../../apps/web/src/features/conversation/model/conversation-events.ts) 不持有会话状态。实时和历史宿主分别提供操作、附件身份及滚动／分页 |
+| 聊天文件预览与长代码 | [文件预览面板](../../apps/web/src/features/chat/files/FilePreviewPane.tsx)、[工作区文件读取](../../apps/server/src/workspaces/file-preview.ts) | 链接识别在 `conversation/files`，代码折叠在 `conversation/timeline/CodeBlock.tsx`；复用现有右栏与 CodeMirror |
+| AGY 主代理选择 | [主代理菜单](../../apps/web/src/features/chat/controls/MainAgentMenu.tsx) | 原生目录在 `agents/antigravity/models/main-agents.ts`，已有会话切换复用分支管理 |
 | 模型的搜索、显示与选择 | [模型候选规则](../../apps/web/src/cli/shared/model-candidates.ts) | 聊天和设置各有 `models` 目录，CLI 原生差异放在前端 `cli` 子目录；AGY 官方额度读取走[原生命令](../../apps/server/src/agents/antigravity/usage/official-usage.ts) |
 | 增加设置分类 | [设置页登记表](../../apps/web/src/features/settings/navigation/page-registry.tsx) | 在相应功能目录编写页面，在表中登记标题、图标、CLI 切换器和渲染组件。需要新增持久化字段时再看 [产品设置协议](../../packages/shared/src/settings/product-settings.ts) |
 | 新增或调整一种 CLI | [支持名单](../../packages/shared/src/conversation/agents.ts)、[原生配置登记表](../../apps/server/src/agents/registry.ts) | 按实际能力实现该 CLI 的运行、历史和配置，接入[后端服务装配](../../apps/server/src/bootstrap/cli-services.ts)。设置、会话列表和探测使用共享身份；[Skills](../../apps/server/src/native-management/skills/adapters.ts)、[原生插件](../../apps/server/src/native-management/plugins/plugin-adapters.ts) 与[会话引用](../../apps/server/src/sessions/references.ts) 按能力分别登记 |

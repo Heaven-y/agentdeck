@@ -16,7 +16,7 @@ export type SubagentGraphApi<T> = {
   validate(value: T, id: string, parent?: SubagentNode<T>): Promise<boolean>;
   children(value: T): SubagentEdge[];
   status(value: T): SubagentSummary['status'];
-  describe?(value: T): { name?: string; role?: string };
+  describe?(value: T): Pick<SubagentSummary, 'name' | 'role' | 'usage'>;
 };
 export type SubagentGraphInput = { id: string; query: SubagentQuery; signal?: AbortSignal; findId?: string };
 

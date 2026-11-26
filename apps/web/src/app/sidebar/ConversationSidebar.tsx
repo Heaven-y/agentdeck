@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect, type KeyboardEvent } from 'react';
+import type { ChatItem } from '../../features/conversation/model/conversation-events';
 import { ArrowLeft, Info, Settings2, X } from 'lucide-react';
 import type { Workspace } from '@agentdeck/shared/projects';
 import { useChat } from '../../features/chat/state/chat-store';
@@ -7,6 +8,10 @@ import { AgentIcon } from '../../ui/BrandIcons';
 import { buttonClass, iconButtonClass } from '../../ui/styles';
 import { LiveConversationSurface } from '../../features/chat/timeline/LiveConversationSurface';
 import { TrajectoryDetails } from '../../features/conversation/trajectory/TrajectoryDetails';
+import { useFilePreview } from '../../features/chat/files/file-preview-store';
+const FilePreviewPane = lazy(() =>
+  import('../../features/chat/files/FilePreviewPane').then((module) => ({ default: module.FilePreviewPane })),
+);
 
 function StatusField({ running }: { running: boolean }) {
   return (
@@ -54,7 +59,18 @@ function SessionOverview({ workspace, settings }: { workspace: Workspace; settin
   );
 }
 
-/** 右侧按需呈现当前会话上下文；不连接服务器，也不扫描项目文件。 */
+function closeOnEscape(event: KeyboardEvent, close: () => void) {
+  if (
+    event.key !== 'Escape' ||
+    event.defaultPrevented ||
+    (event.target instanceof Element && event.target.closest('dialog,[role="dialog"]'))
+  )
+    return;
+  event.preventDefault();
+  close();
+}
+
+/** 右侧按需呈现当前会话信息、步骤与文件。 */
 export function ConversationSidebar({
   workspace,
   open,
@@ -68,6 +84,9 @@ export function ConversationSidebar({
 }) {
   const inspected = useChat((state) => state.items.find((item) => item.id === state.inspectedItemId));
   const inspect = useChat((state) => state.inspectItem);
+  const conversationId = useChat((state) => state.conversationId);
+  const target = useFilePreview((state) => state.target);
+  const file = target?.conversationId === conversationId && target.workspaceId === workspace?.id ? target : undefined;
   useEffect(() => {
     if (open || !document.activeElement?.closest('#conversation-sidebar')) return;
     document.querySelector<HTMLButtonElement>('button[aria-controls="conversation-sidebar"]')?.focus();
@@ -78,41 +97,44 @@ export function ConversationSidebar({
       aria-label="右侧边栏"
       className="conversation-sidebar flex h-full min-h-0 flex-col bg-background"
       data-open={open || undefined}
-      onKeyDown={(event) => {
-        if (
-          event.key !== 'Escape' ||
-          event.defaultPrevented ||
-          (event.target instanceof Element && event.target.closest('dialog,[role="dialog"]'))
-        )
-          return;
-        event.preventDefault();
-        close();
-      }}
+      onKeyDown={(event) => closeOnEscape(event, close)}
     >
       <header className="flex min-h-[58px] shrink-0 items-center gap-2 border-b border-border px-4">
-        {inspected ? (
-          <button type="button" aria-label="返回会话信息" onClick={() => inspect()} className={iconButtonClass}>
+        {inspected || file ? (
+          <button
+            type="button"
+            aria-label="返回会话信息"
+            onClick={() => {
+              inspect();
+              useFilePreview.getState().close();
+            }}
+            className={iconButtonClass}
+          >
             <ArrowLeft aria-hidden className="size-4" />
           </button>
         ) : (
           <Info aria-hidden className="size-4 text-muted-foreground" />
         )}
-        <h2 className="flex-1 text-sm font-semibold tracking-tight">{inspected ? '步骤详情' : '会话信息'}</h2>
+        <h2 className="flex-1 text-sm font-semibold tracking-tight">{sidebarTitle(!!file, !!inspected)}</h2>
         <button type="button" aria-label="收起右侧边栏" onClick={close} className={`${iconButtonClass} -mr-1.5`}>
           <X aria-hidden className="size-4" />
         </button>
       </header>
-      <div className="min-h-0 space-y-6 overflow-auto p-5 text-sm">
-        {inspected ? (
-          <LiveConversationSurface>
-            <TrajectoryDetails item={inspected} />
-          </LiveConversationSurface>
-        ) : workspace ? (
-          <SessionOverview workspace={workspace} settings={settings} />
-        ) : (
-          <p className="leading-6 text-muted-foreground">选择一个工作区或会话，查看当前上下文。</p>
-        )}
-      </div>
+      {file && open ? (
+        <Suspense
+          fallback={
+            <p role="status" className="p-4 text-sm text-muted-foreground">
+              正在读取…
+            </p>
+          }
+        >
+          <FilePreviewPane key={`${file.workspaceId}:${file.conversationId}:${file.path}`} target={file} />
+        </Suspense>
+      ) : (
+        <div className="min-h-0 space-y-6 overflow-auto p-5 text-sm">
+          <SidebarContext inspected={inspected} workspace={workspace} settings={settings} />
+        </div>
+      )}
     </aside>
   );
 }
@@ -127,4 +149,34 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
       </dd>
     </div>
   );
+}
+
+function SidebarContext({
+  inspected,
+  workspace,
+  settings,
+}: {
+  inspected?: ChatItem;
+  workspace?: Workspace;
+  settings(): void;
+}) {
+  return (
+    <>
+      {' '}
+      {inspected ? (
+        <LiveConversationSurface>
+          <TrajectoryDetails item={inspected} />
+        </LiveConversationSurface>
+      ) : workspace ? (
+        <SessionOverview workspace={workspace} settings={settings} />
+      ) : (
+        <p className="leading-6 text-muted-foreground">选择一个工作区或会话，查看当前上下文。</p>
+      )}
+    </>
+  );
+}
+
+function sidebarTitle(file: boolean, inspected: boolean) {
+  if (file) return '文件预览';
+  return inspected ? '步骤详情' : '会话信息';
 }

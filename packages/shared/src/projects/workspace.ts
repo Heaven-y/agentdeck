@@ -14,3 +14,5 @@ export const WorkspaceInputSchema = z.object({
 export const WorkspaceSchema = WorkspaceInputSchema.extend({ id: z.string().min(1) });
 export type WorkspaceInput = z.infer<typeof WorkspaceInputSchema>;
 export type Workspace = z.infer<typeof WorkspaceSchema>;
+
+export type WorkspaceFilePreview = { path: string; content: string; view: 'content' | 'diff' };

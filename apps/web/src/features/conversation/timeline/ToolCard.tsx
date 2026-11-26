@@ -4,7 +4,8 @@ import type { ExpandedProps } from './timeline-model';
 import { finiteCount, formatDuration } from '../model/chat-metrics';
 import { StatisticsLine } from './StatisticsLine';
 import { MessageAttachments } from './MessageAttachments';
-import { toolDisplayName, toolDescription, toolPrimaryArgument } from './tool-presentation';
+import { toolDisplayName, toolDescription, toolPrimaryArgument, toolFilePaths } from './tool-presentation';
+import { useConversationSurface } from '../ConversationSurface';
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>;
 
@@ -48,6 +49,7 @@ function ToolDescription({ item }: { item: ToolItem }) {
 export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem } & ExpandedProps) {
   const name = toolDisplayName(item.name);
   const arg = toolPrimaryArgument(item.input);
+  const { openFile } = useConversationSurface();
 
   return (
     <details
@@ -90,6 +92,18 @@ export function ToolCard({ item, expanded, onExpandedChange }: { item: ToolItem 
       </summary>
       <div className="mt-1 mr-2 mb-2 ml-3.5 flex min-w-0 flex-col gap-3 border-l border-border py-1 pl-4">
         <ToolDescription item={item} />
+        {openFile &&
+          toolFilePaths(item.input).map((path) => (
+            <button
+              key={path}
+              type="button"
+              onClick={() => openFile({ path })}
+              className="max-w-full self-start truncate text-left text-xs text-interactive hover:underline"
+              title={path}
+            >
+              查看 {path.split(/[\\/]/).at(-1)}
+            </button>
+          ))}
         <MessageAttachments attachments={item.attachments} />
         {item.status === 'incomplete' && <p className="text-xs text-warning">未收到执行结果</p>}
         {item.usage && <StatisticsLine statistics={{ ...item, scope: 'step' }} />}

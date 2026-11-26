@@ -23,7 +23,7 @@
 | 图片、文件与历史媒体 | **已接入**：图片及已验证的文本文档/PDF内容块，原生保存后可读回 | **已接入**：内联 image 输入及原生历史；普通文件使用路径引用 | **部分接入**：API Key 和个人 Google 登录均有 ACP 图片路径。账号图片可在同一原生会话与文字交替发送；headless 只处理文件引用。E02、E18 |
 | 主代理提问、MCP 表单与授权链接 | **已接入**：AskUserQuestion、已支持结构的 elicitation；专用 `refusal_fallback_prompt` 未取得真实 payload/取消证据，未声明支持 | **已接入**：计划模式的阻塞问题；默认模式异步问题以追加输入回答；MCP 表单/URL分别跟踪完成与撤销 | **已接入**：ACP `elicitation/create`、原生批准及取消；headless 不承接交互问题，批准需求由原生软拒。E03 |
 | 运行中追加与待发队列 | **部分接入**：可见队列、编辑/清空/恢复；SDK priority 的实测边界不能保证同轮引导，因此没有“引导本轮” | **已接入**：宿主队列及 `turn/steer`，校验 expectedTurnId 与原生 clientId，未知受理不自动重发 | **部分接入**：Gemini API Key 的 ACP 支持同轮引导，按最新 prompt 完成门结束；账号发图和 headless 沿用宿主队列。失败、结果未确认、停止、失联或阻塞答复时暂停队列。E04、E18 |
-| 子代理独立历史与嵌套关系 | **已接入**：SDK 子代理 ID、消息、分页与独立媒体 | **已接入**：父活动发现子线程，再核验双 parent、cwd、depth；普通列表不保证枚举全部子线程 | **已接入**：父 `invokeSubagent.results` 定位子轨迹，核验 parent/root/depth/workspace。三者只读历史均与父正文、统计和分叉入口分离。E05 |
+| 子代理独立历史与嵌套关系 | **已接入**：SDK 子代理 ID、消息、分页与独立媒体 | **已接入**：父活动发现子线程，再核验双 parent、cwd、depth；普通列表不保证枚举全部子线程 | **已接入**：父 `invokeSubagent.results` 与 Swarm/工作流结构化关联定位子轨迹，按类型核验父链、来源工具与目录；展示独立生成用量。三者只读历史均与父正文、统计和分叉入口分离。E05、E19 |
 | 子代理运行状态、批准与停止 | **部分接入**：本宿主实例任务状态、父回合结束后的批准、`stopTask`；原生前/后台子代理禁用 AskUserQuestion | **部分接入**：核实后的活动子 turn 可中断，父结束后仍能批准；默认子代理未开放异步问题工具 | **协议限制**：保留独立历史与整轮取消，尚无经验证的单子任务停止协议。不得把历史记录当活动任务。E05 |
 | 原生工具创建的后台终端 | **已接入**：后台 Bash 属于会话任务，原生终态后释放维护租约，父回合结束不丢失停止控制 | **已接入**：固定到同一 RuntimeControl/app-server；分页有界、读取失败保留活动租约、停止需原生确认并复读列表、每5秒检查自然终态。新实例不能接管旧终端。E10 | **部分接入**：命令调用、输出和原生轨迹可展示；尚未证实独立后台终端枚举/单项停止的公开 ACP 入口。E05、E10 |
 | 计划与执行模式 | **已接入**：原生 plan 权限模式及计划工具事件；模式语义沿用 Claude | **已接入**：显式 default/plan，通过 `collaborationMode/list` 核对并协商实验字段；不为触发问题自动换模式 | **部分接入**：原生模式/模型配置映射与 ACP `/plan`；计划内容由 CLI 执行和返回，不复制原生提示词。E09 |
@@ -47,6 +47,7 @@
 | 模型、思考强度与权限 | **已接入**：原生目录/默认值、所选模型和支持的effort及权限模式，高级项原文保留 | **已接入**：model/list、effort、批准与sandbox语义；计划模式独立于权限模式 | **部分接入**：原生模型/变体/effort与权限；ACP按实际目录校验，客户端不支持的第三方模型不可伪装解锁。详见[模型能力](model-capabilities.md) |
 | 原生命令 | **部分接入**：原生Skills、compact/context及已有等价网页操作；其他目录条目显示未接入，不统一当提示词发送 | **部分接入**：已验证的compact、review及模式/管理等价操作；不存在的命令不造RPC | **部分接入**：动态目录开放 compact/plan/grill-me/learn/browser/goal；schedule留给原生管理。compact 使用已核实的 headless 路径，支持压缩后停止或继续；其他专用命令继续按 ACP 目录校验。E09 |
 | AGY 编排器角色设置 | 不适用 | 不适用 | **设置已接入**：官方登录下分别选择规划、执行模型及强度变体，按原生角色名单保存完整标签；1.5.14 当前账号只读目录与配置事务已验证，实际双角色请求另验。详见[配置说明](native-configuration.md#模型与服务连接) |
+| AGY 自定义主代理与工作流 | 不适用 | 不适用 | **已接入**：原生代理目录、新会话选择及已有会话分支切换；Swarm/工作流沿用 Skill 调用和独立历史。1.5.14 本机模拟服务已验证两通道，旁支提问和 Boost/Teamwork 无可用入口。E19 |
 | CLI安装、版本与更新 | **管理已接入** | **管理已接入** | **管理已接入**：三者复用已有版本管理与维护锁；当前核查不自动升级，安装包发布另行决定 |
 
 ## 宿主外工作流
@@ -87,6 +88,7 @@
 | E16 | Codex app-server account schema；Claude/AGY本地配置及CLI文档；本轮未访问真实订阅账户或读取账单 |
 | E17 | [Claude scheduled tasks](https://code.claude.com/docs/en/scheduled-tasks.md)、[Antigravity schedule](https://antigravity.google/docs/commands/schedule/)；AGY schedule未标验证通过。Codex goal实测见E10 |
 | E18 | 2026-11-19，Windows AGY 1.5.11 个人账号：用合成图片核对 ACP 新会话、headless 与 ACP 同 ID 双向续接及原生图片字节回放；生产适配器再次通过文字、带图、文字三轮，原生模型文件未改变。未测试企业账号、所有模型及其他权限组合。 |
+| E19 | 2026-11-26，AGY 1.5.14：`agy-local-workbench/main-agent-production-report.json` 直接调用生产目录、ACP/headless runner 与分支管理，7 组检查通过，源轨迹未变；`workflow-production-report.json` 23 项核对 Swarm/工作流独立读取、取消状态与来源身份；模型请求全部为本机合成响应。 |
 
 ### 本机实现入口
 

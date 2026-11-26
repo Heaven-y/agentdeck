@@ -87,6 +87,7 @@ class AcpTurn {
   private async prepare(settings: AntigravityModelSettings, env = this.options.env): Promise<string> {
     const signal = this.controller.signal;
     this.client = await (this.options.createClient ?? AntigravityAcpClient.start)({
+      mainAgent: this.input.sessionId ? undefined : this.input.mainAgent,
       cwd: this.input.workspace.dir,
       env,
       bypass: this.input.permission?.mode === 'bypass',

@@ -26,6 +26,7 @@ export type SubagentSummary = {
   name?: string;
   role?: string;
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+  usage?: { generations: number; inputTokens?: number; cachedInputTokens?: number; outputTokens?: number };
 };
 export type SubagentHistory = {
   agentId: string;

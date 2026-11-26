@@ -50,6 +50,57 @@ function fixture() {
   }));
   return { rows, read };
 }
+it('工作流代理按来源工具三向核对，Swarm已终止不误报完成，生成用量独立累计', async () => {
+  const f = fixture();
+  const block = (id: string) => ({ agent: { conversationId: id, title: '协作代理', subtitle: '示例角色' } });
+  f.rows.root!.steps = [
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: { toolCall: { id: 'call-workflow', name: 'run_workflow' } },
+      generic: {
+        result: { stepRenderInfo: { contentBlocks: [{ step: { renderInfo: { contentBlocks: [block('child')] } } }] } },
+      },
+    },
+  ];
+  f.rows.child!.metadata = {
+    workspaceUris,
+    rootConversationId: 'root',
+    sourceMetadata: {
+      hideFromConversationList: true,
+      tool: { conversationId: 'root', stepIndex: 0, toolCall: { id: 'call-workflow', name: 'run_workflow' } },
+    },
+  };
+  f.rows.child!.steps = [];
+  f.rows.child!.generatorMetadata = [
+    { chatModel: { usage: { inputTokens: '20', outputTokens: '4', cacheReadTokens: '100' } } },
+    { chatModel: { usage: { inputTokens: '30', outputTokens: '6', cacheReadTokens: '200' } } },
+  ];
+  expect(await f.read('root', dir, {})).toMatchObject({
+    agentIds: ['child'],
+    summaries: [
+      { status: 'unknown', usage: { generations: 2, inputTokens: 50, outputTokens: 10, cachedInputTokens: 300 } },
+    ],
+  });
+  f.rows.child!.steps = [{ type: 'CORTEX_STEP_TYPE_FINISH', status: 'CORTEX_STEP_STATUS_DONE' }];
+  expect(await f.read('root', dir, {})).toMatchObject({ summaries: [{ status: 'completed' }] });
+  const meta = f.rows.child!.metadata as Record<string, unknown>;
+  meta.sourceMetadata = {
+    hideFromConversationList: true,
+    tool: { conversationId: 'other', toolCall: { id: 'call-workflow', name: 'run_workflow' } },
+  };
+  await expect(f.read('root', dir, { agentId: 'child' })).rejects.toMatchObject({ status: 404 });
+  f.rows.child!.metadata = { workspaceUris, rootConversationId: 'root', parentConversationId: 'root', nestingDepth: 1 };
+  f.rows.root!.steps = [
+    {
+      type: 'CORTEX_STEP_TYPE_GENERIC',
+      status: 'CORTEX_STEP_STATUS_DONE',
+      metadata: { toolCall: { id: 'call-swarm', name: 'swarm' } },
+      generic: { result: { stepRenderInfo: { titlePrefix: 'Killed', contentBlocks: [block('child')] } } },
+    },
+  ];
+  expect(await f.read('root', dir, {})).toMatchObject({ summaries: [{ status: 'cancelled' }] });
+});
 it('按invokeSubagent身份和元数据验证子轨迹，支持嵌套与独立内容', async () => {
   const { read } = fixture();
   expect(await read('root', dir, {})).toMatchObject({

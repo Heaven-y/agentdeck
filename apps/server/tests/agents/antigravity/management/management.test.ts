@@ -10,6 +10,26 @@ import {
 
 const dir = path.join(tmpdir(), 'agentdeck-agy-management');
 const uri = pathToFileURL(dir).href;
+it.each(['reviewer', ''])('切换主代理分支采用原生定义覆盖，默认代理用空对象（%s）', async (name) => {
+  const f = fixture();
+  const original = f.request.getMockImplementation()!;
+  const agent = { name: 'reviewer', config: { systemPrompt: 'synthetic' } };
+  f.request.mockImplementation(async (method, input) => {
+    if (method === 'GetAgentScripts') return { agentCustomizations: [{ path: 'fixture', agent }] };
+    if (method === 'GetCascadeTrajectory' && input.cascadeId === 'forked')
+      return detail('forked', {
+        metadata: { workspaceUris: [uri], agentScript: name ? agent : {} },
+        parentReferences: [{ conversationId: 'source' }],
+      });
+    return original(method, input);
+  });
+  expect(await f.service.fork('source', dir, { mainAgent: name })).toEqual({ sessionId: 'forked' });
+  expect(f.request).toHaveBeenCalledWith(
+    'ForkConversation',
+    expect.objectContaining({ agentScriptOverride: name ? agent : {} }),
+  );
+  expect(f.close).toHaveBeenCalledOnce();
+});
 function detail(id = 'source', overrides: ManagementRecord = {}) {
   return {
     status: 'CASCADE_RUN_STATUS_IDLE',

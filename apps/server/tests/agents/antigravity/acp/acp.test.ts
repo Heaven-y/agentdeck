@@ -130,6 +130,16 @@ async function started(client: AcpConnection) {
 }
 
 describe('AGY ACP 对话与兼容路径', () => {
+  it.each([undefined, 'native-1'])('ACP 主代理仅在新建时交给原生启动（%s）', async (sessionId) => {
+    const f = setup({ input: { mainAgent: 'reviewer', sessionId } });
+    const handle = f.run();
+    await started(f.client);
+    expect(f.createClient).toHaveBeenCalledWith(
+      expect.objectContaining({ mainAgent: sessionId ? undefined : 'reviewer' }),
+    );
+    f.finish();
+    await handle.done;
+  });
   it.each([
     { model: { invalid: true } },
     { model: 'gemini-test', customModelsConfig: { customModels: { broken: null } } },

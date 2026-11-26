@@ -87,6 +87,7 @@ export const emptyConversation = {
   view: 'chat' as const,
   sessionId: undefined,
   actualModel: undefined,
+  mainAgent: undefined,
   selectedCapability: undefined,
   contextUsage: undefined,
   contextWindow: undefined,

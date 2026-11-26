@@ -188,6 +188,16 @@ async function setup(
 }
 
 describe('Antigravity 原生对话运行器', () => {
+  it.each([undefined, 'existing'])('自定义主代理仅用于新会话，续接沿用原生会话（%s）', async (sessionId) => {
+    const f = await setup(sessionId, undefined, undefined, { mainAgent: 'reviewer' });
+    await vi.waitFor(() => expect(f.launch).toHaveBeenCalledOnce());
+    const args = f.launch.mock.calls[0]![0].args;
+    expect(args.includes('--agent')).toBe(!sessionId);
+    if (!sessionId) expect(args[args.indexOf('--agent') + 1]).toBe('reviewer');
+    f.init();
+    f.finish();
+    await f.handle.done;
+  });
   it.each([
     { text: '', checkpoint: true, expected: false },
     { text: '继续整理', checkpoint: true, expected: false },

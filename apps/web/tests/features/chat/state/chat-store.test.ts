@@ -1592,3 +1592,17 @@ it('长回合补齐两段旧页后只结算一次，恢复绝对分叉点且保�
 function pinnedPage(items: string[]) {
   return { pages: [{ items }], pageParams: [undefined] };
 }
+
+it('AGY 主代理只随新建发送，续接继承原生代理，新会话清除选择', () => {
+  useChat.getState().newSession('antigravity');
+  useChat.setState({ mainAgent: 'reviewer' });
+  expect(useChat.getState().send('新建')).toBe(true);
+  expect(sent.at(-1)).toMatchObject({ mainAgent: 'reviewer' });
+  finishTurn();
+  useChat.setState({ sessionId: 'native-session' });
+  expect(useChat.getState().send('继续')).toBe(true);
+  expect(sent.at(-1)).toMatchObject({ mainAgent: undefined });
+  finishTurn();
+  useChat.getState().newSession('antigravity');
+  expect(useChat.getState().mainAgent).toBeUndefined();
+});

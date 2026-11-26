@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile, symlink, unlink, mkdir, rmdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -8,6 +8,7 @@ import { registerProjectRoutes } from '../../src/http/projects.routes';
 import { registerProbeRoutes } from '../../src/http/probe.routes';
 import { createWorkspaceStore } from '../../src/workspaces/store';
 import { createWorkspaceActivity } from '../../src/workspaces/activity';
+import { runProcess } from '../../src/platform/process/run';
 
 const apps: FastifyInstance[] = [];
 const tempRoots: string[] = [];
@@ -45,6 +46,68 @@ afterEach(async () => {
 });
 
 describe('项目接口', () => {
+  it('文件预览读取工作区文本和Git改动，拒绝越界与Git内部文件', async () => {
+    const { app, store } = await setup();
+    const dir = await tempDir('agentdeck-preview-');
+    const workspace = await store.create({ name: '示例', dir });
+    const git = async (args: string[]) => runProcess('git', args, { cwd: dir, timeoutMs: 5000, outputCap: 100000 });
+    await git(['init']);
+    await writeFile(path.join(dir, 'demo file.ts'), 'const value = 1;\n');
+    await mkdir(path.join(dir, 'nested'));
+    await writeFile(path.join(dir, 'nested', 'example.ts'), 'old nested content');
+    await git(['add', '.']);
+    expect(
+      (
+        await git([
+          '-c',
+          'user.name=Fixture',
+          '-c',
+          'user.email=fixture@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '-m',
+          'fixture',
+        ])
+      ).exitCode,
+    ).toBe(0);
+    await writeFile(path.join(dir, 'demo file.ts'), 'const value = 2;\n');
+    const url = `/api/projects/${workspace.id}/file?path=${encodeURIComponent('demo file.ts')}`;
+    const content = await app.inject(url);
+    expect(content.statusCode).toBe(200);
+    expect(content.json()).toMatchObject({ path: 'demo file.ts', content: 'const value = 2;\n' });
+    expect(content.headers['cache-control']).toBe('no-store');
+    const diff = await app.inject(`${url}&view=diff`);
+    expect(diff.statusCode).toBe(200);
+    expect(diff.json().content).toContain('-const value = 1;');
+    expect(diff.json().content).toContain('+const value = 2;');
+    expect((await app.inject(`/api/projects/${workspace.id}/file?path=../outside.txt`)).statusCode).toBe(400);
+    expect((await app.inject(`/api/projects/${workspace.id}/file?path=.git/config`)).statusCode).toBe(400);
+    const nested = await store.create({ name: '子目录', dir: path.join(dir, 'nested') });
+    await writeFile(path.join(dir, 'nested', 'example.ts'), 'new nested content');
+    const nestedDiff = await app.inject(`/api/projects/${nested.id}/file?path=example.ts&view=diff`);
+    expect(nestedDiff.statusCode).toBe(200);
+    expect(nestedDiff.json().content).toContain('-old nested content');
+    expect(nestedDiff.json().content).toContain('+new nested content');
+    await unlink(path.join(dir, 'nested', 'example.ts'));
+    await rmdir(path.join(dir, 'nested'));
+    const removedDirectory = await app.inject(`/api/projects/${workspace.id}/file?path=nested/example.ts&view=diff`);
+    expect(removedDirectory.statusCode).toBe(200);
+    expect(removedDirectory.json().content).toContain('-old nested content');
+    await writeFile(path.join(dir, 'new.ts'), 'new content');
+    const added = await app.inject(`/api/projects/${workspace.id}/file?path=new.ts&view=diff`);
+    expect(added.statusCode).toBe(200);
+    expect(added.json().content).toContain('+new content');
+    await unlink(path.join(dir, 'demo file.ts'));
+    expect((await app.inject(`${url}&view=diff`)).json().content).toContain('-const value = 1;');
+    const outside = await tempDir('agentdeck-preview-outside-');
+    await writeFile(path.join(outside, 'secret.txt'), 'outside content');
+    await symlink(outside, path.join(dir, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+    expect((await app.inject(`/api/projects/${workspace.id}/file?path=linked/secret.txt`)).statusCode).toBe(400);
+    await writeFile(path.join(dir, '.git', 'HEAD'), 'invalid ref');
+    const invalidGit = await app.inject(`/api/projects/${workspace.id}/file?path=new.ts&view=diff`);
+    expect(invalidGit.statusCode).not.toBe(200);
+  });
   it('已有活动时拒绝换目录与移除，改名仍保留原目录与记录', async () => {
     const { app, store, activity } = await setup();
     const dir = await tempDir('agentdeck-busy-project-');
