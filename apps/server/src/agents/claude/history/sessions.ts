@@ -14,6 +14,7 @@ import { type SessionProvider } from '../../contracts';
 import { ClaudeEventMapper, claudeHistoryForkPoint } from '../run/mapper';
 import { sameSessionDirectory, sessionDirectoryWithin } from '../../common/history/session-scope';
 import { claudeSessionActivity } from './session-activity';
+import { checkedClaudeInfo, resolveClaudeReadSource } from './read-source';
 import { createClaudeSubagents, createClaudeSubagentMedia, type ClaudeSubagentApi } from './subagents';
 import { claudeMediaBlock, imageSource } from '../../common/media/native-media';
 
@@ -42,12 +43,6 @@ const nativeApi: ClaudeSessionsApi = {
   delete: (id, dir) => deleteSession(id, { dir }),
   fork: (id, dir, input) => forkSession(id, { dir, ...(input.pointId ? { upToMessageId: input.pointId } : {}) }),
 };
-
-async function checkedInfo(record: SDKSessionInfo | undefined, id: string, dir: string): Promise<SDKSessionInfo> {
-  if (!record || record.sessionId !== id || (record.cwd && !(await sameSessionDirectory(record.cwd, dir))))
-    throw new SessionError(404, 'session_missing', 'Claude Code 在当前工作区中没有此会话');
-  return record;
-}
 
 function modelValue(message: object): string | undefined {
   const model = 'model' in message && typeof message.model === 'string' ? message.model.trim() : '';
@@ -101,16 +96,19 @@ export function createClaudeSessions(
   const readSubagentMedia = createClaudeSubagentMedia(subagentApi);
   async function info(id: string, dir: string): Promise<SDKSessionInfo> {
     // 老会话可能没有 cwd；SDK 带 dir 的读取仍限定原生项目存储位置。
-    return checkedInfo(await api.info(id, dir), id, dir);
+    return checkedClaudeInfo(await api.info(id, dir), id, dir);
   }
   async function readSource(id: string, dir: string) {
-    const scoped = await api.info(id, dir);
-    // 只读补救Windows短路径存储键；写入/分叉仍须SDK按目录找到原生记录。
-    const global = !scoped && api === nativeApi ? await getSessionInfo(id) : undefined;
-    const record = await checkedInfo(scoped ?? (global?.cwd ? global : undefined), id, dir);
+    const source = await resolveClaudeReadSource(
+      id,
+      dir,
+      (key, directory) => api.info(key, directory),
+      api === nativeApi,
+    );
     return {
-      record,
-      messages: () => (global ? getSessionMessages(id, { includeSystemMessages: true }) : api.messages(id, dir)),
+      record: source.info,
+      messages: () =>
+        source.dir ? api.messages(id, source.dir) : getSessionMessages(id, { includeSystemMessages: true }),
     };
   }
   async function mutableInfo(id: string, dir: string): Promise<void> {

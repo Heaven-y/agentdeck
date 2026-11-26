@@ -1,3 +1,4 @@
+import type { UsageProvider } from '../agents/common/usage/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import type { SessionProvider } from '../agents/contracts';
 import { SessionError } from '../agents/errors';
@@ -62,4 +63,8 @@ export function guardSessionProvider(
       ? { subagents: (...args: Parameters<typeof subagents>) => activity.run(agent, () => subagents(...args)) }
       : {}),
   };
+}
+
+export function guardUsageProvider(agent: AgentKind, provider: UsageProvider, activity: CliActivity): UsageProvider {
+  return { read: (...args) => activity.run(agent, () => provider.read(...args)) };
 }

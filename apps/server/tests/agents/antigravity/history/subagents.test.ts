@@ -9,6 +9,7 @@ import {
 import { createAntigravitySessionManagement } from '../../../../src/agents/antigravity/management/management';
 import { NativeTrajectoryMissing } from '../../../../src/agents/antigravity/management/management-rpc';
 import { SessionError } from '../../../../src/agents/errors';
+import { workflowAgentEdges } from '../../../../src/agents/antigravity/history/workflow-agents';
 
 const dir = path.join(tmpdir(), 'agy-subagent-project');
 const workspaceUris = [pathToFileURL(dir).href];
@@ -100,6 +101,14 @@ it('工作流代理按来源工具三向核对，Swarm已终止不误报完成�
     },
   ];
   expect(await f.read('root', dir, {})).toMatchObject({ summaries: [{ status: 'cancelled' }] });
+  const step = (f.rows.root!.steps as Array<Record<string, unknown>>)[0]!;
+  const many = {
+    ...step,
+    generic: {
+      result: { stepRenderInfo: { contentBlocks: Array.from({ length: 300 }, (_, i) => block(`child-${i}`)) } },
+    },
+  };
+  expect(workflowAgentEdges({ steps: [many] })).toHaveLength(300);
 });
 it('按invokeSubagent身份和元数据验证子轨迹，支持嵌套与独立内容', async () => {
   const { read } = fixture();

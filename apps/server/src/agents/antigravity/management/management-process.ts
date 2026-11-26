@@ -261,9 +261,9 @@ export async function startManagementBackend(options: ManagementProcessOptions):
         process?.alive
           ? managementRequest(port, method, params, { signal: requests.signal, budget })
           : Promise.reject(managementFailure()),
-      readInitialUpdate: (params, limit) =>
+      readInitialUpdate: (params) =>
         process?.alive
-          ? readInitialAgentUpdate(port, params, { signal: requests.signal, limit })
+          ? readInitialAgentUpdate(port, params, { signal: requests.signal })
           : Promise.reject(managementFailure()),
       close,
     };

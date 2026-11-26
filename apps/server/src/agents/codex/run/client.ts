@@ -16,7 +16,13 @@ import {
 export const MAX_RPC_LINE_BYTES = 8 * 1024 * 1024;
 export const MAX_PENDING_REQUESTS = 128;
 export const RPC_TIMEOUT_MS = 30_000;
-type Pending = { resolve(value: RecordValue): void; reject(error: Error): void; timer: NodeJS.Timeout; media: boolean };
+type Pending = {
+  resolve(value: RecordValue): void;
+  reject(error: Error): void;
+  timer: NodeJS.Timeout;
+  media: boolean;
+  history: boolean;
+};
 type ClientOptions = CodexRuntimeOptions & { cwd?: string; timeoutMs?: number };
 
 function requestFailure(error: unknown): CodexError {
@@ -100,7 +106,13 @@ export class CodexClient {
         this.pending.delete(id);
         reject(new CodexError('Codex 响应超时。'));
       }, this.timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, media: mediaHistory(method, params) });
+      this.pending.set(id, {
+        resolve,
+        reject,
+        timer,
+        media: mediaHistory(method, params),
+        history: ['thread/read', 'thread/turns/list', 'thread/items/list'].includes(method),
+      });
       // 即使本轮没有上传图片，工具仍可返回媒体；解析后按具体事件再次执行8/32 MiB限制。
       if (method === 'turn/start' || method === 'turn/steer') this.mediaActive = true;
       this.write({ id, method, params });
@@ -146,6 +158,7 @@ export class CodexClient {
     if (this.buffer.length > this.readLimit()) this.oversize();
   }
   private readLimit(): number {
+    if ([...this.pending.values()].some((p) => p.history)) return Infinity;
     return this.mediaActive || [...this.pending.values()].some((p) => p.media) ? MEDIA_RPC_BYTES : MAX_RPC_LINE_BYTES;
   }
   private allowsLarge(message: RecordValue): boolean {
@@ -153,8 +166,7 @@ export class CodexClient {
     const id = message.id;
     return (
       (typeof id === 'string' || typeof id === 'number') &&
-      this.pending.get(id)?.media === true &&
-      mediaResponse(message)
+      (this.pending.get(id)?.history === true || (this.pending.get(id)?.media === true && mediaResponse(message)))
     );
   }
 

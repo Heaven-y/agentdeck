@@ -1,3 +1,4 @@
+import { readAntigravityUsageWindow, readAntigravityUsageTrajectory } from './history-window';
 import { DatabaseSync } from 'node:sqlite';
 import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
@@ -12,10 +13,9 @@ import type { AntigravitySessionManagement, SubagentTrajectoryIdentity } from '.
 import { startManagementBackend } from './management-process';
 import { readAntigravityForkStep, readAntigravityHistoryStep, readAntigravityHistoryWindow } from './history-window';
 import { NativeHistoryPagingUnavailable } from './history-stream';
-import { assertDirectory, missing } from './trajectory-scope';
+import { assertDirectory, assertReadIdentity, missing } from './trajectory-scope';
 import { completeTrajectory } from '../history/trajectory-read';
 import { nativeMainAgentOverride } from '../models/main-agents';
-import { workflowSourceMatches } from '../history/workflow-agents';
 import {
   managementFailure,
   NativeTrajectoryMissing,
@@ -45,34 +45,10 @@ type RunOptions = {
   readOnly?: boolean;
   child?: SubagentTrajectoryIdentity;
 };
-function assertReadIdentity(metadata: ManagementRecord, rootId: string, child?: SubagentTrajectoryIdentity) {
-  if (child) {
-    assertChildMetadata(metadata, child);
-    return;
-  }
-  if (
-    metadata.parentConversationId ||
-    Number(metadata.nestingDepth ?? 0) !== 0 ||
-    (metadata.rootConversationId && metadata.rootConversationId !== rootId)
-  )
-    throw missing();
-}
-function assertChildMetadata(metadata: ManagementRecord, child: SubagentTrajectoryIdentity) {
-  const matches = child.workflow
-    ? workflowSourceMatches(metadata, child)
-    : metadata.parentConversationId === child.parentId &&
-      metadata.rootConversationId === child.rootId &&
-      metadata.nestingDepth === child.depth;
-  if (!matches) throw missing();
-}
 function assertReadChild(rootId: string, child?: SubagentTrajectoryIdentity) {
   if (
     child &&
-    (child.rootId !== rootId ||
-      child.id === rootId ||
-      !Number.isSafeInteger(child.depth) ||
-      child.depth < 1 ||
-      child.depth > 10)
+    (child.rootId !== rootId || child.id === rootId || !Number.isSafeInteger(child.depth) || child.depth < 1)
   )
     throw missing();
 }
@@ -300,6 +276,20 @@ export function createAntigravitySessionManagement(
   const pageSignal = (request?: AbortSignal) =>
     AbortSignal.any([AbortSignal.timeout(18_000), ...(request ? [request] : [])]);
   return {
+    readUsageTrajectory: (id, dir, child, signal) => {
+      assertReadChild(id, child);
+      return withBackend(
+        { id, dir },
+        (backend) => readAntigravityUsageTrajectory(backend, { id: child?.id ?? id, dir, child }),
+        signal,
+      );
+    },
+    readUsageWindow: (id, dir, before, signal) =>
+      withBackend(
+        { id, dir },
+        (backend) => readAntigravityUsageWindow(backend, { id, dir }, before),
+        pageSignal(signal),
+      ),
     readHistoryWindow: (id, dir, before, signal) =>
       withBackend(
         { id, dir },

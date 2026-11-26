@@ -10,6 +10,13 @@ export type SubagentTrajectoryIdentity = {
 
 /** 通过 Antigravity 自身服务管理会话，提供方仍负责归属和返回身份复核。 */
 export type AntigravitySessionManagement = {
+  /** 统计只保留父子关系和计量投影，不通过完整聊天正文发现子任务。 */
+  readUsageTrajectory?(
+    rootId: string,
+    dir: string,
+    child?: SubagentTrajectoryIdentity,
+    signal?: AbortSignal,
+  ): Promise<{ trajectory: Record<string, unknown>; status?: string }>;
   /** 子代理专用只读快照；根和每条父边仍须由原生轨迹核实，允许活动历史。 */
   readSubagentTrajectory?(
     rootId: string,
@@ -23,6 +30,12 @@ export type AntigravitySessionManagement = {
     dir: string,
     signal?: AbortSignal,
   ): Promise<{ trajectory: Record<string, unknown>; status?: string }>;
+  readUsageWindow?(
+    id: string,
+    dir: string,
+    before?: string,
+    signal?: AbortSignal,
+  ): Promise<{ trajectory: Record<string, unknown>; before?: string }>;
   readHistoryWindow?(id: string, dir: string, before?: string, signal?: AbortSignal): Promise<HistoryWindow>;
   readHistoryStep?(id: string, dir: string, index: number, signal?: AbortSignal): Promise<unknown>;
   /** 回合判定需要已核对完整性和空闲状态的轨迹；不可用时保留原生失败。 */

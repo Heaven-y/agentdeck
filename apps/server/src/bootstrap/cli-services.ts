@@ -1,3 +1,8 @@
+import { createUsageService } from '../usage/service';
+import { registerUsageRoutes } from '../http/usage.routes';
+import { claudeUsageProvider } from '../agents/claude/usage/records';
+import { codexUsageProvider } from '../agents/codex/usage/records';
+import { antigravityUsageProvider } from '../agents/antigravity/usage/records';
 // 可编程启动：读取配置、组装依赖、只在本机地址上启动，并返回关闭函数。
 // CLI（main.ts）与 Electron 桌面壳共用这里，业务路由与清理路径保持原样。
 import type { FastifyInstance } from 'fastify';
@@ -9,7 +14,7 @@ import { inputCapabilities } from '../chat/capabilities/input-capabilities';
 import type { AttachmentCapabilityInput } from '../agents/contracts';
 import type { AgentKind } from '@agentdeck/shared/conversation';
 import { isAntigravityProxyVariable } from '@agentdeck/shared/settings';
-import { createCliActivity, guardSessionProvider } from './cli-activity';
+import { createCliActivity, guardSessionProvider, guardUsageProvider } from './cli-activity';
 import { createAgentProbes } from '../agents/common/probe';
 import { createCliInstallationBackend } from '../cli-installation';
 import type { CliInstallationBackend } from '../cli-installation/types';
@@ -303,6 +308,21 @@ export function createCliServices({
     },
   });
 
+  const usage = createUsageService({
+    acquireWorkspace,
+    configDir,
+    sessions,
+    workspaces: store,
+    providers: {
+      claude: guardUsageProvider('claude', claudeUsageProvider, nativeActivity),
+      codex: guardUsageProvider(
+        'codex',
+        codexUsageProvider(() => launchEnvironment.resolve('codex')),
+        nativeActivity,
+      ),
+      antigravity: guardUsageProvider('antigravity', antigravityUsageProvider(antigravityManagement), nativeActivity),
+    },
+  });
   return {
     sessions,
     turns,
@@ -333,6 +353,7 @@ export function createCliServices({
       return Promise.all([nativePlugins.dispose(), antigravityManagement.dispose()]).then(() => undefined);
     },
     registerRoutes(a: FastifyInstance) {
+      registerUsageRoutes(a, usage);
       registerNativeActionRoutes(a, nativeActions);
       registerCliInstallationRoutes(a, { service: installations });
       registerSessionRoutes(a, { store, sessions, activity });

@@ -82,7 +82,7 @@ it.each(['wrong-parent', 'wrong-source', 'other-project', 'review', 'unknown-ali
     await expect(read('root', dir, { agentId: 'child' })).rejects.toMatchObject({ status: 404 });
   },
 );
-it('循环和超量发现明确失败，取消后不返回迟到历史', async () => {
+it('循环明确失败，多子任务不截断，取消后不返回迟到历史', async () => {
   const { rows, read } = fixture();
   rows.nested!.turns[0]!.items = [activity('root')];
   await expect(read('root', dir, { parentAgentId: 'missing' })).rejects.toMatchObject({
@@ -90,7 +90,7 @@ it('循环和超量发现明确失败，取消后不返回迟到历史', async (
   });
   rows.root!.turns[0]!.items = Array.from({ length: 130 }, (_, i) => activity(`child-${i}`));
   for (let i = 0; i < 130; i++) rows[`child-${i}`] = thread(`child-${i}`, 'root');
-  await expect(read('root', dir, {})).rejects.toMatchObject({ code: 'session_history_incomplete' });
+  expect(await read('root', dir, {})).toMatchObject({ agentIds: Array.from({ length: 130 }, (_, i) => `child-${i}`) });
   const controller = new AbortController();
   const late = createCodexSubagents(async (id) => {
     controller.abort();

@@ -19,7 +19,7 @@ export type ManagementMethod =
 export type ManagementBudget = 'history' | 'page';
 export type ManagementBackend = {
   request(method: ManagementMethod, params: ManagementRecord, budget?: ManagementBudget): Promise<ManagementRecord>;
-  readInitialUpdate?(params: ManagementRecord, limit?: number): Promise<ManagementRecord>;
+  readInitialUpdate?(params: ManagementRecord): Promise<ManagementRecord>;
   close(): Promise<void>;
 };
 export const managementObject = (value: unknown): ManagementRecord =>
@@ -28,13 +28,7 @@ export const managementText = (value: unknown) => (typeof value === 'string' ? v
 export const managementFailure = () => new SessionError(503, 'session_runtime_failed', 'Antigravity 操作失败。');
 const MIB = 1024 * 1024;
 export const managementByteLimit = (budget?: ManagementBudget) =>
-  (budget === 'history' ? 64 : budget === 'page' ? 4 : 32) * MIB;
-export const historyLimitExceeded = () =>
-  new SessionError(
-    503,
-    'session_history_incomplete',
-    `Antigravity 原生历史超过工作台的 ${managementByteLimit('history') / MIB} MiB 读取上限。请在原生 agy CLI 中打开。`,
-  );
+  budget === 'history' ? Infinity : (budget === 'page' ? 4 : 32) * MIB;
 
 export class NativeTrajectoryMissing extends SessionError {
   constructor() {
@@ -79,7 +73,7 @@ export function managementRequest(
       const code = response.statusCode ?? 500;
       const limit = managementByteLimit(budget);
       const exceeded = () => {
-        finish(budget === 'history' && code >= 200 && code < 300 ? historyLimitExceeded() : managementFailure());
+        finish(managementFailure());
         response.destroy();
       };
       if (Number(response.headers['content-length']) > limit) {

@@ -225,6 +225,9 @@ export function createSessionsService(
         return provider.subagents(session.sessionId, native.dir, query, signal);
       });
     },
+    resolveReadScope(ws: Workspace, agent: AgentKind, id: string, signal?: AbortSignal): Promise<Workspace> {
+      return safeOperation(agent, () => scopedWorkspace(ws, agent, id, signal));
+    },
     assertBelongs(ws: Workspace, agent: AgentKind, id: string, signal?: AbortSignal): Promise<Workspace> {
       return safeOperation(agent, async () => {
         const native = await scopedWorkspace(ws, agent, id, signal);

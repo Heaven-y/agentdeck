@@ -144,6 +144,10 @@ it('Claude 工作台归档统一投影所有列表，原生删除后清理标记
   await service.mutate(project, 'claude', 'first', { action: 'archive' });
   expect(mutations).toEqual([]);
   await expect(service.assertBelongs(project, 'claude', 'first')).rejects.toMatchObject({ code: 'session_archived' });
+  await expect(service.resolveReadScope(project, 'claude', 'first')).resolves.toEqual(project);
+  await expect(service.resolveReadScope(project, 'claude', 'outside')).rejects.toMatchObject({
+    code: 'session_missing',
+  });
   await expect(service.fork(project, 'claude', 'first', {})).rejects.toMatchObject({ code: 'session_archived' });
   expect((await service.list(project, 'claude')).map((entry) => entry.sessionId)).toEqual(['outside']);
   expect((await service.archived('claude'))[0]).toMatchObject({

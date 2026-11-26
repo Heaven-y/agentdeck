@@ -282,15 +282,14 @@ describe('Codex app-server 核心边界', () => {
       expect((await handle.steer!({ clientMessageId, text: 'late' })).status).toBe('rejected');
     }
   });
-  it('可能含媒体的历史请求仍按实际内容限制：纯文字超过8MiB拒绝，媒体历史有界接收', async () => {
+  it('历史请求按页读取，文字与媒体均不因8MiB门槛被拒绝', async () => {
     for (const mode of ['large-text-history', 'large-image-history']) {
       const { dir, options } = await setup(mode);
       const client = await CodexClient.start({ ...options, cwd: dir });
       try {
         await client.initialize();
         const request = client.request('thread/read', { threadId: 'native-thread', includeTurns: true });
-        if (mode === 'large-text-history') await expect(request).rejects.toThrow('8 MiB');
-        else expect(JSON.stringify(await request).length).toBeGreaterThan(8 * 1024 * 1024);
+        expect(JSON.stringify(await request).length).toBeGreaterThan(8 * 1024 * 1024);
       } finally {
         await client.close();
       }

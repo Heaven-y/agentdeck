@@ -2,21 +2,28 @@ import { randomUUID } from 'node:crypto';
 import { NativeSessionIdSchema } from '@agentdeck/shared/conversation';
 import { z } from 'zod';
 import { SessionError } from '../../errors';
-import { historyPageIncomplete, NativeHistoryPageTooLarge, NativeHistoryPagingUnavailable } from './history-stream';
+import { historyPageIncomplete, NativeHistoryPagingUnavailable } from './history-stream';
 import { managementObject as object, type ManagementBackend, type ManagementRecord } from './management-rpc';
-import { assertDirectory, missing } from './trajectory-scope';
+import { assertDirectory, assertReadIdentity, missing } from './trajectory-scope';
+import type { SubagentTrajectoryIdentity } from '../history/session-management-types';
+import { workflowAgentEdges } from '../history/workflow-agents';
 
 const PAGE_TURNS = 3;
 const PAGE_STEPS = 96;
-const MEDIA_STEP_BYTES = 32 * 1024 * 1024;
-const GENERATORS_PAGE_BYTES = 4 * 1024 * 1024;
 const EMPTY_WINDOW = { start: 0, end: 0 };
 export const OMITTED_HISTORY_STEP = 'AGENTDECK_HISTORY_STEP_OMITTED';
 
 type Range = { start: number; end: number };
-type Scope = { id: string; dir: string };
-type HistoryPageRequest = Range & { compact?: boolean; generators?: Range; limit?: number };
-type NativeSnapshot = { trajectoryId: string; total: number; turns: number[]; generators: number; status: unknown };
+type Scope = { id: string; dir: string; child?: SubagentTrajectoryIdentity };
+type HistoryPageRequest = Range & { compact?: boolean; generators?: Range };
+type NativeSnapshot = {
+  trajectoryId: string;
+  total: number;
+  turns: number[];
+  generators: number;
+  status: unknown;
+  metadata: ManagementRecord;
+};
 export type HistoryWindow = {
   trajectory: ManagementRecord;
   page: { start: number; before?: string };
@@ -53,28 +60,20 @@ function decodeCursor(raw: string) {
 }
 
 async function assertRootDirectory(meta: ManagementRecord, scope: Scope) {
-  if (
-    meta.parentConversationId ||
-    Number(meta.nestingDepth ?? 0) ||
-    (meta.rootConversationId && meta.rootConversationId !== scope.id)
-  )
-    throw missing();
+  assertReadIdentity(meta, scope.child?.rootId ?? scope.id, scope.child);
   await assertDirectory(meta, scope.dir);
 }
 
 async function requestWindow(backend: ManagementBackend, scope: Scope, input: HistoryPageRequest) {
   if (!backend.readInitialUpdate) throw new NativeHistoryPagingUnavailable();
-  const update = await backend.readInitialUpdate(
-    {
-      conversationId: scope.id,
-      subscriberId: randomUUID(),
-      initialStepsPageBounds: bounds(input.start, input.end),
-      initialGeneratorMetadatasPageBounds: bounds(input.generators?.start ?? 0, input.generators?.end ?? 0),
-      initialExecutorMetadatasPageBounds: bounds(0, 0),
-      trajectoryVerbosity: input.compact ? 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI' : 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
-    },
-    input.limit,
-  );
+  const update = await backend.readInitialUpdate({
+    conversationId: scope.id,
+    subscriberId: randomUUID(),
+    initialStepsPageBounds: bounds(input.start, input.end),
+    initialGeneratorMetadatasPageBounds: bounds(input.generators?.start ?? 0, input.generators?.end ?? 0),
+    initialExecutorMetadatasPageBounds: bounds(0, 0),
+    trajectoryVerbosity: input.compact ? 'CLIENT_TRAJECTORY_VERBOSITY_PROD_UI' : 'CLIENT_TRAJECTORY_VERBOSITY_FULL',
+  });
   const trajectoryId = NativeSessionIdSchema.safeParse(update.trajectoryId);
   if (update.conversationId !== scope.id || !trajectoryId.success) throw missing();
   const trajectory = object(update.mainTrajectoryUpdate);
@@ -129,6 +128,7 @@ async function readSnapshot(backend: ManagementBackend, scope: Scope): Promise<N
     turns: turnStarts(result.update.turnsUpdate, total),
     generators: index(generators) ? generators : 0,
     status: result.update.status,
+    metadata: object(result.trajectory.metadata),
   };
 }
 
@@ -139,33 +139,10 @@ function firstIndex(turns: number[], end: number) {
   return previous.at(-Math.min(previous.length, PAGE_TURNS)) ?? minimum;
 }
 
-async function trySteps(backend: ManagementBackend, scope: Scope, snapshot: NativeSnapshot, input: HistoryPageRequest) {
-  try {
-    const page = await requestWindow(backend, scope, input);
-    const total = page.steps.totalLength;
-    if (!index(total)) throw historyPageIncomplete();
-    if (page.trajectoryId !== snapshot.trajectoryId || total < snapshot.total) throw changed();
-    if (total > snapshot.total) throw historyPageIncomplete();
-    return windowSteps(page.steps, input);
-  } catch (error) {
-    if (!(error instanceof NativeHistoryPageTooLarge)) throw error;
-    return undefined;
-  }
-}
-
 async function readBoundedSteps(backend: ManagementBackend, scope: Scope, snapshot: NativeSnapshot, range: Range) {
-  let { start } = range;
-  const { end } = range;
-  // 正常路径不精简；先缩原生详情，再依次缩短请求。单步仍过大时保留明确占位，而不是阻断后续翻页。
-  for (;;) {
-    const full = await trySteps(backend, scope, snapshot, { start, end });
-    if (full) return { start, steps: full, compact: false };
-    const compact = await trySteps(backend, scope, snapshot, { start, end, compact: true });
-    if (compact) return { start, steps: compact, compact: true };
-    if (start + 1 === end) return { start, steps: [{ type: OMITTED_HISTORY_STEP }], compact: false };
-    const midpoint = start + Math.floor((end - start) / 2);
-    start = snapshot.turns.find((turn) => turn >= midpoint && turn < end) ?? midpoint;
-  }
+  const page = await requestWindow(backend, scope, range);
+  if (page.trajectoryId !== snapshot.trajectoryId || page.steps.totalLength !== snapshot.total) throw changed();
+  return { start: range.start, steps: windowSteps(page.steps, range), compact: false };
 }
 
 function requireIdle(snapshot: NativeSnapshot) {
@@ -211,7 +188,6 @@ async function olderMetrics(backend: ManagementBackend, scope: Scope, snapshot: 
     const page = await requestWindow(backend, scope, {
       ...EMPTY_WINDOW,
       generators: range,
-      limit: GENERATORS_PAGE_BYTES,
     });
     const generators = object(page.trajectory.generatorMetadatasUpdate);
     if (page.trajectoryId !== snapshot.trajectoryId || generators.totalLength !== snapshot.generators) return {};
@@ -299,15 +275,17 @@ function keepRecentTurns(page: { start: number; steps: unknown[]; compact: boole
 async function verifyTurnBoundary(backend: ManagementBackend, scope: Scope, snapshot: NativeSnapshot, end: number) {
   // 轮头未列入目录时只读相邻一步核对，不接受客户端游标自报的终态。
   try {
-    const step = await trySteps(backend, scope, snapshot, { start: end, end: end + 1, compact: true });
-    return isUserStep(step?.[0]);
+    const range = { start: end, end: end + 1, compact: true };
+    const page = await requestWindow(backend, scope, range);
+    if (page.trajectoryId !== snapshot.trajectoryId || page.steps.totalLength !== snapshot.total) return false;
+    return isUserStep(windowSteps(page.steps, range)[0]);
   } catch {
     return false;
   }
 }
 
 export async function readAntigravityHistoryStep(backend: ManagementBackend, scope: Scope, step: number) {
-  const range = { start: step, end: step + 1, limit: MEDIA_STEP_BYTES };
+  const range = { start: step, end: step + 1 };
   const { steps } = await requestWindow(backend, scope, range);
   if (!index(steps.totalLength) || steps.totalLength < range.end) throw historyPageIncomplete();
   return windowSteps(steps, range)[0];
@@ -327,4 +305,171 @@ export async function readAntigravityForkStep(
   if (page.trajectoryId !== snapshot.trajectoryId || page.steps.totalLength !== snapshot.total) throw changed();
   requireIdle({ ...snapshot, status: page.update.status });
   return { point, step: windowSteps(page.steps, range)[0] };
+}
+
+/** 用量按生成目录分页，不依赖主聊天挑选出的回复步骤。 */
+export async function readAntigravityUsageWindow(backend: ManagementBackend, scope: Scope, before?: string) {
+  const snapshot = await readSnapshot(backend, scope);
+  const end = usageEnd(snapshot, before);
+  if (!end)
+    return {
+      trajectory: { cascadeId: scope.id, trajectoryId: snapshot.trajectoryId, generatorMetadata: [], usageSteps: [] },
+      before: undefined,
+    };
+  const data = await usageGeneratorPage(backend, scope, { end, start: Math.max(0, end - 32) });
+  if (data.trajectoryId !== snapshot.trajectoryId) throw changed();
+  const wanted = [...new Set(data.entries.flatMap((value) => list(object(value).stepIndices).filter(index)))].sort(
+    (a, b) => a - b,
+  );
+  const usageSteps: ManagementRecord[] = [];
+  for (const position of wanted) {
+    const window = await requestWindow(backend, scope, {
+      start: position,
+      end: position + 1,
+      compact: true,
+    });
+    if (window.trajectoryId !== snapshot.trajectoryId) throw changed();
+    const step = object(windowSteps(window.steps, { start: position, end: position + 1 })[0]);
+    const meta = object(step.metadata);
+    usageSteps.push({
+      index: position,
+      status: step.status,
+      metadata: {
+        createdAt: meta.createdAt,
+        executionId: meta.executionId,
+        sourceTrajectoryStepInfo: meta.sourceTrajectoryStepInfo,
+      },
+    });
+  }
+  return {
+    trajectory: {
+      cascadeId: scope.id,
+      trajectoryId: snapshot.trajectoryId,
+      generatorMetadata: data.entries.map(usageGenerator),
+      generatorMetadataOffset: data.start,
+      usageSteps,
+    },
+    ...(data.start
+      ? { before: Buffer.from(JSON.stringify([snapshot.trajectoryId, data.start])).toString('base64url') }
+      : {}),
+  };
+}
+async function usageGeneratorPage(
+  backend: ManagementBackend,
+  scope: Scope,
+  range: Range,
+): Promise<{ entries: unknown[]; start: number; trajectoryId: string }> {
+  const page = await requestWindow(backend, scope, { ...EMPTY_WINDOW, generators: range });
+  return {
+    entries: windowEntries(object(page.trajectory.generatorMetadatasUpdate), range, 'generatorMetadatas'),
+    start: range.start,
+    trajectoryId: page.trajectoryId,
+  };
+}
+
+/** 原生FULL可能携带prompt和工具正文，离开协议层前只保留计量字段。 */
+function usageGenerator(value: unknown) {
+  const generator = object(value),
+    model = object(generator.chatModel);
+  return {
+    executionId: generator.executionId,
+    stepIndices: generator.stepIndices,
+    chatModel: {
+      usage: model.usage,
+      responseModel: model.responseModel,
+      modelDisplayName: model.modelDisplayName,
+      timeToFirstToken: model.timeToFirstToken,
+      streamingDuration: model.streamingDuration,
+      retryInfos: list(model.retryInfos).map((v) => ({ usage: object(v).usage, hasError: !!object(v).error })),
+    },
+  };
+}
+
+function usageEnd(snapshot: NativeSnapshot, before?: string) {
+  const cursor = before
+    ? (JSON.parse(Buffer.from(before, 'base64url').toString('utf8')) as [string, number])
+    : undefined;
+  if (cursor && (cursor[0] !== snapshot.trajectoryId || !index(cursor[1]) || cursor[1] > snapshot.generators))
+    throw changed();
+  return cursor?.[1] ?? snapshot.generators;
+}
+
+/** 子任务目录按步骤分批投影；大段聊天/工具正文不进入父子关系图。 */
+export async function readAntigravityUsageTrajectory(backend: ManagementBackend, scope: Scope) {
+  const snapshot = await readSnapshot(backend, scope);
+  const steps: ManagementRecord[] = [];
+  for (let start = 0; start < snapshot.total;) {
+    const end = Math.min(start + PAGE_STEPS, snapshot.total);
+    const page = await usageRelationPage(backend, scope, { start, end });
+    if (page.trajectoryId !== snapshot.trajectoryId) throw changed();
+    steps.push(...page.steps.flatMap((value, offset) => relationStep(object(value), start + offset)));
+    start = page.end;
+  }
+  const generatorMetadata: unknown[] = [],
+    usageSteps: unknown[] = [];
+  // 根计量已在外层逐页同步；这里只补子任务计量。
+  if (scope.child) {
+    let before: string | undefined;
+    do {
+      const page = await readAntigravityUsageWindow(backend, scope, before);
+      if (page.trajectory.trajectoryId !== snapshot.trajectoryId) throw changed();
+      generatorMetadata.unshift(...page.trajectory.generatorMetadata);
+      usageSteps.push(...page.trajectory.usageSteps);
+      before = page.before;
+    } while (before);
+  }
+  return {
+    trajectory: { cascadeId: scope.id, metadata: snapshot.metadata, steps, generatorMetadata, usageSteps },
+    status: typeof snapshot.status === 'string' ? snapshot.status : undefined,
+  };
+}
+async function usageRelationPage(
+  backend: ManagementBackend,
+  scope: Scope,
+  range: Range,
+): Promise<{ steps: unknown[]; end: number; trajectoryId: string }> {
+  const page = await requestWindow(backend, scope, { ...range, compact: true });
+  return { steps: windowSteps(page.steps, range), end: range.end, trajectoryId: page.trajectoryId };
+}
+
+function relationStep(step: ManagementRecord, index: number): ManagementRecord[] {
+  if (step.type === 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT') {
+    const invoke = object(step.invokeSubagent);
+    return [
+      {
+        type: step.type,
+        index,
+        status: step.status,
+        invokeSubagent: {
+          results: list(invoke.results).map((value) => {
+            const result = object(value);
+            return { conversationId: result.conversationId, workspaceUris: result.workspaceUris };
+          }),
+          subagents: list(invoke.subagents).map((value) => {
+            const spec = object(value);
+            return { typeName: spec.typeName, role: spec.role };
+          }),
+        },
+      },
+    ];
+  }
+  const edges = workflowAgentEdges({ steps: [{ ...step, index }] });
+  if (!edges.length) return [];
+  return [
+    {
+      type: step.type,
+      index,
+      status: step.status,
+      metadata: { toolCall: object(step.metadata).toolCall },
+      generic: {
+        result: {
+          stepRenderInfo: {
+            contentBlocks: edges.map((edge) => ({
+              agent: { conversationId: edge.agentId, title: edge.name, subtitle: edge.role },
+            })),
+          },
+        },
+      },
+    },
+  ];
 }
