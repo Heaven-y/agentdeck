@@ -42,6 +42,14 @@ it('会话条数与自定义宽度超出范围时拒绝保存', () => {
     expect(ProductSettingsSchema.safeParse({ appearance }).success).toBe(false);
 });
 
+it('光影默认开启，公开设置只保留开关', () => {
+  const settings = ProductSettingsSchema.parse({});
+  expect(settings.spotlight).toEqual({ enabled: true });
+  for (const patch of [{ intensity: 80 }, { size: 0 }, { softness: -1 }, { color: 'url(example)' }]) {
+    expect(ProductSettingsSchema.safeParse({ spotlight: { ...settings.spotlight, ...patch } }).success).toBe(false);
+  }
+});
+
 it('同步域删除后，公开输入不再接受旧的同步偏好', () => {
   for (const retired of [{ syncDefaults: { maxFileBytes: 8388608 } }, { syncIntervalSeconds: 15 }]) {
     expect(ProductSettingsSchema.safeParse(retired).success).toBe(false);

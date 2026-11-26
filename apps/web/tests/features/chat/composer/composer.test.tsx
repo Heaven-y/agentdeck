@@ -325,7 +325,7 @@ it('首次打开模型菜单发现原生档位，Claude [1m] 选择原样发送�
   await menuChoose('模型选项', /^claude-sonnet-4-6/);
   expect(screen.getByRole('button', { name: '模型选项' }).textContent).toContain('claude-sonnet-4-6[1m]');
   expect(useChat.getState().modelOverrides.claude).toBe('sonnet[1m]');
-  await menuChoose('推理强度', 'max');
+  await menuChoose('推理强度', '最高');
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '测试选择' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(sent.at(-1)).toMatchObject({ model: 'sonnet[1m]', reasoningEffort: 'max' });
@@ -533,7 +533,7 @@ it('恢复回合明确提示较早历史未读取，Codex 运行结束后可重�
 it('更换模型清除旧模型的强度覆盖，避免发送不支持的参数', async () => {
   showChat();
   await menuChoose('模型选项', /native-model/);
-  await menuChoose('推理强度', 'high');
+  await menuChoose('推理强度', '高');
   await modelAction('手动填写模型');
   fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'another-model' } });
   fireEvent.click(screen.getByRole('button', { name: '应用模型' }));
@@ -587,7 +587,7 @@ it.each(['claude', 'codex'] as const)('一体输入底栏用菜单设置%s模型
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   await menuChoose('模型选项', /native-model/);
-  await menuChoose('推理强度', 'high');
+  await menuChoose('推理强度', '高');
   fireEvent.click(plus);
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /demo/ }));
   fireEvent.change(input, { target: { value: '执行任务' } });
@@ -670,10 +670,10 @@ it('强度菜单只列当前模型实际报告的档位，默认不覆盖', asyn
   expect(screen.queryByRole('button', { name: '推理强度' })).toBeNull();
   await menuChoose('模型选项', /native-model/);
   fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
-  expect(await screen.findByRole('menuitemradio', { name: 'low' })).toBeTruthy();
-  expect(screen.getByRole('menuitemradio', { name: 'high' })).toBeTruthy();
-  expect(screen.queryByRole('menuitemradio', { name: 'max' })).toBeNull();
-  fireEvent.click(screen.getByRole('menuitemradio', { name: 'low' }));
+  expect(await screen.findByRole('menuitemradio', { name: '低' })).toBeTruthy();
+  expect(screen.getByRole('menuitemradio', { name: '高' })).toBeTruthy();
+  expect(screen.queryByRole('menuitemradio', { name: '最高' })).toBeNull();
+  fireEvent.click(screen.getByRole('menuitemradio', { name: '低' }));
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '使用已报告的参数' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(sent.at(-1)).toMatchObject({ agent: 'claude', model: 'native-model', reasoningEffort: 'low' });
@@ -718,13 +718,13 @@ it('显示原生配置的具体强度，清除显式选择后恢复显示但不�
     models: [{ ...catalog.models[0], defaultReasoningEffort: 'low' }],
   });
   showComposer();
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('high');
+  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('高');
   expect(useChat.getState().reasoningEfforts.codex).toBe('');
-  await menuChoose('推理强度', 'low');
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('low');
+  await menuChoose('推理强度', '低');
+  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('低');
   fireEvent.click(screen.getByRole('button', { name: '推理强度' }));
   fireEvent.click(await screen.findByRole('menuitem', { name: '重置强度' }));
-  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('high');
+  expect(screen.getByRole('button', { name: '推理强度' }).textContent).toBe('高');
   fireEvent.change(screen.getByLabelText('输入消息'), { target: { value: '继续处理' } });
   fireEvent.click(screen.getByRole('button', { name: '发送' }));
   expect(JSON.parse(JSON.stringify(sent[0]))).not.toHaveProperty('reasoningEffort');

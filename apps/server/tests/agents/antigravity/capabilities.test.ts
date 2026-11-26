@@ -155,8 +155,7 @@ it('Gemini 发现隔离用户目录和工作目录，保留自定义键与真实
     });
     expect(options.signal).toBe(signal);
     const content = await readFile(path.join(isolated, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8');
-    const checked = await stat(path.join(isolated, '.gemini', 'antigravity-cli', 'last_check.timestamp'));
-    expect(Date.now() - checked.mtimeMs).toBeLessThan(5000);
+    expect(await readFile(path.join(isolated, '.gemini', 'antigravity-cli', 'last_check.timestamp'), 'utf8')).toBe('');
     expect(content).not.toMatch(/fixture-key|must-not-run|must-not-copy|antigravityConnection/);
     expect(JSON.parse(content)).toMatchObject({
       enableTelemetry: false,

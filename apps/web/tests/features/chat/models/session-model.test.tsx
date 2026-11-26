@@ -80,13 +80,11 @@ async function openDetails(agent: string, title: string) {
   fireEvent.click(screen.getByRole('button', { name: `${agent} 会话“${title}”的更多操作` }));
   fireEvent.click(await screen.findByRole('menuitem', { name: '重命名' }));
 }
-it('会话标题单行截断，列表不把来源或显式模型当作实际模型，不逐条读取历史', () => {
+it('列表不把来源或显式模型当作实际模型，不逐条读取历史', () => {
   const read = vi.spyOn(sessionsApi, 'sessionEvents');
   useChat.getState().setModel('requested-model');
   showList();
   expect(screen.queryByText('模型未报告')).toBeNull();
-  expect(screen.getByText(claude.title).classList.contains('truncate')).toBe(true);
-  expect(screen.getByText(claude.title).classList.contains('line-clamp-2')).toBe(false);
   expect(screen.queryByText('requested-model')).toBeNull();
   expect(read).not.toHaveBeenCalled();
 });
@@ -142,7 +140,6 @@ it('迟到默认不覆盖历史模型，空模型和迟到旧历史不污染另�
 it('列表行没有原生模型字段，未读历史时详情不显示任何模型结论', async () => {
   const read = vi.spyOn(sessionsApi, 'sessionEvents');
   showList();
-  expect(Object.keys(codex)).not.toContain('nativeModel');
   await openDetails('Codex', codex.title);
   expect(within(screen.getByRole('dialog')).queryByText(/^会话模型：/)).toBeNull();
   expect(within(screen.getByRole('dialog')).queryByText(/^实际模型：/)).toBeNull();

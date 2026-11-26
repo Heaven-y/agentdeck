@@ -1,8 +1,10 @@
 import {
   ProductSettingsInputSchema,
   ProductSettingsSchema,
+  WorkspaceExpansionInputSchema,
   type ProductSettingsDocument,
   type ProductSettingsInput,
+  type WorkspaceExpansionInput,
 } from '@agentdeck/shared/settings';
 import path from 'node:path';
 import { NativeConfigError, anonymousConfigError } from '../agents/common/configuration/legacy-errors';
@@ -55,6 +57,21 @@ export function createProductSettings({ configDir }: { configDir: string }) {
   return {
     read(): Promise<ProductSettingsDocument> {
       return serial(async () => (await load()).document);
+    },
+    setWorkspaceExpanded(input: WorkspaceExpansionInput): Promise<ProductSettingsDocument> {
+      return serial(async () => {
+        const parsed = WorkspaceExpansionInputSchema.safeParse(input);
+        if (!parsed.success) throw new ProductSettingsError('invalid_request', 400, '工作区展开状态无效');
+        const { snapshot, document } = await load();
+        const { workspaceId, expanded } = parsed.data;
+        const settings = {
+          ...document.settings,
+          workspaceExpansion: { ...document.settings.workspaceExpansion, [workspaceId]: expanded },
+        };
+        const parents = await inspectDirectory(directory, true);
+        await writeConfigFile(file, Buffer.from(JSON.stringify(settings, null, 2) + '\n'), snapshot, parents!);
+        return (await load()).document;
+      });
     },
     save(input: ProductSettingsInput): Promise<ProductSettingsDocument> {
       return serial(async () => {

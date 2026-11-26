@@ -77,6 +77,42 @@ export function createWorkbenchPlugins(deps: Deps) {
       throw new WorkbenchPluginError('unsafe_path');
     return files;
   }
+  async function runtimeFor(entry: InstalledPlugin) {
+    const { manifest } = entry;
+    if (manifest.apiVersion !== 2 || !manifest.backend || !manifest.permissions.includes('backend'))
+      throw new WorkbenchPluginError('permission_denied');
+    let value = runtimes.get(manifest.id);
+    if (value && !value.alive) {
+      await value.dispose();
+      runtimes.delete(manifest.id);
+      value = undefined;
+    }
+    if (!value) {
+      await checked(entry);
+      value = await PluginBackend.start(
+        childPath(childPath(packages, manifest.id), manifest.backend),
+        {
+          dataDir: childPath(path.join(directory, 'data'), manifest.id),
+          hostDataDir: deps.configDir,
+          enabled: entry.enabled,
+        },
+        (input, signal) => host(manifest.id, input, signal),
+      );
+      runtimes.set(manifest.id, value);
+    }
+    return value;
+  }
+  async function lifecycle(
+    entry: InstalledPlugin,
+    event: string,
+    session?: { agent: string; sessionId: string; cwd: string },
+  ) {
+    if (entry.manifest.apiVersion !== 2 || !entry.manifest.sessionLifecycle) return;
+    const response = await (
+      await runtimeFor(entry)
+    ).request({ method: 'POST', url: '/_agentdeck/lifecycle', body: { event, ...(session ? { session } : {}) } });
+    if (response.status >= 400) throw new WorkbenchPluginError('lifecycle_blocked');
+  }
   async function withStorage(id: string) {
     if (!(await active(id)).manifest.permissions.includes('storage'))
       throw new WorkbenchPluginError('permission_denied');
@@ -107,6 +143,21 @@ export function createWorkbenchPlugins(deps: Deps) {
   }
   return {
     host,
+    nativeCommand(agent: string, name: string): Promise<boolean> {
+      return serial(async () => {
+        const entries = (await registry.load()).state.plugins.filter(
+          (entry) =>
+            entry.enabled &&
+            entry.manifest.apiVersion === 2 &&
+            entry.manifest.contributes?.nativeCommands?.some(
+              (command) => command.agent === agent && command.name === name,
+            ),
+        );
+        if (entries.length !== 1) return false;
+        await checked(entries[0]!);
+        return true;
+      });
+    },
     list: (): Promise<WorkbenchPluginCatalog> => serial(async () => registryCatalog(await registry.load())),
     install(input: WorkbenchPluginInstallInput): Promise<WorkbenchPluginCatalog> {
       return serial(async () => {
@@ -123,6 +174,7 @@ export function createWorkbenchPlugins(deps: Deps) {
         let committed = false;
         try {
           if (previous) {
+            await lifecycle(previous, 'update');
             await stop(id);
             await rename(target, backup);
             backedUp = true;
@@ -161,7 +213,10 @@ export function createWorkbenchPlugins(deps: Deps) {
         const entry = findPlugin(current, id);
         if (entry.enabled === input.enabled) return registryCatalog(current);
         if (input.enabled) await checked(entry);
-        else await stop(id);
+        else {
+          await lifecycle(entry, 'disable');
+          await stop(id);
+        }
         entry.enabled = input.enabled;
         return registryCatalog(await registry.save(current.state, current.snapshot));
       });
@@ -171,6 +226,7 @@ export function createWorkbenchPlugins(deps: Deps) {
         let current = await registry.load();
         assertRevision(current, input.revision);
         const entry = findPlugin(current, id);
+        await lifecycle(entry, 'uninstall');
         await stop(id);
         entry.enabled = false;
         current = await registry.save(current.state, current.snapshot);
@@ -192,33 +248,14 @@ export function createWorkbenchPlugins(deps: Deps) {
     async backend(id: string, input: WorkbenchPluginBackendRequest, signal?: AbortSignal) {
       const runtime = await serial(async () => {
         const entry = await active(id);
-        if (
-          entry.manifest.apiVersion !== 2 ||
-          !entry.manifest.backend ||
-          !entry.manifest.permissions.includes('backend')
-        )
-          throw new WorkbenchPluginError('permission_denied');
-        let value = runtimes.get(id);
-        if (value && !value.alive) {
-          await value.dispose();
-          runtimes.delete(id);
-          value = undefined;
-        }
-        if (!value) {
-          await checked(entry);
-          value = await PluginBackend.start(
-            childPath(childPath(packages, id), entry.manifest.backend),
-            {
-              dataDir: childPath(path.join(directory, 'data'), id),
-              hostDataDir: deps.configDir,
-            },
-            (input, signal) => host(id, input, signal),
-          );
-          runtimes.set(id, value);
-        }
-        return value;
+        return runtimeFor(entry);
       });
       return runtime.request(input, signal);
+    },
+    beforeSessionDelete(session: { agent: string; sessionId: string; cwd: string }) {
+      return serial(async () => {
+        for (const entry of (await registry.load()).state.plugins) await lifecycle(entry, 'session.deleting', session);
+      });
     },
     readStorage(id: string): Promise<WorkbenchPluginStorage> {
       return serial(async () => {

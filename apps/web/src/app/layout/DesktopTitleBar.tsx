@@ -6,10 +6,10 @@ import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import brandIcon from '../../ui/assets/agentdeck.png';
 
 const MENUS: { id: AppMenuName; label: string; shortcut: string }[] = [
-  { id: 'file', label: 'File', shortcut: 'f' },
-  { id: 'edit', label: 'Edit', shortcut: 'e' },
-  { id: 'view', label: 'View', shortcut: 'v' },
-  { id: 'window', label: 'Window', shortcut: 'w' },
+  { id: 'file', label: '文件', shortcut: 'f' },
+  { id: 'edit', label: '编辑', shortcut: 'e' },
+  { id: 'view', label: '视图', shortcut: 'v' },
+  { id: 'window', label: '窗口', shortcut: 'w' },
 ];
 
 function TitleBar({ bridge }: { bridge: DesktopChrome }) {

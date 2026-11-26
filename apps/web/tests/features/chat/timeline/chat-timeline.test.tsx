@@ -88,6 +88,7 @@ it('会话切换后关闭当前错误，不影响后台会话的同编号错误'
   });
   const first = useChat.getState().conversationId;
   useChat.getState().newSession('codex');
+  const second = useChat.getState().conversationId;
   useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第二条会话错误' }] });
 
   function CurrentTimeline() {
@@ -107,6 +108,7 @@ it('会话切换后关闭当前错误，不影响后台会话的同编号错误'
   expect(screen.getByText('第一条会话错误')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '关闭这条错误' }));
   expect(useChat.getState().items).toEqual([]);
+  expect(useChat.getState().background[second]?.items).toEqual([]);
 });
 
 it('严格模式下按实际视口高亮消息，不把上方预渲染条目当作当前位置', async () => {

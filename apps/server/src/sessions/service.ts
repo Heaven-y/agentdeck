@@ -37,6 +37,7 @@ type SessionOperations = {
   /** 已配置项目列表，用于把原生会话归属到项目；省略时只按当前工作区判定。 */
   projects?(): Promise<Workspace[]>;
   preferences?: SessionPreferences;
+  beforeDelete?(session: SessionRef & { cwd: string }): Promise<void>;
 };
 
 async function safeOperation<T>(agent: AgentKind, operation: () => Promise<T>, verb = '读取'): Promise<T> {
@@ -296,6 +297,17 @@ export function createSessionsService(
             if (archiveAction && actions.archive === 'workbench') {
               await operations.preferences!.setArchived({ agent, sessionId: id }, input.action === 'archive');
             } else {
+              if (input.action === 'delete') {
+                try {
+                  await operations.beforeDelete?.({ agent, sessionId: id, cwd: native.dir });
+                } catch {
+                  throw new SessionError(
+                    409,
+                    'plugin_cleanup_failed',
+                    '插件尚未清理关联任务，会话已保留。请在插件中处理任务后重试删除。',
+                  );
+                }
+              }
               await provider.mutate(id, native.dir, input);
               // 原生删除已经成功；清理本地标记失败不能将已完成的删除报告成可重试失败。
               if (input.action === 'delete')

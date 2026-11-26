@@ -16,30 +16,20 @@ const session: SessionSummary = {
 };
 it('工作台归档来源保留菜单，尚未接入的原生分支和删除不出现', async () => {
   const choose = vi.fn();
-  render(
-    <SessionMenu
-      session={session}
-      archived={false}
-      pinned={false}
-      disabled={false}
-      localActions={false}
-      choose={choose}
-    />,
-  );
+  render(<SessionMenu session={session} archived={false} disabled={false} choose={choose} />);
   fireEvent.click(screen.getByRole('button', { name: /Antigravity.*更多操作/ }));
-  fireEvent.click(await screen.findByRole('menuitem', { name: '归档' }));
-  expect(choose).toHaveBeenCalledExactlyOnceWith('archive');
+  const archive = await screen.findByRole('menuitem', { name: '归档' });
   expect(screen.queryByRole('menuitem', { name: '创建分支' })).toBeNull();
   expect(screen.queryByRole('menuitem', { name: '删除' })).toBeNull();
+  fireEvent.click(archive);
+  expect(choose).toHaveBeenCalledExactlyOnceWith('archive');
 });
 it('服务端接入原生动作后直接显示创建分支和删除，不出现命令行跳转', async () => {
   render(
     <SessionMenu
       session={{ ...session, capabilities: { rename: true, fork: 'native', delete: 'native', archive: 'workbench' } }}
       archived={false}
-      pinned={false}
       disabled={false}
-      localActions={false}
       choose={vi.fn()}
     />,
   );
@@ -52,9 +42,7 @@ it('服务端接入原生动作后直接显示创建分支和删除，不出现�
 
 it('会话运行中只有一个复制链接入口，修改操作保持禁用', async () => {
   const choose = vi.fn();
-  render(
-    <SessionMenu session={session} archived={false} pinned={false} disabled localActions={false} choose={choose} />,
-  );
+  render(<SessionMenu session={session} archived={false} disabled choose={choose} />);
   fireEvent.click(screen.getByRole('button', { name: /更多操作/ }));
   expect((await screen.findByRole('menuitem', { name: '归档' })).getAttribute('aria-disabled')).toBe('true');
   expect(screen.queryByRole('menuitem', { name: '复制会话 ID' })).toBeNull();

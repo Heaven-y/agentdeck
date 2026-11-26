@@ -1,8 +1,12 @@
 # 本地安装与打包
 
-支持 Windows x64 本地安装版和便携版。当前本地包为 **0.1.4**，于 2026-11-25 构建，纳入会话导航、快捷键、官方额度缓存、原生记录引用及可选扩展宿主更新，进度见[路线图](../roadmap.md)。
+支持 Windows x64 本地安装版和便携版。当前本地包为 **0.1.5**，于 2026-11-26 构建，纳入 AGY 委派所需的宿主接续、原生命令和删除生命周期，并清理旧置顶模块，进度见[路线图](../roadmap.md)。
 
-0.1.4 的解压版、便携版和已安装版均通过隔离启动、单实例及正常退出检查。本机以原目录和全机范围把 0.1.3 静默原位升级到 0.1.4；卸载登记仍为同一项，程序文件与成品一致，五份工作台配置和三份原生配置的校验值不变。包内 AGY 历史读取命令的帮助入口通过，全部桌面模块及图标与构建一致。没有另测交互式覆盖、UAC 提示或卸载。0.1.3 的安装记录见 `9badb13:docs/guides/local-installation.md`，0.1.2 的原生 NSIS 页面回归见 `25f475f:docs/guides/local-installation.md`。
+0.1.5 的解压版、便携版和已安装版均通过隔离启动、单实例及正常退出检查。本机以原目录和全机范围把 0.1.4 静默原位升级到 0.1.5；卸载登记仍为同一项，程序文件与成品一致，五份工作台配置和三份原生配置的校验值不变。包内 AGY 历史读取命令的帮助入口通过，全部桌面模块及图标与构建一致。没有另测交互式覆盖、UAC 提示或卸载。0.1.4 的安装记录见 `709fa59:docs/guides/local-installation.md`，0.1.3 见 `9badb13:docs/guides/local-installation.md`，0.1.2 的原生 NSIS 页面回归见 `25f475f:docs/guides/local-installation.md`。
+
+本机另行安装并启用「Codex 委派」0.1.0，原生 AGY 接入指向正式工作台数据目录。已安装应用实际启动插件后端并读回连接状态、工具权限及 Codex 原生默认参数；未迁入测试任务。该扩展独立安装，不随桌面包预装，用法见[委派方案](../engineering/agy-codex-delegation.md)。
+
+同日 0.1.5 本地修订补齐工作区展开状态保存、中文应用菜单及推理强度显示，并原位更新本机安装。隔离桌面已验证刷新与完整重启后的展开状态；普通会话标签不恢复。本机另装「SSH 控制台」1.0.0，原有服务器档案逐文件迁入后校验值一致，未连接远端。委派入口收至设置与对话扩展操作，已安装应用的设置页和原生模型读取通过；本次修订以最新校验清单为准。
 
 0.1.1 的首轮候选安装、启动和卸载记录见 `b053fe1:docs/guides/local-installation.md`。
 
@@ -10,8 +14,8 @@
 
 | 产物 | 使用方式 |
 |---|---|
-| `AgentDeck-0.1.4-x64-setup.exe` | 首次安装选择用户范围和目录；已有一份有效安装时沿用原范围和目录更新；安装结束不自动启动 |
-| `AgentDeck-0.1.4-x64-portable.exe` | 直接运行，程序临时解压后启动，无需安装 |
+| `AgentDeck-0.1.5-x64-setup.exe` | 首次安装选择用户范围和目录；已有一份有效安装时沿用原范围和目录更新；安装结束不自动启动 |
+| `AgentDeck-0.1.5-x64-portable.exe` | 直接运行，程序临时解压后启动，无需安装 |
 | `win-unpacked/` | 解压后的完整应用目录，用于本地验收；须保留整个目录一起移动 |
 
 产物位于仓库 `release/`，该目录不进入 Git。安装版和便携版都包含 Electron、后端、前端与必要资源，不依赖开发仓库或其 node_modules。运行工作台本身不要求单独安装 Node.js；各 CLI 的安装条件仍由其原生发行版决定。
@@ -43,9 +47,9 @@ npm.cmd run package:desktop
 
 应用采用用户选定的叠卡 A 图标，三版原稿保留在 `apps/desktop/assets/branding/`。网页标签与桌面开发窗口共用 `apps/web/src/ui/assets/agentdeck.png`；安装版把同一文件复制到 `resources/icon.png`。应用 EXE、安装包和快捷方式使用 `apps/desktop/assets/icon.ico`，其多尺寸图层从该 PNG 导出；修改图案时同步更新衍生文件，并核对最终包内资源。
 
-产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。旧版安装包、便携包和版本专属校验清单保留，0.1.3 的解压目录与报告归档在 `release/archive-0.1.3-before-0.1.4/`。
+产物版本取自 `apps/desktop/package.json`，更新时同步锁文件中的 desktop 版本。`win-unpacked/` 和验证报告用于当前构建，再次构建会更新它们；同版重建后以新的 SHA-256 清单核对。旧版安装包、便携包和版本专属校验清单保留，0.1.4 的解压目录与报告归档在 `release/archive-0.1.4-before-0.1.5/`。
 
-桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI；可选工作台扩展独立安装，不预装 SSH Console。
+桌面运行时依赖在 desktop 清单显式声明，与 server 保持一致；共享 TypeScript 源码编入主进程。应用使用本机 CLI；可选工作台扩展独立安装，不预装 SSH 控制台。
 
 ## 验收与核对
 
@@ -62,12 +66,12 @@ Windows 下可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File sc
 最终交付附 SHA-256 清单。可用 PowerShell 核对下载或复制后的文件：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.4-x64-setup.exe
-Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.4-x64-portable.exe
+Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.5-x64-setup.exe
+Get-FileHash -Algorithm SHA256 -LiteralPath .\release\AgentDeck-0.1.5-x64-portable.exe
 ```
 
 验收范围见[路线图](../roadmap.md#已有验收证据)。
 
 ## 会话链接的安装验收边界
 
-会话链接已接入初始参数、第二实例和页面订阅后的分发。0.1.3 升级时已核对当前用户协议登记、公共桌面和开始菜单快捷方式；0.1.4 继续核对它们指向原安装目录。未通过系统链接实测冷启动、运行中跳转或卸载清理；这些场景使用独立 Windows 用户验证，并保留已有协议所有者。
+会话链接已接入初始参数、第二实例和页面订阅后的分发。0.1.3 升级时已核对当前用户协议登记、公共桌面和开始菜单快捷方式；0.1.4、0.1.5 继续核对它们指向原安装目录。未通过系统链接实测冷启动、运行中跳转或卸载清理；这些场景使用独立 Windows 用户验证，并保留已有协议所有者。

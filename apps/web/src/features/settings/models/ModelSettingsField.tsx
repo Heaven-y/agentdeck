@@ -4,6 +4,7 @@ import type { ModelSettingField, SecretValue } from '@agentdeck/shared/settings'
 import { buttonClass, inputClass } from '../../../ui/styles';
 import { FieldSelect, FieldSuggestions } from '../../../ui/fields/FieldSelect';
 import { SecretInput } from '../../../ui/fields/SecretInput';
+import { effortLabel } from '../../../cli/shared/labels';
 type Props = {
   field: ModelSettingField;
   value: string;
@@ -61,6 +62,11 @@ function placeholderFor(field: ModelSettingField, cleared: boolean) {
   if (field.secret && field.hasValue) return '••••••••';
   return field.placeholder ?? '自动';
 }
+function fieldOptions(field: ModelSettingField) {
+  return field.key === 'reasoningEffort'
+    ? field.options?.map((option) => ({ ...option, label: effortLabel(option.value) || option.label }))
+    : field.options;
+}
 function FieldControl({
   id,
   inputRef,
@@ -80,7 +86,7 @@ function FieldControl({
         label={field.label}
         disabled={disabled || field.readOnly}
         value={value}
-        options={field.options}
+        options={fieldOptions(field)!}
         onChange={change}
       />
     );

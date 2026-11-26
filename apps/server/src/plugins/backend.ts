@@ -30,6 +30,7 @@ const environmentKeys = [
   'APPDATA',
   'LOCALAPPDATA',
   'PSModulePath',
+  'CODEX_HOME',
 ];
 
 /** 本机后端运行于独立进程；不监听网络端口，不继承主应用的服务商凭据。 */
@@ -76,7 +77,7 @@ export class PluginBackend {
   }
   static async start(
     entry: string,
-    context: { dataDir: string; hostDataDir: string },
+    context: { dataDir: string; hostDataDir: string; enabled?: boolean },
     host?: Host,
   ): Promise<PluginBackend> {
     await inspectDirectory(context.dataDir, true);

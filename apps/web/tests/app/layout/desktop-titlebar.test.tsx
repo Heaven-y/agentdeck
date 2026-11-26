@@ -38,7 +38,7 @@ it('浏览器隐藏桌面菜单，保留侧栏品牌；桌面品牌只出现在�
   const brand = screen.getByText('AgentDeck');
   const menu = screen.getByRole('menubar', { name: '应用菜单' });
   expect(brand.closest('header')).toBe(menu.closest('header'));
-  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['File', 'Edit', 'View', 'Window']);
+  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['文件', '编辑', '视图', '窗口']);
   fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }));
   expect(useUiPreferences.getState().sidebarCollapsed).toBe(true);
 });
@@ -48,9 +48,9 @@ it('菜单点击和键盘入口调用具名能力；主题同步给系统窗口�
   render(<DesktopTitleBar />);
   expect(chrome.setTheme).toHaveBeenCalledWith('light');
   fireEvent.keyDown(window, { key: 'F10' });
-  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'File' }));
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '文件' }));
   fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
-  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Edit' }));
+  expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: '编辑' }));
   await act(async () => fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' }));
   expect(chrome.showMenu).toHaveBeenCalledWith('edit', { x: 0, y: 0 });
   await act(async () => fireEvent.keyDown(window, { key: 'v', altKey: true }));
@@ -69,12 +69,12 @@ it('原生菜单打开中不重入，失败后恢复并显示可重试反馈', a
       }),
   );
   render(<DesktopTitleBar />);
-  fireEvent.click(screen.getByRole('menuitem', { name: 'File' }));
-  fireEvent.click(screen.getByRole('menuitem', { name: 'View' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '文件' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: '视图' }));
   expect(chrome.showMenu).toHaveBeenCalledTimes(1);
   await act(async () => fail(new Error('internal')));
   expect(screen.getByRole('alert').textContent).toBe('应用菜单未能打开，请重试。');
-  await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: 'View' })));
+  await act(async () => fireEvent.click(screen.getByRole('menuitem', { name: '视图' })));
   expect(chrome.showMenu).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole('alert')).toBeNull();
 });

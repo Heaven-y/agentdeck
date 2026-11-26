@@ -13,6 +13,7 @@ const failures = {
   permission_denied: { status: 403, message: '插件未声明此项权限' },
   backend_failed: { status: 503, message: '插件服务已停止，请重新打开插件' },
   backend_timeout: { status: 504, message: '插件服务响应超时，请重试' },
+  lifecycle_blocked: { status: 409, message: '插件尚有任务未收束，请在插件中处理任务后重试此操作' },
   registry_invalid: { status: 503, message: '插件状态文件无效，原文件已保留' },
   io_error: { status: 500, message: '无法访问插件文件，请检查目录和权限' },
 } as const;

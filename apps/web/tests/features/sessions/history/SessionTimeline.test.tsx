@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import type { AgentEvent } from '@agentdeck/shared/conversation';
 import { AgentBadge } from '../../../../src/features/sessions/list/AgentBadge';
 import { SessionHeader } from '../../../../src/features/sessions/history/SessionHeader';
@@ -98,11 +99,12 @@ it('空标题显示占位', () => {
 });
 
 it('会话头显示 CLI、实际驱动版本、项目路径与运行状态', () => {
-  render(<SessionHeader agent="codex" title="解释构建失败" version="0.166.0" projectDir={'E:\\web\\demo'} running />);
+  const projectDir = path.resolve('fixtures', 'demo');
+  render(<SessionHeader agent="codex" title="解释构建失败" version="0.166.0" projectDir={projectDir} running />);
   expect(screen.getByRole('heading', { name: '解释构建失败' })).toBeTruthy();
   expect(screen.getByText('Codex')).toBeTruthy();
   expect(screen.getByText('0.166.0')).toBeTruthy();
-  expect(screen.getByText('E:\\web\\demo')).toBeTruthy();
+  expect(screen.getByText(projectDir)).toBeTruthy();
   expect(screen.getByText('运行中')).toBeTruthy();
 });
 

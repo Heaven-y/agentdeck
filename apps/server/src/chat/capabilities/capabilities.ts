@@ -72,7 +72,11 @@ function workspaceKey(key: string) {
 
 export function createCapabilitiesService(
   providers: Partial<Record<AgentKind, CapabilityProvider>>,
-  options: { configDir?: string; antigravityConnection?: () => Promise<AntigravityConnection | undefined> } = {},
+  options: {
+    configDir?: string;
+    antigravityConnection?: () => Promise<AntigravityConnection | undefined>;
+    pluginNativeCommand?: (agent: AgentKind, name: string) => Promise<boolean>;
+  } = {},
 ) {
   const cache = new Map<string, NativeCapabilityCatalog>();
   const models = new Map<string, ModelCatalogSnapshot | undefined>();
@@ -329,6 +333,7 @@ export function createCapabilitiesService(
         const command = selection ? undefined : typedCommand(text);
         if (!selection && !command) return { text };
         signal?.throwIfAborted();
+        if (command && (await options.pluginNativeCommand?.(agent, command.name))) return { text };
         const catalog = await commandCatalog(ws.dir, agent, signal);
         const entry = chooseEntry(catalog.entries, selection, command?.name);
         return prepareEntry(entry, command ? command.text : text, sessionId);

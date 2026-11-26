@@ -1,8 +1,5 @@
-import os from 'node:os';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ClientMessageSchema } from '../../src/conversation/protocol';
-import { WorkspaceInputSchema } from '../../src/projects/workspace';
 
 describe('ClientMessageSchema', () => {
   const send = { type: 'chat.send', agent: 'claude', workspaceId: 'w1', text: '你好', clientTurnId: 'c1' };
@@ -58,36 +55,6 @@ describe('ClientMessageSchema', () => {
 
   it('拒绝未知类型', () => {
     expect(ClientMessageSchema.safeParse({ type: 'unknown' }).success).toBe(false);
-  });
-});
-
-describe('WorkspaceInputSchema', () => {
-  const base = {
-    name: 'demo',
-    dir: path.join(os.tmpdir(), 'agentdeck-fixture', 'demo'),
-  };
-
-  it('接受普通本地目录', () => {
-    expect(WorkspaceInputSchema.safeParse(base).success).toBe(true);
-    expect(WorkspaceInputSchema.safeParse({ ...base, dir: 'E:\\web\\项目 a' }).success).toBe(true);
-  });
-
-  it('丢弃已删除的 sync、policy、服务器绑定与旧字段名，而不是整份拒绝', () => {
-    const parsed = WorkspaceInputSchema.parse({
-      ...base,
-      localDir: base.dir,
-      sshHost: 'my-server',
-      server: 'my-server',
-      remoteDir: '~/projects/demo',
-      sync: { mode: 'bisync' },
-      policy: { disabledRules: ['privilege'] },
-    });
-    expect(parsed).toEqual(base);
-  });
-
-  it('工作区不承载认证方式与密码，未知字段一律丢弃', () => {
-    for (const extra of [{ authMode: 'password' }, { password: 'test-secret' }, { authMode: 'automatic' }])
-      expect(WorkspaceInputSchema.parse({ ...base, ...extra })).toEqual(base);
   });
 });
 

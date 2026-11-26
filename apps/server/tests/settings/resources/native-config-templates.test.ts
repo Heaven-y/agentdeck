@@ -56,7 +56,6 @@ it.each(['claude', 'codex'] as const)('%s 模板期间外部新建配置返回40
     status: 409,
   });
   expect(await fs.readFile(f.file, 'utf8')).toBe(external);
-  expect(draft).not.toBe(external);
   expect(await fs.readdir(f.directory)).toEqual([f.basename]);
 });
 

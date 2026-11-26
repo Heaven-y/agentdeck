@@ -53,15 +53,7 @@ function Management({
   choose(action: SessionMenuAction): void;
 }) {
   return (
-    <SessionMenu
-      session={session}
-      archived={archived}
-      pinned={false}
-      localActions={false}
-      hoverReveal={!archived}
-      disabled={disabled}
-      choose={choose}
-    />
+    <SessionMenu session={session} archived={archived} hoverReveal={!archived} disabled={disabled} choose={choose} />
   );
 }
 
@@ -179,7 +171,7 @@ export function ProjectSessionRow({
   const choose = (action: SessionMenuAction) => {
     copy.clear();
     if (action === 'copy') void copy.copy(session);
-    else if (action !== 'pin') manage?.(action);
+    else manage?.(action);
   };
   return (
     <RowFrame active={active} rowProps={rowProps}>

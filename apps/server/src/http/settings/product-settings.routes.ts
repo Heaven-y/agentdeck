@@ -1,6 +1,6 @@
 import type { AgentKind, AgentProbe, ProbeStatus } from '@agentdeck/shared/conversation';
 import type { EnvironmentReport, EnvironmentTool } from '@agentdeck/shared/settings';
-import { ProductSettingsInputSchema } from '@agentdeck/shared/settings';
+import { ProductSettingsInputSchema, WorkspaceExpansionInputSchema } from '@agentdeck/shared/settings';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { anonymousConfigError } from '../../agents/common/configuration/legacy-errors';
@@ -59,6 +59,14 @@ export function registerProductSettingsRoutes(
       if (!input.success || !Empty.safeParse(request.query).success)
         throw new ProductSettingsError('invalid_request', 400, '请检查产品设置字段及数值范围');
       return settings.save(input.data);
+    }),
+  );
+  app.put('/api/settings/product/workspace-expansion', { bodyLimit: 1024 }, (request, reply) =>
+    respond(reply, async () => {
+      const input = WorkspaceExpansionInputSchema.safeParse(request.body);
+      if (!input.success || !Empty.safeParse(request.query).success)
+        throw new ProductSettingsError('invalid_request', 400, '工作区展开状态无效');
+      return settings.setWorkspaceExpanded(input.data);
     }),
   );
   app.get('/api/settings/environment', (request, reply) =>

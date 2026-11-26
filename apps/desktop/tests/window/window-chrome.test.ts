@@ -43,7 +43,7 @@ function setup() {
   };
 }
 
-it('自定义顶栏保留原生系统按钮和 File/Edit/View/Window 菜单角色', () => {
+it('自定义顶栏保留原生系统按钮和文件、编辑、视图、窗口菜单角色', () => {
   expect(desktopChromeOptions('win32')).toMatchObject({
     titleBarStyle: 'hidden',
     titleBarOverlay: { height: 40 },
@@ -57,9 +57,11 @@ it('自定义顶栏保留原生系统按钮和 File/Edit/View/Window 菜单角�
   ]);
   expect(desktopChromeOptions('darwin')).toHaveProperty('titleBarStyle', 'hiddenInset');
   expect(applicationMenuTemplate('darwin')[0]?.role).toBe('appMenu');
-  expect(applicationMenuTemplate('win32')[0]?.submenu).toEqual([{ role: 'close', accelerator: 'Alt+F4' }]);
+  expect(applicationMenuTemplate('win32')[0]?.submenu).toEqual([
+    { role: 'close', label: '关闭窗口', accelerator: 'Alt+F4' },
+  ]);
   expect(applicationMenuTemplate('darwin').find(({ id }) => id === 'file')?.submenu).toEqual([
-    { role: 'close', accelerator: 'Command+Shift+W' },
+    { role: 'close', label: '关闭窗口', accelerator: 'Command+Shift+W' },
   ]);
 });
 
@@ -113,7 +115,7 @@ it('同一时间只弹出一个菜单，关闭后可再次打开；主题只接�
   expect(() => chrome.setTheme(request, { color: 'red' })).toThrow('标题栏主题无效');
 });
 
-it('窗口按钮区的底色与网页侧栏同色，两种主题都不留接缝', () => {
+it('原生按钮配置与网页主题声明使用同一底色', () => {
   expect(TITLE_BAR_COLORS.dark.color).toBe(token('dark', '--color-sidebar'));
   expect(TITLE_BAR_COLORS.light.color).toBe(token('light', '--color-sidebar'));
 });

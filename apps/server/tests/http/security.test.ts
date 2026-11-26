@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { readCookie, registerSecurity, safeEqual, SESSION_COOKIE } from '../../src/http/security';
+import { readCookie, registerSecurity, SESSION_COOKIE } from '../../src/http/security';
 
 const TOKEN = 'tok';
 const DEV = 'http://127.0.0.1:5173';
@@ -47,7 +47,7 @@ describe('访问控制边界', () => {
 
   it('Cookie 值错误时 401（含长度不同）', async () => {
     const app = make();
-    for (const v of ['tok2', 'to', '']) {
+    for (const v of ['bad', 'tok2', 'to', '']) {
       const headers = { host: '127.0.0.1:4317', cookie: `${SESSION_COOKIE}=${v}` };
       expect((await app.inject({ method: 'GET', url: '/api/x', headers })).statusCode).toBe(401);
     }
@@ -68,11 +68,6 @@ describe('访问控制边界', () => {
 });
 
 describe('辅助函数', () => {
-  it('safeEqual 长度不同直接返回 false', () => {
-    expect(safeEqual('abc', 'abc')).toBe(true);
-    expect(safeEqual('abc', 'abcd')).toBe(false);
-  });
-
   it('readCookie 处理多个 Cookie 与缺失', () => {
     expect(readCookie('a=1; b=2', 'b')).toBe('2');
     expect(readCookie('a=1', 'b')).toBeUndefined();

@@ -84,6 +84,34 @@ it('模型显示范围按 CLI 持久保存，空列表与未配置分别保留',
   expect(restarted.settings.modelVisibility?.antigravity).toBeUndefined();
 });
 
+it('展开状态逐工作区保存，快速切换和服务重启保留最终选择与其他设置', async () => {
+  const f = await fixture();
+  const initial = await f.store.read();
+  await f.store.save({ ...initial, settings: { ...initial.settings, defaultAgent: 'codex' } });
+  const app = Fastify();
+  registerProductSettingsRoutes(app, f.store, probes());
+  try {
+    for (const [workspaceId, expanded] of [
+      ['first', false],
+      ['second', true],
+      ['second', false],
+    ] as const) {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/settings/product/workspace-expansion',
+        payload: { workspaceId, expanded },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    expect((await createProductSettings({ configDir: f.configDir }).read()).settings).toMatchObject({
+      defaultAgent: 'codex',
+      workspaceExpansion: { first: false, second: false },
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 it('生产HTTP严格校验、摘要冲突与no-store贯通真实存储', async () => {
   const f = await fixture();
   const app = Fastify();

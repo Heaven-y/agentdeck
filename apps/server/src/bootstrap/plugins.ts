@@ -9,6 +9,9 @@ export async function createPlugins(
   const service = createWorkbenchPlugins({ configDir, host });
   await service.list();
   return {
+    nativeCommand: (agent: string, name: string) => service.nativeCommand(agent, name),
+    beforeSessionDelete: (session: Parameters<typeof service.beforeSessionDelete>[0]) =>
+      service.beforeSessionDelete(session),
     registerRoutes: (app: FastifyInstance) => registerPluginRoutes(app, { service }),
     dispose: () => service.dispose(),
   };

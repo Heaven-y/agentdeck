@@ -1,4 +1,5 @@
 import type { ChatState } from './chat-state';
+import { markPluginInputSent, previousPluginInput } from './plugin-input-receipts';
 import type { SessionRef, SessionActionInput } from '@agentdeck/shared/conversation';
 import { InteractionAnswerSchema } from '@agentdeck/shared/conversation';
 import {
@@ -508,6 +509,41 @@ export function startChatConnection(connect: Connect = connectChat): void {
   );
 }
 export const reconnectChat = () => socket?.reconnect();
+
+/** 插件续接指定的已打开会话；不切换页面，不覆盖草稿，也不把消息排入别的会话。 */
+export function resumePluginConversation(input: { conversationId: string; requestId: string; text: string }): boolean {
+  const previous = previousPluginInput(input.requestId);
+  if (previous !== undefined) return previous;
+  const state = useChat.getState();
+  const view = conversationById(state, input.conversationId);
+  if (!view || !view.sessionId || !state.tabIds.includes(view.conversationId)) return false;
+  if (view.pendingClientTurnId === input.requestId) return true;
+  const current = {
+    ...state,
+    ...view,
+    selectedCapability: undefined,
+    draftAttachments: [],
+    attachmentsBusy: false,
+    pendingAttachmentInput: undefined,
+  };
+  if (!socket || !canStart(current, input.text) || shouldQueue(current)) return false;
+  const submitted = { ...current, permission: conversationPermission(current) };
+  if (!socket.send(sendMessagePayload(submitted, input.text, input.requestId))) return false;
+  markPluginInputSent(input.requestId);
+  useChat.setState(
+    updateConversation(state, view, {
+      items: reduceChat(view.items, { type: 'user_message', text: input.text }),
+      running: true,
+      lastSentAt: Date.now(),
+      pendingClientTurnId: input.requestId,
+      permission: submitted.permission,
+      runningInput: draftContent(submitted, input.text),
+      interruptRequested: false,
+      banner: undefined,
+    }),
+  );
+  return false;
+}
 
 function attachmentRefs(state: ChatState) {
   return state.draftAttachments.length

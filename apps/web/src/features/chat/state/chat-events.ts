@@ -16,6 +16,7 @@ import {
 import { asyncQuestionError } from '../interactions/async-question-actions';
 import { bindRuntimeTaskSender, runtimeTaskMessage, runtimeTaskRecovery } from '../runtime/runtime-tasks-store';
 import { createContextRefresh } from '../models/context-refresh';
+import { observePluginInput } from './plugin-input-receipts';
 
 type SetState = (patch: Partial<ChatState>) => void;
 type Msg<T extends ServerMessage['type']> = Extract<ServerMessage, { type: T }>;
@@ -169,6 +170,7 @@ export function createChatEvents(
       recovery.onRecovery(notice);
     },
     onMessage(msg: ServerMessage) {
+      observePluginInput(msg);
       runtimeTaskMessage(msg);
       if (followupMessage(msg)) return;
       switch (msg.type) {

@@ -16,6 +16,7 @@ const permissions = {
   'session-history': '原生会话列表和历史',
   'session-context': '当前会话信息和轮次事件',
   composer: '读取和编辑输入框草稿',
+  'session-control': '续接打开的会话和清理关联任务',
 };
 
 function PluginCommands({ plugin, run }: { plugin: WorkbenchPlugin; run(command: string): void }) {

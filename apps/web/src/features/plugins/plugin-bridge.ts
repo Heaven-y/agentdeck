@@ -20,6 +20,8 @@ const Request = z.strictObject({
     'clipboard.writeText',
     'host.request',
     'session.get',
+    'session.list',
+    'session.resume',
     'composer.get',
     'composer.set',
   ]),
@@ -35,6 +37,8 @@ const permissionByMethod = {
   'clipboard.readText': 'clipboard',
   'clipboard.writeText': 'clipboard',
   'session.get': 'session-context',
+  'session.list': 'session-context',
+  'session.resume': 'session-control',
   'composer.get': 'composer',
   'composer.set': 'composer',
 } as const;
@@ -90,6 +94,8 @@ function hostRequest(manifest: WorkbenchPluginManifest, params: unknown, signal?
 function uiRequest(input: z.infer<typeof Request>, ui?: PluginUiServices) {
   if (!ui) throw new Error('当前会话不可用');
   if (input.method === 'session.get') return ui.session();
+  if (input.method === 'session.list') return ui.sessions();
+  if (input.method === 'session.resume') return ui.resume(input.params);
   if (input.method === 'composer.get') return ui.readDraft(input.conversationId);
   return ui.writeDraft(input.params);
 }
@@ -142,7 +148,7 @@ export function pluginDocument(html: string, version = 1) {
       version: ${version},
       backend: Object.freeze({request: (params, options) => request('backend.request', params, options?.signal)}),
       host: Object.freeze({request: (params, options) => request('host.request',params,options?.signal)}),
-      session: Object.freeze({get: () => request('session.get')}),
+      session: Object.freeze({get: () => request('session.get'), list: () => request('session.list'), resume: value => request('session.resume',value)}),
       composer: Object.freeze({get: () => request('composer.get'), set: value => request('composer.set',value)}),
       clipboard: Object.freeze({readText: () => request('clipboard.readText'), writeText: value => request('clipboard.writeText', value)}),
       onContext: listener => { contexts.add(listener); if(window.__agentdeckContext) listener(window.__agentdeckContext);

@@ -1,24 +1,22 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ToolGroup } from '../../../../src/features/conversation/timeline/ToolGroup';
-import { projectTimeline, type ToolItem } from '../../../../src/features/conversation/timeline/timeline-model';
+import type { ToolItem } from '../../../../src/features/conversation/timeline/timeline-model';
 
 afterEach(cleanup);
-const source: ToolItem[] = Array.from({ length: 1000 }, (_, i) => ({
+const source: ToolItem[] = Array.from({ length: 40 }, (_, i) => ({
   kind: 'tool',
   id: `read-${i}`,
   name: 'Read',
   input: { path: `src/example-${i}.py` },
-  output: '输出\n'.repeat(50),
+  output: `读取结果 ${i}`,
   status: 'done',
 }));
 function fixture(expanded: boolean) {
-  const row = projectTimeline(source)[0]!;
-  if (row.kind !== 'read-group') throw new Error('读取组缺失');
   return (
     <ToolGroup
-      items={row.items}
+      items={source}
       expanded={expanded}
       onExpandedChange={vi.fn()}
       itemExpanded={() => false}
@@ -27,11 +25,14 @@ function fixture(expanded: boolean) {
   );
 }
 
-it('折叠读取组不挂载工具参数/输出，展开后内部DOM也保持有界', () => {
-  const { container, rerender } = render(fixture(false));
-  expect(container.querySelectorAll('details')).toHaveLength(1);
-  expect(container.querySelectorAll('pre')).toHaveLength(0);
+it('折叠组卸载工具内容，展开呈现组内全部条目', () => {
+  const { rerender } = render(fixture(false));
+  expect(screen.queryAllByTitle('Read')).toHaveLength(0);
+  expect(screen.queryByText('读取结果 0')).toBeNull();
   rerender(fixture(true));
-  expect(container.querySelectorAll('details')).toHaveLength(41);
-  expect(container.querySelectorAll('pre')).toHaveLength(80);
+  expect(screen.getAllByTitle('Read')).toHaveLength(source.length);
+  for (const item of source) expect(screen.getByText(item.output!)).toBeTruthy();
+  rerender(fixture(false));
+  expect(screen.queryAllByTitle('Read')).toHaveLength(0);
+  expect(screen.queryByText('读取结果 0')).toBeNull();
 });

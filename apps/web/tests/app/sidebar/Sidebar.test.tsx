@@ -14,7 +14,7 @@ import { useChat } from '../../../src/features/chat/state/chat-store';
 
 import { queryClient } from '../../../src/lib/query-client';
 import { settingsApi } from '../../../src/features/settings/api';
-import { DEFAULT_APPEARANCE, DEFAULT_SPOTLIGHT } from '@agentdeck/shared/settings';
+import { DEFAULT_APPEARANCE, DEFAULT_SPOTLIGHT, ProductSettingsSchema } from '@agentdeck/shared/settings';
 import { useUiPreferences } from '../../../src/ui/appearance/ui-preferences';
 
 const project: Workspace = { id: 'p1', name: '示例项目', dir: path.resolve('fixtures', 'demo') };
@@ -71,6 +71,49 @@ it('没有项目时显示引导添加项目', () => {
   render(<Sidebar projects={[]} sessionsByProject={{}} onAddProject={vi.fn()} />);
   expect(screen.getByText('添加项目目录')).toBeTruthy();
   expect(screen.getByText('还没有项目')).toBeTruthy();
+});
+
+it('启动按已保存状态恢复各工作区，当前项目也可以保持收起且不打开会话标签', async () => {
+  const save = vi.spyOn(settingsApi, 'setWorkspaceExpanded');
+  const pending: Array<(reason: Error) => void> = [];
+  save.mockImplementation(() => new Promise((_resolve, reject) => pending.push(reject)));
+  vi.spyOn(settingsApi, 'readProductSettings').mockResolvedValue({
+    settings: { ...ProductSettingsSchema.parse({}), workspaceExpansion: { p1: false, p2: true } },
+    revision: 'saved',
+  });
+  useChat.getState().selectWorkspace(project.id);
+  const props = { projects: [project, otherProject], sessionsByProject: {}, onAddProject: vi.fn() };
+  const view = render(<Sidebar {...props} />);
+  await waitFor(() => expect(screen.getByTitle(project.dir).getAttribute('aria-expanded')).toBe('false'));
+  expect(screen.getByTitle(otherProject.dir).getAttribute('aria-expanded')).toBe('true');
+  expect(useChat.getState().tabIds).toEqual([]);
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <Sidebar {...props} search="示例" />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByTitle(project.dir));
+  expect(save).not.toHaveBeenCalled();
+  view.rerender(
+    <QueryClientProvider client={queryClient}>
+      <Sidebar {...props} search="" />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByTitle(project.dir).getAttribute('aria-expanded')).toBe('false');
+  useChat.setState({ banner: '原会话发送失败' });
+  fireEvent.click(screen.getByTitle(project.dir));
+  fireEvent.click(screen.getByTitle(otherProject.dir));
+  // 两次点击都立即发送，刷新时没有留在前端队列中的未发送项。
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls).toEqual([
+    ['p1', true],
+    ['p2', false],
+  ]);
+  await act(async () => {
+    for (const reject of pending) reject(new Error('无法写入'));
+  });
+  expect((await screen.findByRole('alert')).textContent).toContain('展开状态未能保存');
+  expect(useChat.getState().banner).toBe('原会话发送失败');
 });
 
 it('切换会话时运行状态留在工作区原条目，不插入后台会话区块', () => {
@@ -228,6 +271,16 @@ it('打开“显示其他目录的会话”后才列出未归属会话', async (
   fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: '显示其他目录的会话' }));
   expect(screen.getByText('其他目录')).toBeTruthy();
   expect(screen.getByText('孤儿会话')).toBeTruthy();
+});
+
+it('更多菜单挂到侧栏外，归档入口调用对应动作', async () => {
+  const archive = vi.fn();
+  const view = render(<Sidebar projects={[]} sessionsByProject={{}} onAddProject={vi.fn()} onOpenArchive={archive} />);
+  fireEvent.click(screen.getByRole('button', { name: '更多' }));
+  const menu = await screen.findByRole('menu', { name: '更多导航' });
+  expect(view.container.contains(menu)).toBe(false);
+  fireEvent.click(screen.getByRole('menuitem', { name: '已归档会话' }));
+  expect(archive).toHaveBeenCalledOnce();
 });
 
 it('其他目录只对有可信directory的会话提供预填项目入口', async () => {
