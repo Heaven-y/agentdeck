@@ -4,8 +4,8 @@ import { mkdtemp, unlink, rmdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { claudeUsageRecords } from '../../src/agents/claude/usage/records';
-import { codexUsageCollector } from '../../src/agents/codex/usage/records';
+import { claudeUsageProvider, claudeUsageRecords } from '../../src/agents/claude/usage/records';
+import { codexUsageCollector, codexUsageProvider } from '../../src/agents/codex/usage/records';
 import { antigravityUsageProvider, antigravityUsageRecords } from '../../src/agents/antigravity/usage/records';
 import { cacheRate, usageRows, summarize, usageBuckets } from '../../src/usage/aggregate';
 import { createUsageStore } from '../../src/usage/store';
@@ -16,6 +16,30 @@ import { createUsageService } from '../../src/usage/service';
 import { registerUsageRoutes } from '../../src/http/usage.routes';
 import { estimate } from '../../src/usage/pricing';
 import { resolveClaudeReadSource } from '../../src/agents/claude/history/read-source';
+
+const native = vi.hoisted(() => ({
+  info: vi.fn(),
+  messages: vi.fn(),
+  children: vi.fn(),
+  childMessages: vi.fn(),
+  path: vi.fn(),
+  codexChildren: vi.fn(),
+}));
+vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getSessionInfo: native.info,
+  getSessionMessages: native.messages,
+  listSubagents: native.children,
+  getSubagentMessages: native.childMessages,
+}));
+vi.mock('../../src/agents/codex/history/sessions', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  codexSessionRecordPath: native.path,
+}));
+vi.mock('../../src/agents/codex/history/subagents', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  readCodexSubagents: native.codexChildren,
+}));
 
 const roots: string[] = [];
 const source = { agent: 'codex' as const, sessionId: 'root', projectId: 'project', dir: os.tmpdir() };
@@ -34,6 +58,7 @@ const row: UsageRecord = {
   outputFinal: true,
 };
 afterEach(async () => {
+  vi.resetAllMocks();
   for (const root of roots.splice(0)) {
     for (const file of ['usage.sqlite', 'source.jsonl']) await unlink(path.join(root, file)).catch(() => undefined);
     await rmdir(root);
@@ -96,6 +121,93 @@ it('Claude同API响应的多个块合并，未确认最终输出不混入总量�
   const summary = summarize(usageRows(records, []));
   expect(summary.tokens).toEqual({ input: 20, cacheRead: 80, cacheWrite: 0 });
   expect(summary.measured.output).toBe(0);
+});
+it('Claude读取器跨主历史页后推进子任务，短路径缺失沿同一全局定位且保留缓存TTL', async () => {
+  const dir = await directory(),
+    scope = { ...source, agent: 'claude' as const, dir };
+  native.info.mockImplementation(async (_id: string, options?: { dir?: string }) =>
+    options?.dir ? undefined : { sessionId: 'root', cwd: dir, summary: '示例', lastModified: 1 },
+  );
+  native.children.mockResolvedValue(['child']);
+  const message = {
+    type: 'assistant',
+    timestamp: at,
+    message: {
+      id: 'api',
+      model: 'claude-opus-5-5',
+      usage: {
+        input_tokens: 10,
+        cache_read_input_tokens: 20,
+        cache_creation_input_tokens: 5,
+        cache_creation: { ephemeral_5m_input_tokens: 3, ephemeral_1h_input_tokens: 2 },
+      },
+    },
+  };
+  native.messages.mockResolvedValueOnce(Array.from({ length: 200 }, () => message)).mockResolvedValueOnce([]);
+  native.childMessages.mockResolvedValue([{ ...message, message: { ...message.message, id: 'child-api' } }]);
+  const first = await claudeUsageProvider.read(scope);
+  const second = await claudeUsageProvider.read(scope, first.nextCursor);
+  const third = await claudeUsageProvider.read(scope, second.nextCursor);
+  expect(first.records).toHaveLength(1);
+  expect(first.records[0]?.cacheWriteByTtl).toEqual({ '5m': 3, '1h': 2 });
+  expect(native.messages.mock.calls[1]?.[1]).toEqual({ dir: undefined, limit: 200, offset: 200 });
+  expect(native.childMessages).toHaveBeenCalledWith('root', 'child', { dir: undefined, limit: 200, offset: 0 });
+  expect(third.records[0]).toMatchObject({ childId: 'child', id: 'claude:child-api' });
+  expect(third.nextCursor).toBeUndefined();
+  await expect(claudeUsageProvider.read(scope, undefined, AbortSignal.abort())).rejects.toThrow();
+});
+
+it('Codex读取器按核验目录逐线程采集，子响应关联根身份且拒绝循环', async () => {
+  const dir = await directory(),
+    file = path.join(dir, 'source.jsonl');
+  const scope = { ...source, dir };
+  native.path.mockImplementation(async (id: string) => {
+    await writeFile(
+      file,
+      [
+        { type: 'session_meta', payload: { id, model_provider: 'example' } },
+        {
+          type: 'event_msg',
+          payload: {
+            type: 'thread_settings_applied',
+            thread_id: id,
+            thread_settings: { model: 'gpt-6.2-sol', model_provider_id: 'example' },
+          },
+        },
+        {
+          type: 'token_usage_record',
+          timestamp: at,
+          payload: {
+            thread_id: id,
+            response_id: 'response',
+            turn_id: 'turn',
+            usage: { input_tokens: 100, cached_input_tokens: 80, cache_write_input_tokens: 0, output_tokens: 10 },
+          },
+        },
+      ]
+        .map((v) => JSON.stringify(v))
+        .join('\n') + '\n',
+    );
+    return file;
+  });
+  native.codexChildren.mockImplementation(
+    async (_id: string, _dir: string, query: { agentId?: string; parentAgentId?: string }) =>
+      query.agentId ? { agentId: query.agentId, events: [] } : { agentIds: query.parentAgentId ? [] : ['child'] },
+  );
+  const provider = codexUsageProvider(async () => ({}));
+  const first = await provider.read(scope);
+  const second = await provider.read(scope, first.nextCursor);
+  expect(first.records[0]).toMatchObject({
+    model: 'gpt-6.2-sol',
+    provider: 'example',
+    tokens: { input: 20, cacheRead: 80 },
+  });
+  expect(second.records[0]).toMatchObject({ sessionId: 'root', childId: 'child', id: 'codex:child:response' });
+  expect(second.nextCursor).toBeUndefined();
+  expect(native.codexChildren.mock.calls[1]?.[2]).toEqual({ agentId: 'child', parentAgentId: undefined });
+  await expect(provider.read(scope, JSON.stringify({ queue: [{ id: 'root' }], visited: ['root'] }))).rejects.toThrow(
+    '循环',
+  );
 });
 it('AGY多步骤关联只计一次生成，源身份不匹配的继承记录不加入', () => {
   const usage = { inputTokens: '100', outputTokens: '10', cacheReadTokens: '200' };
