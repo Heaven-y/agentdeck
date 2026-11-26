@@ -1,4 +1,4 @@
-import { PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, X } from 'lucide-react';
+import { BarChart3, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useUiPreferences } from '../../ui/appearance/ui-preferences';
 import { SessionSortMenu } from '../../features/sessions/list/SessionSortMenu';
@@ -112,9 +112,30 @@ export function SidebarWorkspaces({
   );
 }
 
-export function SidebarFooter({ collapsed, onOpenSettings }: { collapsed: boolean; onOpenSettings?(): void }) {
+export function SidebarFooter({
+  collapsed,
+  onOpenSettings,
+  onOpenUsage,
+  usageOpen,
+}: {
+  collapsed: boolean;
+  onOpenSettings?(): void;
+  onOpenUsage?(): void;
+  usageOpen?: boolean;
+}) {
   return (
     <footer className="mt-1 shrink-0 border-t border-border/70 pt-2">
+      <button
+        type="button"
+        aria-label="用量"
+        title="用量"
+        aria-current={usageOpen ? 'page' : undefined}
+        className={sidebarItemClass(collapsed)}
+        onClick={onOpenUsage}
+      >
+        <BarChart3 aria-hidden className="size-4 shrink-0" />
+        {!collapsed && <span>用量</span>}
+      </button>
       <button
         type="button"
         aria-label="设置"

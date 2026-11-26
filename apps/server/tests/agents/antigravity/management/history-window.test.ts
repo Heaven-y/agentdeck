@@ -2,8 +2,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, it, vi } from 'vitest';
-import { NativeHistoryPageTooLarge } from '../../../../src/agents/antigravity/management/history-stream';
-import { readAntigravityHistoryWindow } from '../../../../src/agents/antigravity/management/history-window';
+import {
+  readAntigravityHistoryWindow,
+  readAntigravityUsageTrajectory,
+} from '../../../../src/agents/antigravity/management/history-window';
 import type { ManagementRecord } from '../../../../src/agents/antigravity/management/management-rpc';
 import { antigravityHistory } from '../../../../src/agents/antigravity/history/history';
 
@@ -83,20 +85,25 @@ it('总历史等效超过 64 MiB 时仍只请求小窗口，文件越大不改�
   ]);
 });
 
-it('单步超过两种原生读取预算仍留下明确占位和较早游标；其他故障不伪造历史', async () => {
-  const f = fixture();
-  const fallback = f.update.getMockImplementation()!;
-  f.update.mockImplementation(async (params) => {
-    if ((params.initialStepsPageBounds as { endIndexExclusive: number }).endIndexExclusive > 0)
-      throw new NativeHistoryPageTooLarge();
-    return fallback(params);
-  });
+it('大步骤不因字节数量变占位，身份错误仍保留失败', async () => {
+  const f = fixture(40, 'x'.repeat(9 * 1024 * 1024));
   const page = await readAntigravityHistoryWindow(f.backend, scope);
-  expect(page.page).toMatchObject({ start: 79, before: expect.any(String) });
-  expect(page.trajectory.steps).toEqual([{ type: 'AGENTDECK_HISTORY_STEP_OMITTED' }]);
-  expect(f.update.mock.calls.length).toBeLessThan(20);
-  f.update.mockImplementation(async (params) => ({ ...(await fallback(params)), conversationId: 'other' }));
+  expect(
+    (page.trajectory.steps as ManagementRecord[]).some(
+      (step) => typeof step.toolOutput === 'string' && step.toolOutput.length > 8 * 1024 * 1024,
+    ),
+  ).toBe(true);
+  const update = f.update.getMockImplementation()!;
+  f.update.mockImplementation(async (params) => ({ ...(await update(params)), conversationId: 'other' }));
   await expect(readAntigravityHistoryWindow(f.backend, scope)).rejects.toMatchObject({ code: 'session_missing' });
+});
+it('用量子任务发现逐页投影，不让大段工具正文进入关系图', async () => {
+  const f = fixture(240, 'x'.repeat(256 * 1024));
+  const result = await readAntigravityUsageTrajectory(f.backend, scope);
+  expect(result.trajectory.steps).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain('toolOutput');
+  expect(f.update.mock.calls).toHaveLength(4);
+  expect(f.backend.request).not.toHaveBeenCalled();
 });
 
 it('轮次目录缺失也用用户步骤约束最近三轮，补页核对相邻原生轮头', async () => {

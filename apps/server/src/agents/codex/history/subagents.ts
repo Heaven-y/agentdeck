@@ -94,21 +94,34 @@ export function createCodexSubagents(read: ReadThread) {
 }
 
 /** 原生分页返回完整 turn items；所有页共享总量、游标和时间预算。 */
-export async function pagedCodexThread(client: Pick<CodexClient, 'request'>, id: string, context: ReadContext) {
+export async function pagedCodexThread(
+  client: Pick<CodexClient, 'request'>,
+  id: string,
+  context: ReadContext,
+  directoryOnly = false,
+) {
   const thread = record((await client.request('thread/read', { threadId: id, includeTurns: false })).thread);
   if (!(await validThread(thread, id, context.dir, context.parent))) throw subagentMissing();
   const all: RecordValue[] = [];
   const cursors = new Set<string>();
   let cursor: string | undefined;
-  let bytes = 0;
   const deadline = Date.now() + 30_000;
   do {
     const page = await turnPage(client, id, { cursor, signal: context.signal });
     if (!Array.isArray(page.data)) throw subagentIncomplete();
-    bytes += Buffer.byteLength(JSON.stringify(page));
-    all.push(...page.data.map(record));
-    cursor = text(page.nextCursor) || undefined;
-    checkPageBudget({ bytes, count: all.length, pages: cursors.size, deadline });
+    const projected = page.data.map(record).map((turn) =>
+      directoryOnly
+        ? {
+            ...turn,
+            items: list(turn.items)
+              .map(record)
+              .filter((item) => item.type === 'subAgentActivity'),
+          }
+        : turn,
+    );
+    all.push(...projected);
+    cursor = nextCursor(page.nextCursor);
+    if (Date.now() > deadline) throw subagentIncomplete();
     if (cursor && (cursors.has(cursor) || !page.data.length)) throw subagentIncomplete();
     if (cursor) cursors.add(cursor);
   } while (cursor);
@@ -130,20 +143,25 @@ async function turnPage(
   input.signal?.throwIfAborted();
   return result;
 }
-function checkPageBudget(input: { bytes: number; count: number; pages: number; deadline: number }) {
-  if (input.bytes > 32 * 1024 * 1024 || input.count > 10_000 || input.pages >= 64 || Date.now() > input.deadline)
-    throw subagentIncomplete();
-}
-async function withReader<T>(dir: string, options: CodexRuntimeOptions, action: (read: ReadThread) => Promise<T>) {
+async function withReader<T>(
+  dir: string,
+  options: CodexRuntimeOptions & { directoryOnly?: boolean },
+  action: (read: ReadThread) => Promise<T>,
+) {
   const client = await CodexClient.start({ ...options, cwd: dir });
   try {
     await client.initialize();
-    return await action((id, context) => pagedCodexThread(client, id, context));
+    return await action((id, context) => pagedCodexThread(client, id, context, options.directoryOnly));
   } finally {
     await client.close();
   }
 }
-export function readCodexSubagents(id: string, dir: string, query: SubagentQuery, options: CodexRuntimeOptions = {}) {
+export function readCodexSubagents(
+  id: string,
+  dir: string,
+  query: SubagentQuery,
+  options: CodexRuntimeOptions & { directoryOnly?: boolean } = {},
+) {
   return withReader(dir, options, (read) => createCodexSubagents(read)(id, dir, query, options.signal));
 }
 export function readCodexSubagentMedia(
@@ -168,3 +186,5 @@ export function createCodexSubagentMedia(read: ReadThread) {
     throw mediaMissing();
   };
 }
+
+const nextCursor = (value: unknown) => text(value) || undefined;

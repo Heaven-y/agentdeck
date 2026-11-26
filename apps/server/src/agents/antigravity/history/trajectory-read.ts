@@ -1,15 +1,11 @@
 import { SessionError } from '../../errors';
 import {
   managementObject as object,
-  historyLimitExceeded,
   managementByteLimit,
   type ManagementBackend,
   type ManagementBudget,
   type ManagementRecord,
 } from '../management/management-rpc';
-
-const MAX_STEPS = 50_000;
-const MAX_PAGES = 64;
 
 function incomplete(): never {
   throw new SessionError(503, 'session_history_incomplete', 'Antigravity 历史未完整读取，请稍后重试。');
@@ -17,7 +13,6 @@ function incomplete(): never {
 
 function assertWithinSize(bytes: number, budget?: ManagementBudget) {
   if (bytes <= managementByteLimit(budget)) return;
-  if (budget === 'history') throw historyLimitExceeded();
   incomplete();
 }
 
@@ -25,7 +20,7 @@ const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 function totalSteps(response: ManagementRecord, steps: unknown[]): number {
   const total = response.numTotalSteps ?? steps.length;
-  if (!Number.isSafeInteger(total) || Number(total) < steps.length || Number(total) > MAX_STEPS) incomplete();
+  if (!Number.isSafeInteger(total) || Number(total) < steps.length) incomplete();
   return Number(total);
 }
 
@@ -41,7 +36,7 @@ function completeMetadata(response: ManagementRecord, trajectory: ManagementReco
   return (response.numTotalGeneratorMetadata ?? metadata.length) === metadata.length ? metadata : [];
 }
 
-/** 原生分页只有 offset，没有 page size；同时限制页数、总步骤及累计正文大小。 */
+/** 原生分页只有 offset，没有 page size；按已返回步骤继续补齐，核对总数并支持取消。 */
 export async function completeTrajectory(
   backend: ManagementBackend,
   response: ManagementRecord,
@@ -53,11 +48,10 @@ export async function completeTrajectory(
   const total = totalSteps(response, steps);
   let bytes = Buffer.byteLength(JSON.stringify(response));
   const deadline = Date.now() + 30_000;
-  let pages = 0;
   assertWithinSize(bytes, budget);
   while (steps.length < total) {
     signal?.throwIfAborted();
-    if (++pages > MAX_PAGES || Date.now() >= deadline) incomplete();
+    if (Date.now() >= deadline) incomplete();
     const page = await backend.request(
       'GetCascadeTrajectorySteps',
       {

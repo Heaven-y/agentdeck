@@ -32,6 +32,7 @@ import { DesktopTitleBar } from './layout/DesktopTitleBar';
 import { NativeInteractionInbox } from '../features/chat/interactions/InteractionCard';
 import { PluginHostContext } from '../features/plugins/plugin-host';
 
+const UsagePage = lazy(() => import('../features/usage/UsagePage'));
 const SettingsDialog = lazy(() => import('../features/settings/SettingsDialog'));
 const SessionSearch = lazy(() => import('./navigation/SessionSearch'));
 const PluginManager = lazy(() => import('../features/plugins/PluginManager'));
@@ -148,22 +149,34 @@ export function App() {
   const openPath = desktopPathOpener();
   const reveal = useMemo(() => (openPath ? revealProjectDir(openPath) : undefined), [openPath]);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const settings = useSettingsWorkspace(!activePlugin && !archiveOpen);
+  const [usageOpen, setUsageOpen] = useState(false);
+  const settings = useSettingsWorkspace(!activePlugin && !archiveOpen && !usageOpen);
   const showPlugin = (id?: string, page?: string) =>
     settings.navigate(() => {
       setArchiveOpen(false);
+      setUsageOpen(false);
       plugins.show(id, page);
     });
   const runPluginCommand = (pluginId: string, command: string) =>
     settings.navigate(() => {
       const accepted = plugins.run(pluginId, command);
-      if (accepted) setArchiveOpen(false);
+      if (accepted) {
+        setArchiveOpen(false);
+        setUsageOpen(false);
+      }
       return accepted;
     });
   const showArchive = () =>
     settings.navigate(() => {
       plugins.show(undefined);
       setArchiveOpen(true);
+      setUsageOpen(false);
+    });
+  const showUsage = () =>
+    settings.navigate(() => {
+      plugins.show(undefined);
+      setArchiveOpen(false);
+      setUsageOpen(true);
     });
   const closeArchive = () => {
     setArchiveOpen(false);
@@ -201,12 +214,14 @@ export function App() {
   const openConversation = (id: string) =>
     settings.navigate(() => {
       setArchiveOpen(false);
+      setUsageOpen(false);
       plugins.show(undefined);
       useChat.getState().openConversation(id);
     });
   const openSession = (targetProject: string, session: SessionSummary) =>
     settings.navigate(() => {
       setArchiveOpen(false);
+      setUsageOpen(false);
       plugins.show(undefined);
       if (useChat.getState().workspaceId !== targetProject)
         useChat.getState().selectWorkspace(targetProject, { restore: false });
@@ -215,6 +230,7 @@ export function App() {
   const startSession = (targetProject: string, agent?: AgentKind) =>
     settings.navigate(() => {
       setArchiveOpen(false);
+      setUsageOpen(false);
       plugins.show(undefined);
       const chat = useChat.getState();
       if (chat.workspaceId !== targetProject) chat.selectWorkspace(targetProject, { restore: false });
@@ -242,6 +258,7 @@ export function App() {
     focusComposer: () =>
       settings.navigate(() => {
         setArchiveOpen(false);
+        setUsageOpen(false);
         plugins.show(undefined);
         requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-composer-input]')?.focus());
       }),
@@ -329,6 +346,8 @@ export function App() {
                 onOpenSettings={settings.open}
                 onOpenSessionSearch={() => setSearchOpened(true)}
                 onOpenArchive={showArchive}
+                onOpenUsage={showUsage}
+                usageOpen={usageOpen}
                 onSelectSession={openSession}
                 reveal={reveal}
               />
@@ -372,6 +391,17 @@ export function App() {
                   delivered={plugins.delivered}
                   hidden={settings.opened}
                 />
+                {usageOpen && (
+                  <Suspense
+                    fallback={
+                      <p role="status" className="p-4">
+                        正在打开用量…
+                      </p>
+                    }
+                  >
+                    <UsagePage projects={projectList} close={() => setUsageOpen(false)} />
+                  </Suspense>
+                )}
                 {archiveOpen && (
                   <Suspense
                     fallback={

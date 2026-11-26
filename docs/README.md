@@ -28,6 +28,8 @@
 | 模型显示、Claude 1M 与推理档位 | [模型能力](engineering/model-capabilities.md) |
 | 三 CLI 原生能力逐项状态、限制与产品边界 | [原生能力矩阵](engineering/native-capability-matrix.md) |
 
+- [用量工作台](engineering/usage-workbench.md)：指标来源、公共适配接口、官方参考单价和缓存比例。
+
 ## 工作台扩展
 
 [工作台插件](engineering/workbench-plugins.md)集中说明插件管理、宿主接口和独立扩展入口。CLI 自己加载的插件归入上面的原生配置。

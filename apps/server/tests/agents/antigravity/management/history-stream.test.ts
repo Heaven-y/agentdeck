@@ -11,7 +11,7 @@ function envelope(value: unknown, flags = 0) {
   return Buffer.concat([head, data]);
 }
 
-it('原生分页只取首帧并关闭订阅，支持跨块帧头/正文；拒绝超限和协议终端错误', async () => {
+it('原生分页只取首帧并关闭订阅，支持跨块帧头/正文；大帧继续读取且保留协议终端错误', async () => {
   const server = http.createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on('data', (value: Buffer) => chunks.push(value));
@@ -27,9 +27,7 @@ it('原生分页只取首帧并关闭订阅，支持跨块帧头/正文；拒绝
         return;
       }
       if (params.conversationId === 'large') {
-        const header = Buffer.alloc(5);
-        header.writeUInt32BE(33 * 1024 * 1024, 1);
-        response.write(header);
+        response.end(envelope({ update: { conversationId: 'large', content: 'x'.repeat(9 * 1024 * 1024) } }));
         return;
       }
       const page = envelope({ update: { conversationId: params.conversationId, sequence: 1 } });
@@ -47,9 +45,8 @@ it('原生分页只取首帧并关闭订阅，支持跨块帧头/正文；拒绝
       conversationId: 'first',
       sequence: 1,
     });
-    await expect(readInitialAgentUpdate(port, { conversationId: 'large' })).rejects.toMatchObject({
-      code: 'session_history_page_too_large',
-    });
+    const large = await readInitialAgentUpdate(port, { conversationId: 'large' });
+    expect((large.content as string).length).toBe(9 * 1024 * 1024);
     await expect(readInitialAgentUpdate(port, { conversationId: 'unsupported' })).rejects.toMatchObject({
       code: 'session_history_paging_unavailable',
     });

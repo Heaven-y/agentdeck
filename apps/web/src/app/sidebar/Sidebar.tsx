@@ -58,6 +58,8 @@ export type SidebarProps = {
   onOpenSettings?(): void;
   onOpenSessionSearch?(): void;
   onOpenArchive?(): void;
+  onOpenUsage?(): void;
+  usageOpen?: boolean;
   onOpenConversation?(id: string): void;
   /** 会话仍在读取时不要把加载中误报成空列表。 */
   loadingSessions?: boolean;
@@ -409,6 +411,8 @@ export function Sidebar({
   onOpenSettings,
   onOpenSessionSearch,
   onOpenArchive,
+  onOpenUsage,
+  usageOpen,
   onOpenConversation,
   loadingSessions = false,
   currentProjectId,
@@ -541,7 +545,12 @@ export function Sidebar({
           </>
         )}
       </div>
-      <SidebarFooter collapsed={collapsed} onOpenSettings={onOpenSettings} />
+      <SidebarFooter
+        collapsed={collapsed}
+        onOpenSettings={onOpenSettings}
+        onOpenUsage={onOpenUsage}
+        usageOpen={usageOpen}
+      />
       {managing && (
         <ProjectSessionDialog
           key={JSON.stringify([

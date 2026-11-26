@@ -10,24 +10,28 @@ export type WorkflowAgentEdge = {
   toolCallId: string;
   cancelled: boolean;
 };
-function agentBlocks(value: unknown, depth = 0): Record<string, unknown>[] {
-  if (depth > 8) return [];
-  return list(value)
-    .slice(0, 256)
-    .flatMap((item) => {
-      const block = record(item),
-        agent = record(block.agent);
-      return text(agent.conversationId)
-        ? [agent]
-        : agentBlocks(record(record(block.step).renderInfo).contentBlocks, depth + 1);
-    });
+function agentBlocks(value: unknown): Record<string, unknown>[] {
+  const blocks = [...list(value)],
+    result: Record<string, unknown>[] = [];
+  const seen = new Set<unknown>();
+  while (blocks.length) {
+    const value = blocks.pop();
+    if (seen.has(value)) continue;
+    seen.add(value);
+    const block = record(value),
+      agent = record(block.agent);
+    if (text(agent.conversationId)) result.push(agent);
+    else blocks.push(...list(record(record(block.step).renderInfo).contentBlocks));
+  }
+  return result.reverse();
 }
 
 /** 只接受原生工具提供的代理块，不从正文或任意 JSON 字符串猜会话身份。 */
 export function workflowAgentEdges(trajectory: Record<string, unknown>): WorkflowAgentEdge[] {
-  return list(trajectory.steps).flatMap((value, stepIndex) => {
+  return list(trajectory.steps).flatMap((value, offset) => {
     const step = record(value),
       call = record(record(step.metadata).toolCall);
+    const stepIndex = typeof step.index === 'number' ? step.index : offset;
     if (
       step.type !== 'CORTEX_STEP_TYPE_GENERIC' ||
       !['swarm', 'run_workflow'].includes(text(call.name)) ||

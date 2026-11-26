@@ -22,8 +22,6 @@ export type SubagentGraphInput = { id: string; query: SubagentQuery; signal?: Ab
 
 /** 只从根历史中的已知边向下遍历；网页提供的 ID 永远不能成为原生读取起点。 */
 class SubagentTree<T> {
-  private bytes = 0;
-  private reads = 0;
   private readonly deadline = Date.now() + 30_000;
   private readonly seen: Set<string>;
   constructor(
@@ -45,8 +43,7 @@ class SubagentTree<T> {
     this.checkBudget();
     const value = await this.api.load(id, parent);
     this.input.signal?.throwIfAborted();
-    this.bytes += Buffer.byteLength(JSON.stringify(value));
-    if (this.bytes > 32 * 1024 * 1024 || Date.now() > this.deadline) throw subagentIncomplete();
+    if (Date.now() > this.deadline) throw subagentIncomplete();
     if (!(await this.api.validate(value, id, parent))) return;
     this.input.signal?.throwIfAborted();
     return {
@@ -59,7 +56,7 @@ class SubagentTree<T> {
   }
   private checkBudget() {
     this.input.signal?.throwIfAborted();
-    if (++this.reads > 128 || Date.now() > this.deadline) throw subagentIncomplete();
+    if (Date.now() > this.deadline) throw subagentIncomplete();
   }
   private async child(parent: SubagentNode<T>, edge: SubagentEdge) {
     try {
@@ -82,12 +79,10 @@ class SubagentTree<T> {
           .map((edge) => [edge.agentId, edge]),
       ).values(),
     ];
-    if (edges.length && parent.depth >= 10) throw subagentIncomplete();
     const children: SubagentNode<T>[] = [];
     for (const edge of edges) {
       if (this.seen.has(edge.agentId)) throw subagentIncomplete();
       this.seen.add(edge.agentId);
-      if (this.seen.size > 128) throw subagentIncomplete();
       const child = await this.child(parent, edge);
       if (child) children.push(child);
     }
