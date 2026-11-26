@@ -21,6 +21,7 @@ it('声明生命周期的插件在停用和删除前收到通知，停用后的�
       backend: 'backend.cjs',
       sessionLifecycle: true,
       permissions: ['backend', 'session-control'],
+      contributes: { nativeCommands: [{ agent: 'antigravity', name: 'with-codex' }] },
     }),
   );
   await writeFile(path.join(source, 'index.html'), '<p>生命周期</p>');
@@ -34,8 +35,13 @@ process.send({id,ok:true,value});});process.on('disconnect',()=>process.exit(0))
   const service = createWorkbenchPlugins({ configDir });
   try {
     const installed = await service.install({ directory: source });
+    expect(await service.nativeCommand('antigravity', 'with-codex')).toBe(false);
     const enabled = await service.update('lifecycle', { enabled: true, revision: installed.revision });
+    expect(await service.nativeCommand('antigravity', 'with-codex')).toBe(true);
+    expect(await service.nativeCommand('codex', 'with-codex')).toBe(false);
+    expect(await service.nativeCommand('antigravity', 'unknown')).toBe(false);
     await service.update('lifecycle', { enabled: false, revision: enabled.revision });
+    expect(await service.nativeCommand('antigravity', 'with-codex')).toBe(false);
     await service.beforeSessionDelete({ agent: 'antigravity', sessionId: 'native-session', cwd: root });
     const events = (await readFile(data, 'utf8'))
       .trim()

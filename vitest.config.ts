@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     projects: ['packages/*', 'apps/*'],
+    // CI 的共享 CPU 上限制并发，避免真实子进程启动与系统编译争抢资源。
+    maxWorkers: process.env.CI ? 2 : undefined,
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'html', 'json-summary'],

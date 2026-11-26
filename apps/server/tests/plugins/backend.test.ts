@@ -17,6 +17,7 @@ process.on('message',async(message)=>{const {id,type,input}=message;const reply=
  else if(input.url==='/wait'){await fs.writeFile(path.join(context.dataDir,'waiting'),'yes');}
  else if(input.url==='/save'){await fs.writeFile(path.join(context.dataDir,'value'),input.body.value);reply({status:200,body:null});}
  else if(input.url==='/projects'){process.send({type:'host.request',id:'host-'+id,input:{method:'projects.list'}});}
+ else if(input.url==='/crash'){process.exit(1);}
  else {reply({status:200,body:{pid:process.pid,canceled,secret:!!process.env.AGENTDECK_FIXTURE_SECRET,value:await fs.readFile(path.join(context.dataDir,'value'),'utf8').catch(()=>null)}});}});
 process.on('disconnect',()=>process.exit(0));`;
 async function fixture(host?: Parameters<typeof createWorkbenchPlugins>[0]['host'], permissions = ['backend']) {
@@ -106,6 +107,21 @@ it('取消传到插件进程，停用释放运行服务且不继承无关凭据'
   await expect(f.service.backend('fixture', { method: 'GET', url: '/' })).rejects.toMatchObject({
     code: 'plugin_disabled',
   });
+});
+it('后端意外退出使当前请求失败，再次打开时启动新进程并保留数据', async () => {
+  const f = await fixture();
+  await f.service.update('fixture', { enabled: true, revision: f.installed.revision });
+  await f.service.backend('fixture', { method: 'POST', url: '/save', body: { value: 'kept' } });
+  const first = (await f.service.backend('fixture', { method: 'GET', url: '/' })).body as { pid: number };
+  await expect(f.service.backend('fixture', { method: 'POST', url: '/crash' })).rejects.toMatchObject({
+    code: 'backend_failed',
+  });
+  const recovered = (await f.service.backend('fixture', { method: 'GET', url: '/' })).body as {
+    pid: number;
+    value: string;
+  };
+  expect(recovered.pid).not.toBe(first.pid);
+  expect(recovered.value).toBe('kept');
 });
 it('整个插件包的摘要阻止执行安装后替换的后端', async () => {
   const f = await fixture();
