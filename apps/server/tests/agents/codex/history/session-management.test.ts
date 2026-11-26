@@ -246,18 +246,19 @@ describe('Codex thread/fork', () => {
   }, 30_000);
 });
 
-it('首屏 RPC 超限后重启只读客户端、重新核对线程，再改取单轮，不回退全量或续接', async () => {
+it('首屏大消息完整读取，按回合分页且不因字节数重启客户端', async () => {
   const { dir, options, messages } = await setup('paging-overflow');
   const page = await readCodexHistoryPage('native-thread', dir, undefined, options);
-  expect(page).toMatchObject({
-    page: { start: 0 },
-    events: expect.arrayContaining([{ type: 'user_message', text: '历史问题' }]),
-  });
+  expect(page.page).toEqual({ start: 0 });
+  expect(
+    page.events
+      .filter((event) => event.type === 'text')
+      .map((event) => event.delta)
+      .join('').length,
+  ).toBe(9 * 1024 * 1024);
   const reads = (await messages()).filter((entry) => entry.method?.startsWith('thread/'));
   expect(reads.map((entry) => [entry.method, entry.params?.includeTurns ?? entry.params?.limit])).toEqual([
     ['thread/read', false],
     ['thread/turns/list', 3],
-    ['thread/read', false],
-    ['thread/turns/list', 1],
   ]);
 });

@@ -104,7 +104,12 @@ function listHistoryTurns(message: Message) {
   const limit = Number(message.params?.limit ?? 3);
   if (mode === 'paging-overflow' && limit > 1) {
     reply(message, {
-      data: [{ ...historyTurns()[0], items: [{ type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) }] }],
+      data: [
+        {
+          ...historyTurns()[0],
+          items: [{ id: 'large-reply', type: 'agentMessage', text: 'a'.repeat(9 * 1024 * 1024) }],
+        },
+      ],
     });
     return;
   }
