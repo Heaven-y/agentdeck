@@ -1,15 +1,14 @@
 import { Menu, MenuButton, MenuItem, useMenuStore } from '@ariakit/react';
-import { Archive, ArchiveRestore, GitFork, Link, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, GitFork, Link, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useRef } from 'react';
 import { type SessionActionInput, type SessionSummary, type SessionCapabilities } from '@agentdeck/shared/conversation';
 import { buttonClass, menuItemClass, popoverClass } from '../../../ui/styles';
 import { AGENT_LABELS } from '../../../cli/shared/labels';
 
 export type SessionDialogAction = SessionActionInput['action'] | 'fork';
-export type SessionMenuAction = SessionDialogAction | 'pin' | 'copy';
+export type SessionMenuAction = SessionDialogAction | 'copy';
 const actions = {
   rename: { label: '重命名', icon: Pencil },
-  pin: { label: '置顶', icon: Pin },
   copy: { label: '复制会话链接', icon: Link },
   fork: { label: '创建分支', icon: GitFork },
   delete: { label: '删除', icon: Trash2 },
@@ -17,16 +16,11 @@ const actions = {
   unarchive: { label: '恢复', icon: ArchiveRestore },
 };
 
-function visibleActions(
-  capabilities: SessionCapabilities | undefined,
-  archived: boolean,
-  localActions: boolean,
-): SessionMenuAction[] {
+function visibleActions(capabilities: SessionCapabilities | undefined, archived: boolean): SessionMenuAction[] {
   const { rename, fork, archive, delete: remove } = capabilities ?? {};
   const visible: SessionMenuAction[] = [];
   if (!archived) {
     if (rename) visible.push('rename');
-    if (localActions) visible.push('pin');
     if (fork) visible.push('fork');
   }
   visible.push('copy');
@@ -39,26 +33,21 @@ function visibleActions(
 export function SessionMenu({
   session,
   archived,
-  pinned,
   disabled,
   choose,
-  localActions = true,
   hoverReveal = false,
 }: {
   session: SessionSummary;
   archived: boolean;
-  pinned: boolean;
   disabled: boolean;
   choose(action: SessionMenuAction): void;
-  /** 项目侧栏已有排序，不重复提供旧的置顶动作；复制始终可用。 */
-  localActions?: boolean;
   /** 在紧凑列表中默认低调隐藏，悬停、键盘聚焦或展开菜单时可见。 */
   hoverReveal?: boolean;
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useMenuStore({ placement: 'bottom-start' });
   const capabilities = session.capabilities;
-  const visible = visibleActions(capabilities, archived, localActions);
+  const visible = visibleActions(capabilities, archived);
   if (!visible.length) return null;
   const revealClass = hoverReveal
     ? 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 focus:opacity-100 aria-expanded:opacity-100'
@@ -91,7 +80,7 @@ export function SessionMenu({
               }}
             >
               <Icon aria-hidden className="size-4" />
-              {action === 'pin' && pinned ? '取消置顶' : actions[action].label}
+              {actions[action].label}
             </MenuItem>
           );
         })}

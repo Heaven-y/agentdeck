@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import type { Workspace, WorkspaceInput } from '@agentdeck/shared/projects';
 import type { WorkspaceStore } from '../../src/workspaces/store';
@@ -208,4 +208,22 @@ describe('WebSocket 来源校验（真实监听）', () => {
     expect(await connect(port, origin, undefined, '/%77s')).toBe(false);
     expect(await connect(port, origin, COOKIE, '/%77s')).toBe(true);
   });
+});
+
+it('路由构造失败关闭Fastify及注册的资源，清理失败不覆盖构造错误', async () => {
+  const original = new Error('synthetic route failure');
+  const dispose = vi.fn(() => {
+    throw new Error('synthetic cleanup failure');
+  });
+  await expect(
+    buildApp({
+      token: 'fixture',
+      port: 0,
+      routes: (app) => {
+        app.addHook('onClose', async () => dispose());
+        throw original;
+      },
+    }),
+  ).rejects.toBe(original);
+  expect(dispose).toHaveBeenCalledOnce();
 });

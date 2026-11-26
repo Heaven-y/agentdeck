@@ -33,7 +33,7 @@ beforeEach(() => {
 
 it('摘要分页将工作区目录传给SDK，只读取请求的一页', async () => {
   vi.mocked(listSessions).mockResolvedValue([metadata]);
-  const page = await createClaudeSessions().page!(dir, { limit: 1, cursor: '50' });
+  const page = await createClaudeSessions().page(dir, { limit: 1, cursor: '50' });
   expect(listSessions).toHaveBeenCalledExactlyOnceWith({ includeWorktrees: false, limit: 1, offset: 50 });
   expect(page.nextCursor).toBe('51');
   expect(page.items[0]?.sessionId).toBe(id);
@@ -55,7 +55,7 @@ it('分页摘要、兼容列表与历史使用同一活动时间且不为列表�
   vi.mocked(getSessionMessages).mockResolvedValue([]);
   const time = vi.spyOn(activity, 'claudeSessionActivity').mockResolvedValue(42);
   const provider = createClaudeSessions();
-  expect((await provider.page!(dir, { limit: 50 })).items[0]?.lastModified).toBe(42);
+  expect((await provider.page(dir, { limit: 50 })).items[0]?.lastModified).toBe(42);
   expect((await provider.list(dir))[0]?.lastModified).toBe(42);
   expect(getSessionMessages).not.toHaveBeenCalled();
   expect((await provider.read(id, dir)).session.lastModified).toBe(42);
@@ -261,4 +261,29 @@ describe('Claude SDK 原生会话分叉', () => {
       { type: 'turn_end', isError: false, forkPoint: lastPoint },
     ]);
   });
+});
+
+it('目录定位因原生路径别名缺失时，仅在全局记录cwd等价后读取媒体，其他项目仍拒绝', async () => {
+  const dir = path.join(tmpdir(), 'native-alias-fixture');
+  const info = { sessionId: 'session', summary: 'fixture', cwd: dir, lastModified: 1, fileSize: 100 };
+  vi.mocked(getSessionInfo).mockImplementation(async (_id, options) => (options?.dir ? undefined : info));
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=';
+  vi.mocked(getSessionMessages).mockImplementation(async (_id, options) =>
+    options?.dir
+      ? []
+      : [
+          {
+            type: 'user',
+            uuid: 'message',
+            session_id: 'session',
+            message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }] },
+          } as never,
+        ],
+  );
+  const provider = createClaudeSessions();
+  const locator = { sessionId: 'session', messageId: 'message', kind: 'user' as const, index: 0 };
+  expect((await provider.media!('session', dir, locator)).data.toString('base64')).toBe(png);
+  vi.mocked(getSessionMessages).mockClear();
+  await expect(provider.media!('session', path.join(dir, 'other-project'), locator)).rejects.toThrow('当前工作区');
+  expect(getSessionMessages).not.toHaveBeenCalled();
 });

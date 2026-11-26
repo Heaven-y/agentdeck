@@ -113,7 +113,7 @@ it('同一时间只弹出一个菜单，关闭后可再次打开；主题只接�
   expect(() => chrome.setTheme(request, { color: 'red' })).toThrow('标题栏主题无效');
 });
 
-it('窗口按钮区的底色与网页侧栏同色，两种主题都不留接缝', () => {
+it('原生按钮配置与网页主题声明使用同一底色', () => {
   expect(TITLE_BAR_COLORS.dark.color).toBe(token('dark', '--color-sidebar'));
   expect(TITLE_BAR_COLORS.light.color).toBe(token('light', '--color-sidebar'));
 });

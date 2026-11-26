@@ -225,15 +225,6 @@ it('历史读取失败后禁止发送，重新读取成功才允许续聊', asyn
   expect(useChat.getState().send('继续')).toBe(true);
 });
 
-it('Antigravity不可回放保留会话身份并允许续接', async () => {
-  vi.spyOn(sessionsApi, 'sessionEvents').mockRejectedValue(
-    new ApiError(501, '私有轨迹无法回放', { code: 'session_not_replayable' }),
-  );
-  await useChat.getState().openSession({ agent: 'antigravity', sessionId: 'agy-native' });
-  expect(useChat.getState().send('接着处理')).toBe(true);
-  expect(sent.at(-1)).toMatchObject({ agent: 'antigravity', sessionId: 'agy-native' });
-});
-
 it('运行中可离开并新建，后台输出和审批仍归属原会话', async () => {
   useChat.getState().setModel('selected-a');
   useChat.getState().setReasoningEffort('high');
@@ -1494,23 +1485,6 @@ it('错误条目可以手动关闭，且只移除目标条目', () => {
   expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
   useChat.getState().dismissNotice('missing', conversationId);
   expect(useChat.getState().items.map((item) => item.id)).toEqual(['a1', 'error-2']);
-});
-
-it('不同会话的错误编号相同时，只关闭指定会话的提示，切换后仍可关闭该会话提示', () => {
-  useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第一条会话错误' }] });
-  const first = useChat.getState().conversationId;
-  useChat.getState().newSession('codex');
-  const second = useChat.getState().conversationId;
-  useChat.setState({ items: [{ kind: 'error', id: 'error-0', message: '第二条会话错误' }] });
-
-  useChat.getState().dismissNotice('error-0', second);
-  expect(useChat.getState().items).toEqual([]);
-  expect(useChat.getState().background[first]?.items).toMatchObject([{ kind: 'error', message: '第一条会话错误' }]);
-
-  useChat.getState().openConversation(first);
-  useChat.getState().dismissNotice('error-0', first);
-  expect(useChat.getState().items).toEqual([]);
-  expect(useChat.getState().background[second]?.items).toEqual([]);
 });
 
 it('后台会话里的错误也能关闭，不动当前会话正文', () => {

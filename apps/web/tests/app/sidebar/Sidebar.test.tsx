@@ -230,6 +230,16 @@ it('打开“显示其他目录的会话”后才列出未归属会话', async (
   expect(screen.getByText('孤儿会话')).toBeTruthy();
 });
 
+it('更多菜单挂到侧栏外，归档入口调用对应动作', async () => {
+  const archive = vi.fn();
+  const view = render(<Sidebar projects={[]} sessionsByProject={{}} onAddProject={vi.fn()} onOpenArchive={archive} />);
+  fireEvent.click(screen.getByRole('button', { name: '更多' }));
+  const menu = await screen.findByRole('menu', { name: '更多导航' });
+  expect(view.container.contains(menu)).toBe(false);
+  fireEvent.click(screen.getByRole('menuitem', { name: '已归档会话' }));
+  expect(archive).toHaveBeenCalledOnce();
+});
+
 it('其他目录只对有可信directory的会话提供预填项目入口', async () => {
   const add = vi.fn();
   const directory = path.resolve('fixtures', 'native-folder');

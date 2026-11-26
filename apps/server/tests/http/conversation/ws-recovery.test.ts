@@ -76,6 +76,26 @@ async function setup() {
   };
 }
 
+it('发送参数错误回传clientTurnId，客户端可结束等待且不泄漏输入', async () => {
+  const f = await setup();
+  try {
+    const client = await f.connect();
+    client.send({ type: 'connection.resume', token: randomUUID(), create: true, rebuild: false, afterSequence: 0 });
+    await vi.waitFor(() => expect(client.received.at(-1)?.type).toBe('connection.ready'));
+    client.send({ type: 'chat.send', clientTurnId: 'client-request', text: 2, private: 'synthetic-secret' });
+    await vi.waitFor(() =>
+      expect(client.received.at(-1)?.message).toEqual({
+        type: 'error',
+        clientTurnId: 'client-request',
+        message: '消息格式不正确',
+      }),
+    );
+    expect(f.runs).toHaveLength(0);
+  } finally {
+    await f.close();
+  }
+});
+
 it('短断线保留并行回合和审批，重连只补游标之后的事件且拒绝迟到旧连接操作', async () => {
   const f = await setup();
   try {

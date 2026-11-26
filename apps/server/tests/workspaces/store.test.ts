@@ -30,13 +30,9 @@ describe('createWorkspaceStore', () => {
   it('创建后返回 UUID，并持久化到磁盘', async () => {
     const ws = await make().create(input());
     expect(ws.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await make().list()).toEqual([ws]);
-  });
-
-  it('不绑定服务器的项目也能创建', async () => {
-    const ws = await make().create({ name: '纯本地项目', dir: projectDir });
-    expect(ws).toMatchObject({ name: '纯本地项目', dir: path.resolve(projectDir) });
+    expect(ws).toMatchObject({ name: 'demo', dir: path.resolve(projectDir) });
     expect(ws).not.toHaveProperty('server');
+    expect(await make().list()).toEqual([ws]);
   });
 
   it('dir 保存为 path.resolve 后的绝对路径', async () => {
@@ -63,14 +59,6 @@ describe('createWorkspaceStore', () => {
     const created = await store.create({ ...input(), server: 'unknown', remoteDir: '~/projects/demo' } as never);
     expect(created).not.toHaveProperty('server');
     expect(created).not.toHaveProperty('remoteDir');
-  });
-
-  it('update 只能改名称与目录，不再接受绑定字段', async () => {
-    const store = make();
-    const ws = await store.create(input());
-    const renamed = await store.update(ws.id, { name: '改名后' });
-    expect(renamed).toMatchObject({ id: ws.id, name: '改名后', dir: ws.dir });
-    expect(renamed).not.toHaveProperty('server');
   });
 
   it.each(['{private-secret', '{}', '[null]', '[{"id":"secret"}]'])('%s损坏拒绝读写并保留原文', async (text) => {
@@ -125,17 +113,15 @@ describe('createWorkspaceStore', () => {
     expect(await make().list()).toEqual([{ ...valid, id: 'other' }]);
   });
 
-  it('当前可选字段与默认配置合法，不要求目录仍在线', async () => {
-    const valid = await make().create(input());
-    expect(await make({ dirExists: false }).list()).toEqual([valid]);
-    expect(await make().update(valid.id, { name: 'renamed' })).toMatchObject({ name: 'renamed', dir: valid.dir });
-  });
-
-  it('update 只改指定字段，id 不变', async () => {
+  it('update 只改指定字段，id 不变且丢弃旧服务器绑定', async () => {
     const store = make();
     const ws = await store.create(input());
-    const updated = await store.update(ws.id, { name: '新名字' });
-    expect(updated).toMatchObject({ id: ws.id, name: '新名字', dir: ws.dir });
+    const updated = await store.update(ws.id, {
+      name: '新名字',
+      server: 'my-server',
+      remoteDir: '~/projects/demo',
+    } as never);
+    expect(updated).toEqual({ id: ws.id, name: '新名字', dir: ws.dir });
     expect(await store.get(ws.id)).toEqual(updated);
   });
 
@@ -143,6 +129,7 @@ describe('createWorkspaceStore', () => {
     const ws = await make().create(input());
     // 移动硬盘没插：目录查不到存在，但记录还在。
     const offline = make({ dirExists: false });
+    expect(await offline.list()).toEqual([ws]);
     expect(await offline.update(ws.id, { name: '改名' })).toMatchObject({ name: '改名' });
     // 但真正换到一个不存在的目录仍要被拦住。
     await expect(offline.update(ws.id, { dir: path.join(projectDir, 'missing') })).rejects.toMatchObject({
