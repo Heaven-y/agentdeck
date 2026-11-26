@@ -249,7 +249,7 @@ describe('Codex thread/fork', () => {
 it('首屏大消息完整读取，按回合分页且不因字节数重启客户端', async () => {
   const { dir, options, messages } = await setup('paging-overflow');
   const page = await readCodexHistoryPage('native-thread', dir, undefined, options);
-  expect(page.page).toEqual({ start: 0 });
+  expect(page).toMatchObject({ page: { start: 0 } });
   expect(
     page.events
       .filter((event) => event.type === 'text')
